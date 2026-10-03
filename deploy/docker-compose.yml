@@ -1,0 +1,34 @@
+# YottaDB + Octo + GUI. Официален образ (YottaDB, Octo, GUI).
+# От корена на baga:
+#   docker compose -f app-product/ytbuch/deploy/docker-compose.yml up -d
+#
+# Octo (SQL): 127.0.0.1:1337
+#   потребител ydb, парола ydbrocks (така я създава образът)
+# GUI: http://127.0.0.1:9080
+# Данните са в volume ydb-data → /data в контейнера.
+# Портовете не се бъркат с bagabuch (3000/8080/6575/5050)
+# и 7x7office (3010/8085/6585/9980/6385).
+
+name: ytbuch
+
+services:
+  yottadb:
+    container_name: ytbuch-yottadb
+    image: download.yottadb.com/yottadb/yottadb-debian:latest
+    restart: unless-stopped
+    stdin_open: true
+    tty: true
+    ports:
+      - "127.0.0.1:1337:1337"
+      - "127.0.0.1:9080:9080"
+    volumes:
+      - ydb-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'echo >/dev/tcp/127.0.0.1/1337'"]
+      interval: 10s
+      timeout: 3s
+      retries: 30
+      start_period: 180s
+
+volumes:
+  ydb-data:

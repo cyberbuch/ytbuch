@@ -1,0 +1,6 @@
+# Локални артефакти. Самата папка остава в baga.
+node_modules/
+.next/
+target/
+ydb-data/
+logs/
