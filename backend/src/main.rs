@@ -1,20 +1,55 @@
 //! ytbuch API. Първа фаза: вход, фирми, активна фирма, празно табло.
 
+mod asset_ops;
+mod assets;
 mod auth;
+mod bank_csv;
+mod bank_tx;
+mod banks;
 mod companies;
+mod counterparts;
 mod db;
+mod dec;
+mod dividends;
+mod dump;
+mod form;
+mod identity;
+mod invoice_money;
+mod invoice_post;
+mod idocs;
+mod invoice_read;
+mod invoices;
 mod lists;
+mod mfg;
+mod mail;
+mod master;
+mod opening;
+mod periods;
+mod posting;
+mod profile;
+mod recipes;
+mod related;
+mod s3store;
 mod saft;
+mod schema5;
+mod session;
+mod settings;
+mod stock;
+mod totp;
+mod vat;
+mod vat_ex;
+mod vat_files;
+mod vat_fmt;
+mod vat_line;
 
 use std::env;
 use std::sync::Arc;
 
 use axum::extract::State;
-use axum::http::{HeaderMap, Method, StatusCode};
+use axum::http::{Method, StatusCode};
 use axum::response::{IntoResponse, Response};
-use axum::routing::{get, post};
+use axum::routing::{delete, get, patch, post};
 use axum::{Json, Router};
-use serde::Deserialize;
 use serde_json::{json, Value};
 use crate::db::Db;
 
@@ -28,13 +63,6 @@ pub fn api_err(status: StatusCode, detail: impl Into<String>) -> ApiError {
 pub struct AppState {
     db: Arc<Db>,
     jwt_secret: String,
-}
-
-#[derive(Deserialize)]
-struct TokenBody {
-    sub: Option<String>,
-    email: Option<String>,
-    password: Option<String>,
 }
 
 #[tokio::main]
@@ -77,9 +105,15 @@ async fn main() {
         .route("/health", get(health))
         .route("/ready", get(ready))
         .route("/readyz", get(ready))
-        .route("/v1/auth/token", post(token))
+        .route("/v1/auth/token", post(session::token))
+        .route("/v1/auth/mfa", post(session::mfa))
         .route("/v1/auth/registration-status", get(registration_status))
-        .route("/v1/me", get(me))
+        .route("/v1/me", get(session::me).patch(profile::update_name))
+        .route("/v1/me/password", post(profile::change_password))
+        .route("/v1/me/email", post(profile::change_email))
+        .route("/v1/me/totp/start", post(profile::totp_start))
+        .route("/v1/me/totp/confirm", post(profile::totp_confirm))
+        .route("/v1/me/totp/disable", post(profile::totp_disable))
         .route("/v1/companies", get(companies::index).post(companies::create))
         .route(
             "/v1/companies/{id}",
@@ -93,15 +127,163 @@ async fn main() {
         )
         .route("/v1/dashboard", get(companies::dashboard))
         .route("/v1/companies/{id}/settings", get(lists::company_settings))
-        .route("/v1/accounts", get(lists::accounts))
+        .route("/v1/accounts", get(lists::accounts).post(master::account_create))
+        .route(
+            "/v1/accounts/{id}",
+            get(master::account_show)
+                .patch(master::account_update)
+                .delete(master::account_delete),
+        )
         .route("/v1/accounts/seed-saft", post(saft::seed_saft))
         .route("/v1/saft/nomenclatures", get(saft::nomenclatures))
-        .route("/v1/counterparts", get(lists::counterparts))
-        .route("/v1/products", get(lists::products))
-        .route("/v1/invoices", get(lists::invoices))
-        .route("/v1/invoices/{id}", get(lists::invoice_show))
+        .route("/v1/units", get(saft::units))
+        .route(
+            "/v1/counterparts",
+            get(counterparts::counterparts).post(counterparts::counterpart_create),
+        )
+        .route(
+            "/v1/counterparts/{id}",
+            get(counterparts::counterpart_show)
+                .patch(counterparts::counterpart_update)
+                .delete(counterparts::counterpart_delete),
+        )
+        .route("/v1/products", get(lists::products).post(master::product_create))
+        .route(
+            "/v1/products/{id}",
+            get(master::product_show)
+                .patch(master::product_update)
+                .delete(master::product_delete),
+        )
+        .route(
+            "/v1/companies/{id}/locations",
+            post(related::location_create),
+        )
+        .route(
+            "/v1/company-locations/{id}",
+            patch(related::location_update).delete(related::location_delete),
+        )
+        .route(
+            "/v1/companies/{id}/beneficial-owners",
+            post(related::owner_create),
+        )
+        .route(
+            "/v1/beneficial-owners/{id}",
+            patch(related::owner_update).delete(related::owner_delete),
+        )
+        .route(
+            "/v1/companies/{id}/ultimate-parents",
+            post(related::parent_create),
+        )
+        .route(
+            "/v1/ultimate-parents/{id}",
+            patch(related::parent_update).delete(related::parent_delete),
+        )
+        .route(
+            "/v1/companies/{id}/document-series",
+            post(related::series_create),
+        )
+        .route(
+            "/v1/document-series/{id}",
+            patch(related::series_update).delete(related::series_delete),
+        )
+        .route(
+            "/v1/system-settings",
+            get(settings::index).put(settings::update),
+        )
+        .route("/v1/system-settings/smtp-test", post(mail::smtp_test))
+        .route("/v1/system-settings/s3-test", post(s3store::s3_test))
+        .route("/v1/system-settings/s3-backup", post(s3store::s3_backup))
+        .route("/v1/system-settings/s3-backups", get(s3store::s3_list))
+        .route("/v1/system-settings/s3-delete", post(s3store::s3_delete))
+        .route("/v1/invoices", get(invoice_read::invoices).post(invoices::create))
+        .route("/v1/invoices/next-number", get(invoices::next_number))
+        .route("/v1/invoices/bulk/post", post(invoice_post::bulk_post))
+        .route("/v1/invoices/bulk/unpost", post(invoice_post::bulk_unpost))
+        .route("/v1/invoices/bulk/delete", post(invoices::bulk_delete))
+        .route(
+            "/v1/invoices/{id}",
+            get(invoice_read::invoice_show)
+                .patch(invoices::update)
+                .delete(invoices::delete),
+        )
+        .route("/v1/invoices/{id}/post", post(invoice_post::post))
         .route("/v1/journal", get(lists::journal))
         .route("/v1/journal/{id}", get(lists::journal_show))
+        .route("/v1/accounting-periods", get(periods::index))
+        .route("/v1/accounting-periods/close", post(periods::close))
+        .route("/v1/accounting-periods/reopen", post(periods::reopen))
+        .route(
+            "/v1/opening-balances",
+            get(opening::index).post(opening::create),
+        )
+        .route(
+            "/v1/opening-balances/{id}",
+            patch(opening::update).delete(opening::delete),
+        )
+        .route("/v1/vat/registers", get(vat::registers))
+        .route("/v1/vat/return", get(vat::registers))
+        .route("/v1/vat/export", get(vat::export))
+        .route("/v1/vat-exemptions", get(vat_ex::index))
+        .route("/v1/bank-accounts", get(banks::index).post(banks::create))
+        .route(
+            "/v1/bank-accounts/{id}",
+            patch(banks::update).delete(banks::delete),
+        )
+        .route("/v1/bank-transactions", get(bank_tx::index))
+        .route("/v1/bank-transactions/preview", post(bank_tx::preview))
+        .route("/v1/bank-transactions/import", post(bank_tx::import))
+        .route("/v1/bank-transactions/{id}/book", post(bank_tx::book))
+        .route("/v1/bank-transactions/{id}/reallocate", post(bank_tx::reallocate))
+        .route("/v1/bank-transactions/{id}", delete(bank_tx::delete))
+        .route(
+            "/v1/fixed-asset-categories",
+            get(assets::categories).post(assets::category_create),
+        )
+        .route(
+            "/v1/fixed-asset-categories/{id}",
+            patch(assets::category_update).delete(assets::category_delete),
+        )
+        .route("/v1/fixed-assets", get(assets::index).post(assets::create))
+        .route("/v1/fixed-assets/depreciation/preview", post(asset_ops::preview))
+        .route("/v1/fixed-assets/depreciation/post", post(asset_ops::post_dep))
+        .route(
+            "/v1/fixed-assets/{id}",
+            patch(assets::update).delete(assets::delete),
+        )
+        .route("/v1/fixed-assets/{id}/revalue", post(asset_ops::revalue))
+        .route("/v1/fixed-assets/{id}/move", post(asset_ops::move_asset))
+        .route("/v1/fixed-assets/{id}/conserve", post(asset_ops::conserve))
+        .route("/v1/fixed-assets/{id}/end-conserve", post(asset_ops::end_conserve))
+        .route("/v1/fixed-assets/{id}/dispose", post(asset_ops::dispose))
+        .route("/v1/fixed-assets/{id}/events", get(asset_ops::events))
+        .route("/v1/inventory/at-location", get(stock::at_location))
+        .route("/v1/internal-docs/next-number", get(idocs::next_number))
+        .route("/v1/internal-docs", get(idocs::index).post(idocs::create))
+        .route(
+            "/v1/internal-docs/{id}",
+            get(idocs::show).patch(idocs::update).delete(idocs::delete),
+        )
+        .route("/v1/internal-docs/{id}/confirm", post(idocs::confirm))
+        .route("/v1/recipes", get(recipes::index).post(recipes::create))
+        .route(
+            "/v1/recipes/{id}",
+            get(recipes::show).patch(recipes::update).delete(recipes::delete),
+        )
+        .route("/v1/production-orders", get(mfg::index).post(mfg::create))
+        .route(
+            "/v1/production-orders/{id}",
+            get(mfg::show).delete(mfg::delete),
+        )
+        .route("/v1/production-orders/{id}/confirm", post(mfg::confirm))
+        .route(
+            "/v1/dividend-distributions",
+            get(dividends::index).post(dividends::create),
+        )
+        .route(
+            "/v1/dividend-distributions/{id}",
+            get(dividends::show).patch(dividends::update).delete(dividends::delete),
+        )
+        .route("/v1/dividends/{id}/pay", post(dividends::pay))
         .fallback(fallback)
         .with_state(state);
 
@@ -139,120 +321,4 @@ async fn ready(State(st): State<AppState>) -> Result<Json<Value>, ApiError> {
 
 async fn registration_status() -> Json<Value> {
     Json(json!({ "registration_enabled": 0 }))
-}
-
-async fn token(
-    State(st): State<AppState>,
-    Json(body): Json<TokenBody>,
-) -> Result<Json<Value>, ApiError> {
-    let sub = body
-        .sub
-        .filter(|s| !s.is_empty())
-        .or(body.email.filter(|s| !s.is_empty()))
-        .ok_or_else(|| api_err(StatusCode::UNPROCESSABLE_ENTITY, "email или sub е задължителен"))?;
-    let password = body.password.unwrap_or_default();
-    let rows = st.db.query(
-        &format!(
-            "SELECT id, email, password_hash, is_active, totp_enabled FROM users WHERE email = {}",
-            db::lit(&sub)
-        ),
-    )
-    .await
-    .map_err(|e| api_err(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-    if rows.is_empty() {
-        if sub == "superadmin" && password == "123+123" {
-            provision_superadmin(&st).await?;
-        } else {
-            let n = st.db.query( "SELECT id FROM users")
-                .await
-                .map_err(|e| api_err(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-            if !n.is_empty() {
-                return Err(api_err(StatusCode::UNAUTHORIZED, "грешен потребител или парола"));
-            }
-        }
-    } else {
-        let row = &rows[0];
-        let active = db::cell_i32_at(row, 3);
-        if active == 0 {
-            return Err(api_err(StatusCode::FORBIDDEN, "потребителят е неактивен"));
-        }
-        let email = db::cell_str(row, 1);
-        let hash = db::cell_str(row, 2);
-        if hash != auth::hash_password(&email, &password) {
-            if sub == "superadmin" && password == "123+123" {
-                let id = db::cell_i32_at(row, 0);
-                let fresh = auth::hash_password("superadmin", "123+123");
-                st.db.exec(
-                    &format!(
-                        "UPDATE users SET password_hash = {}, is_active = 1, is_super_admin = 1 WHERE id = {id}",
-                        db::lit(&fresh)
-                    ),
-                )
-                .await
-                .map_err(|e| api_err(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-            } else {
-                return Err(api_err(StatusCode::UNAUTHORIZED, "грешен потребител или парола"));
-            }
-        }
-    }
-    let token = auth::issue(&st.jwt_secret, &sub)?;
-    Ok(Json(json!({
-        "access_token": token,
-        "token_type": "bearer",
-        "sub": sub,
-        "expires_in": auth::ttl(),
-    })))
-}
-
-async fn provision_superadmin(st: &AppState) -> Result<(), ApiError> {
-    let hash = auth::hash_password("superadmin", "123+123");
-    let existing = st.db.query(
-        "SELECT id FROM users WHERE email = 'superadmin'",
-    )
-    .await
-    .map_err(|e| api_err(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-    if existing.is_empty() {
-        let id = st.db.next_id( "users")
-            .await
-            .map_err(|e| api_err(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-        let stamp = db::now_stamp();
-        st.db.exec(
-            &format!(
-                "INSERT INTO users (id, email, name, password_hash, role, is_active, is_super_admin, role_id, totp_enabled, created_at) \
-                 VALUES ({id}, 'superadmin', 'Superadmin', {}, 'super_admin', 1, 1, 0, 0, {})",
-                db::lit(&hash),
-                db::lit(&stamp)
-            ),
-        )
-        .await
-        .map_err(|e| api_err(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-    }
-    Ok(())
-}
-
-async fn me(State(st): State<AppState>, headers: HeaderMap) -> Result<Json<Value>, ApiError> {
-    let sub = auth::subject(&st.jwt_secret, &headers)?;
-    let rows = st.db.query(
-        &format!(
-            "SELECT id, email, name, is_super_admin, role_id, totp_enabled FROM users WHERE email = {}",
-            db::lit(&sub)
-        ),
-    )
-    .await
-    .map_err(|e| api_err(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-    let Some(row) = rows.first() else {
-        return Ok(Json(json!({ "sub": sub, "permissions": [] })));
-    };
-    let super_admin = db::cell_i32_at(row, 3);
-    let perms: Vec<&str> = if super_admin == 1 { vec!["*"] } else { vec![] };
-    Ok(Json(json!({
-        "sub": sub,
-        "id": db::cell_i32_at(row, 0),
-        "email": db::cell_str(row, 1),
-        "name": db::cell_str(row, 2),
-        "is_super_admin": super_admin,
-        "role_id": db::cell_i32_at(row, 4),
-        "totp_enabled": db::cell_i32_at(row, 5),
-        "permissions": perms,
-    })))
 }

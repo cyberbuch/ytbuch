@@ -1,7 +1,7 @@
 "use client";
 
 // Глобални настройки: приложение, SMTP, S3 архиви.
-// SMTP/S3 са Python sidecar; архивът е boilaDB COPY dump, не LSM tar.
+// SMTP е lettre, S3 е aws-sdk-s3. Архивът е gzip на INSERT dump.
 
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { RequireAuth } from "../../components/RequireAuth";

@@ -181,6 +181,18 @@ pub async fn migrate(db: &Client) -> DbResult<()> {
             country VARCHAR,
             contact_person VARCHAR
         );
+        CREATE TABLE IF NOT EXISTS counterpart_extra (
+            id INTEGER PRIMARY KEY,
+            vies_address VARCHAR,
+            street_name VARCHAR,
+            building_number VARCHAR,
+            address_building VARCHAR,
+            additional_address_detail VARCHAR,
+            address_type VARCHAR,
+            region VARCHAR,
+            email VARCHAR,
+            phone VARCHAR
+        );
         CREATE TABLE IF NOT EXISTS products (
             id INTEGER PRIMARY KEY,
             company_id INTEGER,
@@ -230,6 +242,22 @@ pub async fn migrate(db: &Client) -> DbResult<()> {
             vat_amount VARCHAR,
             total_amount VARCHAR
         );
+        CREATE TABLE IF NOT EXISTS invoice_extra (
+            id INTEGER PRIMARY KEY,
+            tax_event_date VARCHAR,
+            accounting_month VARCHAR,
+            currency_rate VARCHAR,
+            discount_percent VARCHAR,
+            discount_amount VARCHAR,
+            vat_exemption_reason VARCHAR,
+            original_invoice_id INTEGER,
+            location_id INTEGER,
+            journal_entry_id INTEGER
+        );
+        CREATE TABLE IF NOT EXISTS invoice_line_extra (
+            id INTEGER PRIMARY KEY,
+            product_id INTEGER
+        );
         CREATE TABLE IF NOT EXISTS journal_entries (
             id INTEGER PRIMARY KEY,
             company_id INTEGER,
@@ -254,9 +282,41 @@ pub async fn migrate(db: &Client) -> DbResult<()> {
             amount VARCHAR,
             vat_amount VARCHAR
         );
+        CREATE TABLE IF NOT EXISTS user_login (
+            id INTEGER PRIMARY KEY,
+            username VARCHAR,
+            totp_secret_b32 VARCHAR,
+            totp_pending_b32 VARCHAR
+        );
+        CREATE TABLE IF NOT EXISTS user_recovery_codes (
+            id INTEGER PRIMARY KEY,
+            user_id INTEGER,
+            code_hash VARCHAR,
+            used INTEGER
+        );
+        CREATE TABLE IF NOT EXISTS accounting_periods (
+            id INTEGER PRIMARY KEY,
+            year INTEGER,
+            month INTEGER,
+            status VARCHAR,
+            closed_at VARCHAR,
+            notes VARCHAR
+        );
+        CREATE TABLE IF NOT EXISTS opening_balances (
+            id INTEGER PRIMARY KEY,
+            fiscal_year INTEGER,
+            account_id INTEGER,
+            debit VARCHAR,
+            credit VARCHAR,
+            counterpart_id INTEGER,
+            product_id INTEGER,
+            quantity VARCHAR,
+            description VARCHAR
+        );
         ",
     )
     .await?;
+    exec(db, crate::schema5::SQL).await?;
     let n = query(db, "SELECT id FROM schema_migrations WHERE id = 1").await?;
     if n.is_empty() {
         exec(

@@ -43,36 +43,6 @@ pub async fn accounts(State(st): State<AppState>, headers: HeaderMap) -> Result<
     Ok(list(items))
 }
 
-pub async fn counterparts(
-    State(st): State<AppState>,
-    headers: HeaderMap,
-) -> Result<Json<Value>, ApiError> {
-    let rows = rows(
-        &st,
-        &headers,
-        "SELECT id, name, counterpart_type, eik, vat_number, address, city, post_code, country, contact_person FROM counterparts ORDER BY id",
-    )
-    .await?;
-    let items = rows
-        .iter()
-        .map(|r| {
-            json!({
-                "id": cell_i32_at(r, 0),
-                "name": cell_str(r, 1),
-                "counterpart_type": cell_str(r, 2),
-                "eik": cell_str(r, 3),
-                "vat_number": cell_str(r, 4),
-                "address": cell_str(r, 5),
-                "city": cell_str(r, 6),
-                "post_code": cell_str(r, 7),
-                "country": cell_str(r, 8),
-                "contact_person": cell_str(r, 9),
-            })
-        })
-        .collect();
-    Ok(list(items))
-}
-
 pub async fn products(State(st): State<AppState>, headers: HeaderMap) -> Result<Json<Value>, ApiError> {
     let rows = rows(
         &st,
@@ -103,78 +73,6 @@ pub async fn products(State(st): State<AppState>, headers: HeaderMap) -> Result<
         })
         .collect();
     Ok(list(items))
-}
-
-fn invoice_json(r: &db::Row) -> Value {
-    json!({
-        "id": cell_i32_at(r, 0),
-        "direction": cell_str(r, 1),
-        "document_type": cell_str(r, 2),
-        "number": cell_str(r, 3),
-        "issue_date": cell_str(r, 4),
-        "due_date": cell_str(r, 5),
-        "counterpart_id": cell_i32_at(r, 6),
-        "counterpart_name": cell_str(r, 7),
-        "currency": cell_str(r, 8),
-        "net_amount": cell_str(r, 9),
-        "vat_amount": cell_str(r, 10),
-        "total_amount": cell_str(r, 11),
-        "status": cell_str(r, 12),
-        "payment_method": cell_str(r, 13),
-        "notes": cell_str(r, 14),
-    })
-}
-
-pub async fn invoices(State(st): State<AppState>, headers: HeaderMap) -> Result<Json<Value>, ApiError> {
-    let rows = rows(
-        &st,
-        &headers,
-        "SELECT id, direction, document_type, number, issue_date, due_date, counterpart_id, counterpart_name, currency, net_amount, vat_amount, total_amount, status, payment_method, notes FROM invoices ORDER BY id",
-    )
-    .await?;
-    Ok(list(rows.iter().map(invoice_json).collect()))
-}
-
-pub async fn invoice_show(
-    State(st): State<AppState>,
-    headers: HeaderMap,
-    Path(id): Path<i32>,
-) -> Result<Json<Value>, ApiError> {
-    let mut rows = rows(
-        &st,
-        &headers,
-        &format!(
-            "SELECT id, direction, document_type, number, issue_date, due_date, counterpart_id, counterpart_name, currency, net_amount, vat_amount, total_amount, status, payment_method, notes FROM invoices WHERE id = {id}"
-        ),
-    )
-    .await?;
-    let Some(row) = rows.pop() else {
-        return Err(api_err(StatusCode::NOT_FOUND, "фактурата не е намерена"));
-    };
-    let mut value = invoice_json(&row);
-    let lines = st
-        .db
-        .query(&format!(
-            "SELECT id, code, description, quantity, unit, unit_price, vat_rate, net_amount, vat_amount, total_amount FROM invoice_lines WHERE invoice_id = {id} ORDER BY id"
-        ))
-        .await
-        .map_err(|e| api_err(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-    value["lines"] = json!(lines
-        .iter()
-        .map(|r| json!({
-            "id": cell_i32_at(r, 0),
-            "code": cell_str(r, 1),
-            "description": cell_str(r, 2),
-            "quantity": cell_str(r, 3),
-            "unit": cell_str(r, 4),
-            "unit_price": cell_str(r, 5),
-            "vat_rate": cell_str(r, 6),
-            "net_amount": cell_str(r, 7),
-            "vat_amount": cell_str(r, 8),
-            "total_amount": cell_str(r, 9),
-        }))
-        .collect::<Vec<_>>());
-    Ok(Json(value))
 }
 
 fn entry_json(r: &db::Row) -> Value {

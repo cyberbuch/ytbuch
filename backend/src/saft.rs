@@ -157,6 +157,66 @@ pub async fn ensure_chart(db: &db::Db) -> Result<(), tokio_postgres::Error> {
     Ok(())
 }
 
+/// Празен низ минава. BG код или име от каталога се нормализира.
+/// Чужда държава пази свободния текст до 35 знака.
+pub fn region_code(raw: &str, country: &str) -> Result<String, ()> {
+    let t = raw.trim();
+    if t.is_empty() {
+        return Ok(String::new());
+    }
+    let key = region_key(t);
+    if let Some(rows) = catalog().get("regions") {
+        for line in rows {
+            let mut parts = line.splitn(2, '|');
+            let code = parts.next().unwrap_or("");
+            let name = parts.next().unwrap_or("");
+            if key == code || t == name {
+                return Ok(code.to_string());
+            }
+        }
+    }
+    if key.starts_with("BG-") {
+        return Err(());
+    }
+    let cc = country.trim().to_ascii_uppercase();
+    if cc.is_empty() || cc == "BG" {
+        return Err(());
+    }
+    Ok(t.chars().take(35).collect())
+}
+
+fn region_key(raw: &str) -> String {
+    let up = raw.trim().to_ascii_uppercase();
+    let b = up.as_bytes();
+    if b.len() == 4
+        && b[0] == b'B'
+        && b[1] == b'G'
+        && b[2].is_ascii_digit()
+        && b[3].is_ascii_digit()
+    {
+        return format!("BG-{}", &up[2..]);
+    }
+    up
+}
+
+pub async fn units(
+    State(st): State<AppState>,
+    headers: HeaderMap,
+    Query(q): Query<NomQuery>,
+) -> Result<Json<Value>, ApiError> {
+    auth::subject(&st.jwt_secret, &headers)?;
+    let needle = q.search.unwrap_or_default().trim().to_lowercase();
+    let mut items = Vec::new();
+    for line in catalog().get("units").map(|v| v.as_slice()).unwrap_or(&[]) {
+        if !needle.is_empty() && !line.to_lowercase().contains(&needle) {
+            continue;
+        }
+        items.push(parse_line("units", line));
+    }
+    let count = items.len();
+    Ok(Json(json!({ "items": items, "count": count, "limit": 50, "offset": 0 })))
+}
+
 pub async fn seed_saft(
     State(st): State<AppState>,
     headers: HeaderMap,

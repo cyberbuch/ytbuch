@@ -10,7 +10,7 @@
 
 | Файл | За какво |
 |------|----------|
-| [architecture.md](architecture.md) | Стек, портове, Octo, как API-то говори със SQL |
+| [architecture.md](architecture.md) | Стек, портове, Octo, SMTP, S3, граница 800 реда |
 | [api.md](api.md) | HTTP пътища, които реално отговарят |
 | [data.md](data.md) | Таблици, миграции, демо фирма |
 | [saft.md](saft.md) | Номенклатури на НАП и seed на сметкоплана |

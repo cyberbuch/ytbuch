@@ -43,7 +43,7 @@ const NAV_ITEMS = [
   { href: "/nomenclatures", key: "nav.nomenclatures" },
   { href: "/fixed-assets", key: "nav.fixed_assets" },
   { href: "/admin", key: "nav.admin" },
-  { href: "/security", key: "nav.security" },
+  { href: "/profile", key: "nav.profile" },
   { href: "/users", key: "nav.users" },
   { href: "/roles", key: "nav.roles" },
 ];
@@ -164,6 +164,9 @@ export function AppShell({ children }: { children: ReactNode }) {
             >
               {theme === "dark" ? "☀" : "☾"}
             </button>
+            <Link href="/profile" className="btn btn-ghost btn-sm">
+              {t("nav.profile")}
+            </Link>
             <button className="btn btn-ghost btn-sm" onClick={handleLogout}>
               {t("nav.logout")}
             </button>

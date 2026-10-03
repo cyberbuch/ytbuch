@@ -403,6 +403,21 @@ fn active_key(sub: &str) -> String {
     format!("активна_фирма:{sub}")
 }
 
+pub async fn active_company_id(db: &Db, sub: &str) -> Result<i32, ApiError> {
+    let key = active_key(sub);
+    let rows = db
+        .query(&format!(
+            "SELECT value FROM settings WHERE setting_key = {}",
+            q(&key)
+        ))
+        .await
+        .map_err(|e| api_err(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    Ok(rows
+        .first()
+        .map(|r| cell_str(r, 0).parse().unwrap_or(0))
+        .unwrap_or(0))
+}
+
 pub async fn active_get(
     State(st): State<AppState>,
     headers: HeaderMap,

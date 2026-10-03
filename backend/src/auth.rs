@@ -16,6 +16,8 @@ pub struct Claims {
     pub iat: usize,
     pub exp: usize,
     pub iss: String,
+    #[serde(default)]
+    pub mfa: i64,
 }
 
 pub fn hash_password(email: &str, password: &str) -> String {
@@ -24,20 +26,53 @@ pub fn hash_password(email: &str, password: &str) -> String {
     hex::encode(dig)
 }
 
-pub fn issue(secret: &str, sub: &str) -> Result<String, ApiError> {
-    let now = chrono::Utc::now().timestamp() as usize;
-    let claims = Claims {
-        sub: sub.to_string(),
-        iat: now,
-        exp: now + TTL_SEC,
-        iss: "ytbuch".into(),
-    };
+fn encode_claims(secret: &str, claims: &Claims) -> Result<String, ApiError> {
     encode(
         &Header::default(),
-        &claims,
+        claims,
         &EncodingKey::from_secret(secret.as_bytes()),
     )
     .map_err(|e| api_err(axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
+}
+
+pub fn issue(secret: &str, sub: &str) -> Result<String, ApiError> {
+    let now = chrono::Utc::now().timestamp() as usize;
+    encode_claims(
+        secret,
+        &Claims {
+            sub: sub.to_string(),
+            iat: now,
+            exp: now + TTL_SEC,
+            iss: "ytbuch".into(),
+            mfa: 0,
+        },
+    )
+}
+
+pub fn issue_mfa(secret: &str, sub: &str) -> Result<String, ApiError> {
+    let now = chrono::Utc::now().timestamp() as usize;
+    encode_claims(
+        secret,
+        &Claims {
+            sub: sub.to_string(),
+            iat: now,
+            exp: now + 300,
+            iss: "ytbuch".into(),
+            mfa: 1,
+        },
+    )
+}
+
+fn decode_claims(secret: &str, token: &str) -> Result<Claims, ApiError> {
+    let mut validation = Validation::new(jsonwebtoken::Algorithm::HS256);
+    validation.set_issuer(&["ytbuch"]);
+    let data = decode::<Claims>(
+        token,
+        &DecodingKey::from_secret(secret.as_bytes()),
+        &validation,
+    )
+    .map_err(|_| api_err(axum::http::StatusCode::UNAUTHORIZED, "невалиден токен"))?;
+    Ok(data.claims)
 }
 
 pub fn ttl() -> usize {
@@ -56,13 +91,25 @@ pub fn subject(secret: &str, headers: &HeaderMap) -> Result<String, ApiError> {
     if token.is_empty() {
         return Err(api_err(axum::http::StatusCode::UNAUTHORIZED, "липсва токен"));
     }
-    let mut validation = Validation::new(jsonwebtoken::Algorithm::HS256);
-    validation.set_issuer(&["ytbuch"]);
-    let data = decode::<Claims>(
-        token,
-        &DecodingKey::from_secret(secret.as_bytes()),
-        &validation,
-    )
-    .map_err(|_| api_err(axum::http::StatusCode::UNAUTHORIZED, "невалиден токен"))?;
-    Ok(data.claims.sub)
+    let claims = decode_claims(secret, token)?;
+    if claims.mfa == 1 {
+        return Err(api_err(axum::http::StatusCode::UNAUTHORIZED, "невалиден токен"));
+    }
+    Ok(claims.sub)
+}
+
+pub fn mfa_subject(secret: &str, token: &str) -> Result<String, ApiError> {
+    let claims = decode_claims(secret, token).map_err(|_| {
+        api_err(
+            axum::http::StatusCode::UNAUTHORIZED,
+            "изтекъл или невалиден 2FA токен",
+        )
+    })?;
+    if claims.mfa != 1 || claims.sub.is_empty() {
+        return Err(api_err(
+            axum::http::StatusCode::UNAUTHORIZED,
+            "изтекъл или невалиден 2FA токен",
+        ));
+    }
+    Ok(claims.sub)
 }
