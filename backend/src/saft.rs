@@ -29,7 +29,7 @@ const KINDS: &[(&str, &str)] = &[
     ("accounts", "Сметки НАП"),
 ];
 
-fn catalog() -> &'static HashMap<String, Vec<String>> {
+pub(crate) fn catalog() -> &'static HashMap<String, Vec<String>> {
     static CATALOG: OnceLock<HashMap<String, Vec<String>>> = OnceLock::new();
     CATALOG.get_or_init(|| serde_json::from_str(CATALOG_JSON).expect("saft_noms.json"))
 }

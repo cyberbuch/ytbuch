@@ -303,24 +303,7 @@ pub async fn index(State(st): State<AppState>, headers: HeaderMap) -> Result<Jso
     Ok(Json(json!({ "items": items, "count": count, "limit": 50, "offset": 0 })))
 }
 
-pub async fn create(
-    State(st): State<AppState>,
-    headers: HeaderMap,
-    Json(body): Json<Value>,
-) -> Result<(StatusCode, Json<Value>), ApiError> {
-    auth::subject(&st.jwt_secret, &headers)?;
-    let mut c = blank();
-    apply_body(&mut c, &body)?;
-    if c.name.trim().is_empty() {
-        return Err(api_err(StatusCode::UNPROCESSABLE_ENTITY, "name е задължително"));
-    }
-    if c.eik.trim().is_empty() {
-        return Err(api_err(StatusCode::UNPROCESSABLE_ENTITY, "eik е задължителен"));
-    }
-    c.id = st.db.next_id( "companies")
-        .await
-        .map_err(|e| api_err(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-    c.created_at = db::now_stamp();
+async fn insert_company(db: &Db, c: &Company) -> Result<(), ApiError> {
     let sql = format!(
         "INSERT INTO companies (id, name, eik, vat_number, is_vat_registered, vat_period, currency, \
          address, city, post_code, phone, email, website, mol, manager_eik, accountant_name, \
@@ -344,9 +327,67 @@ pub async fn create(
         q(&c.additional_address_detail), q(&c.address_type), q(&c.region), q(&c.settings),
         q(&c.created_at)
     );
-    st.db.exec( &sql)
+    db.exec(&sql)
         .await
         .map_err(|e| api_err(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    Ok(())
+}
+
+/// Фирма от публична регистрация. Не сее сметкоплан: seed пише само company_id 1.
+pub(crate) async fn create_for_register(
+    db: &Db,
+    name: &str,
+    eik: &str,
+    vat: &str,
+    address: &str,
+    city: &str,
+    email: &str,
+) -> Result<i32, ApiError> {
+    let rows = db
+        .query(&format!("SELECT id FROM companies WHERE eik = {}", q(eik)))
+        .await
+        .map_err(|e| api_err(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    if !rows.is_empty() {
+        return Err(api_err(
+            StatusCode::CONFLICT,
+            "фирма с този ЕИК вече съществува",
+        ));
+    }
+    let mut c = blank();
+    c.name = name.to_string();
+    c.eik = eik.to_string();
+    c.vat_number = vat.to_string();
+    c.address = address.to_string();
+    c.city = city.to_string();
+    c.email = email.to_string();
+    c.id = db
+        .next_id("companies")
+        .await
+        .map_err(|e| api_err(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    c.created_at = db::now_stamp();
+    insert_company(db, &c).await?;
+    Ok(c.id)
+}
+
+pub async fn create(
+    State(st): State<AppState>,
+    headers: HeaderMap,
+    Json(body): Json<Value>,
+) -> Result<(StatusCode, Json<Value>), ApiError> {
+    auth::subject(&st.jwt_secret, &headers)?;
+    let mut c = blank();
+    apply_body(&mut c, &body)?;
+    if c.name.trim().is_empty() {
+        return Err(api_err(StatusCode::UNPROCESSABLE_ENTITY, "name е задължително"));
+    }
+    if c.eik.trim().is_empty() {
+        return Err(api_err(StatusCode::UNPROCESSABLE_ENTITY, "eik е задължителен"));
+    }
+    c.id = st.db.next_id( "companies")
+        .await
+        .map_err(|e| api_err(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    c.created_at = db::now_stamp();
+    insert_company(&st.db, &c).await?;
     let mut o = to_json(&c);
     if let Some(map) = o.as_object_mut() {
         map.insert("saft_accounts_seeded".into(), json!(0));
@@ -399,7 +440,7 @@ pub async fn delete(
     Ok(StatusCode::NO_CONTENT)
 }
 
-fn active_key(sub: &str) -> String {
+pub(crate) fn active_key(sub: &str) -> String {
     format!("активна_фирма:{sub}")
 }
 

@@ -100,7 +100,11 @@ pub async fn me(State(st): State<AppState>, headers: HeaderMap) -> Result<Json<V
     let Some(user) = identity::by_login(&st.db, &sub).await? else {
         return Ok(Json(json!({ "sub": sub, "permissions": [] })));
     };
-    let perms: Vec<&str> = if user.is_super_admin == 1 { vec!["*"] } else { vec![] };
+    let perms = if user.is_super_admin == 1 {
+        vec![serde_json::json!("*")]
+    } else {
+        crate::access::role_permissions(&st.db, user.role_id).await?
+    };
     Ok(Json(json!({
         "sub": user.username,
         "id": user.id,

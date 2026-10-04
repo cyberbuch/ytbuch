@@ -70,7 +70,7 @@ pub async fn update(
     Ok(listed(items_json(&map)))
 }
 
-async fn upsert(db: &Db, key: &str, value: &str) -> Result<(), ApiError> {
+pub(crate) async fn upsert(db: &Db, key: &str, value: &str) -> Result<(), ApiError> {
     let rows = db
         .query(&format!(
             "SELECT id FROM settings WHERE setting_key = {}",

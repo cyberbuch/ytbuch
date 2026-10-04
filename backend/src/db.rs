@@ -294,6 +294,13 @@ pub async fn migrate(db: &Client) -> DbResult<()> {
             code_hash VARCHAR,
             used INTEGER
         );
+        CREATE TABLE IF NOT EXISTS password_reset_tokens (
+            id INTEGER PRIMARY KEY,
+            user_id INTEGER,
+            token_hash VARCHAR,
+            expires_at INTEGER,
+            used INTEGER
+        );
         CREATE TABLE IF NOT EXISTS accounting_periods (
             id INTEGER PRIMARY KEY,
             year INTEGER,
@@ -317,6 +324,7 @@ pub async fn migrate(db: &Client) -> DbResult<()> {
     )
     .await?;
     exec(db, crate::schema5::SQL).await?;
+    exec(db, crate::schema_late::SQL).await?;
     exec(db, crate::fsform::SQL).await?;
     let n = query(db, "SELECT id FROM schema_migrations WHERE id = 1").await?;
     if n.is_empty() {

@@ -20,6 +20,7 @@
 | `users` | email, име, хеш, роля, активен, super admin, TOTP флаг, `created_at`. Имейлът се сменя отделно от името за вход |
 | `user_login` | стабилно `username` и тайните на 2FA. Отделна таблица, защото Octo тук няма `ALTER TABLE` |
 | `user_recovery_codes` | хеш на резервен код и флаг `used` |
+| `password_reset_tokens` | хеш на токен за нова парола, `expires_at` в unix секунди, флаг `used` |
 | `settings` | `setting_key` / `value`. Активната фирма е `активна_фирма:<sub>`. SMTP, S3 и `app.*` са същите редове |
 | `companies` | фирмата, ДДС, адрес, НАП, IBAN, управител, счетоводител, софтуер |
 | `company_locations` | обекти |

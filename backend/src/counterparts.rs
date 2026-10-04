@@ -379,6 +379,39 @@ pub async fn counterpart_update(
     Ok(Json(cp_json(&cp_load(&st, id).await?)))
 }
 
+pub(crate) async fn create_mapped(
+    st: &AppState,
+    company_id: i32,
+    obj: &serde_json::Map<String, Value>,
+) -> Result<Value, ApiError> {
+    let mut c = Counterpart {
+        id: 0,
+        company_id,
+        name: String::new(),
+        counterpart_type: "both".into(),
+        eik: String::new(),
+        vat_number: String::new(),
+        address: String::new(),
+        city: String::new(),
+        post_code: String::new(),
+        country: "BG".into(),
+        contact_person: String::new(),
+        vies_address: String::new(),
+        street_name: String::new(),
+        building_number: String::new(),
+        address_building: String::new(),
+        additional_address_detail: String::new(),
+        address_type: String::new(),
+        region: String::new(),
+        email: String::new(),
+        phone: String::new(),
+    };
+    apply_cp(&mut c, obj, true)?;
+    c.id = st.db.next_id("counterparts").await.map_err(db_err)?;
+    cp_save(st, &c, true).await?;
+    Ok(cp_json(&cp_load(st, c.id).await?))
+}
+
 pub async fn counterpart_delete(
     State(st): State<AppState>,
     headers: HeaderMap,

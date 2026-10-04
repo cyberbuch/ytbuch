@@ -1,8 +1,11 @@
 //! ytbuch API. Първа фаза: вход, фирми, активна фирма, празно табло.
 
+mod access;
+mod addr;
 mod asset_ops;
 mod assets;
 mod auth;
+mod auth_flow;
 mod bank_csv;
 mod bank_tx;
 mod banks;
@@ -14,6 +17,7 @@ mod dividends;
 mod dump;
 mod form;
 mod fsform;
+mod httpx;
 mod identity;
 mod invoice_money;
 mod invoice_post;
@@ -29,6 +33,7 @@ mod mail;
 mod master;
 mod opening;
 mod periods;
+mod pnmap;
 mod posting;
 mod print_load;
 mod print_sheet;
@@ -45,14 +50,28 @@ mod reports_nom;
 mod reports_pdf;
 mod reports_sheet;
 mod reports_trial;
+mod rates;
 mod s3store;
 mod saft;
+mod saft_export;
+mod saft_gl;
+mod saft_load;
+mod saft_mode;
+mod saft_src;
+mod saft_xml;
+mod scan;
 mod schema5;
+mod schema_late;
 mod session;
+mod smap;
+mod smap_def;
 mod settings;
 mod stock;
 mod totp;
+mod ubl_in;
+mod ubl_xml;
 mod vat;
+mod vies;
 mod vat_ex;
 mod vat_files;
 mod vat_fmt;
@@ -123,7 +142,10 @@ async fn main() {
         .route("/readyz", get(ready))
         .route("/v1/auth/token", post(session::token))
         .route("/v1/auth/mfa", post(session::mfa))
-        .route("/v1/auth/registration-status", get(registration_status))
+        .route("/v1/auth/registration-status", get(auth_flow::registration_status))
+        .route("/v1/auth/register", post(auth_flow::register))
+        .route("/v1/auth/forgot-password", post(auth_flow::forgot_password))
+        .route("/v1/auth/reset-password", post(auth_flow::reset_password))
         .route("/v1/me", get(session::me).patch(profile::update_name))
         .route("/v1/me/password", post(profile::change_password))
         .route("/v1/me/email", post(profile::change_email))
@@ -152,6 +174,7 @@ async fn main() {
         )
         .route("/v1/accounts/seed-saft", post(saft::seed_saft))
         .route("/v1/saft/nomenclatures", get(saft::nomenclatures))
+        .route("/v1/saft/export", get(saft_export::export))
         .route("/v1/units", get(saft::units))
         .route(
             "/v1/counterparts",
@@ -310,6 +333,31 @@ async fn main() {
         .route("/v1/fs/formulas/defaults", post(fsform::defaults))
         .route("/v1/fs/formulas/validate", post(fsform::validate))
         .route("/v1/fs/formulas/clear", post(fsform::clear))
+        .route("/v1/users", get(access::users_index).post(access::users_create))
+        .route(
+            "/v1/users/{id}",
+            patch(access::users_update).delete(access::users_delete),
+        )
+        .route("/v1/roles", get(access::roles_index).post(access::roles_create))
+        .route(
+            "/v1/roles/{id}",
+            patch(access::roles_update).delete(access::roles_delete),
+        )
+        .route("/v1/exchange-rates", get(rates::index))
+        .route("/v1/exchange-rates/rate", get(rates::rate))
+        .route("/v1/exchange-rates/import", post(rates::import))
+        .route("/v1/counterparts/vies-lookup", get(vies::lookup))
+        .route("/v1/counterparts/vies", post(vies::create))
+        .route("/v1/addresses/parse", post(addr::parse))
+        .route("/v1/saft/movement-mappings", get(smap::index).post(smap::create))
+        .route("/v1/saft/movement-mappings/defaults", post(smap::defaults))
+        .route(
+            "/v1/saft/movement-mappings/{id}",
+            patch(smap::update).delete(smap::delete),
+        )
+        .route("/v1/scans/extract", post(scan::extract))
+        .route("/v1/scans/ubl", post(ubl_in::import))
+        .route("/v1/product-name-mappings", get(pnmap::index).post(pnmap::save))
         .fallback(fallback)
         .with_state(state);
 
@@ -345,6 +393,4 @@ async fn ready(State(st): State<AppState>) -> Result<Json<Value>, ApiError> {
     Ok(Json(json!({ "status": "ok", "database": "up" })))
 }
 
-async fn registration_status() -> Json<Value> {
-    Json(json!({ "registration_enabled": 0 }))
-}
+
