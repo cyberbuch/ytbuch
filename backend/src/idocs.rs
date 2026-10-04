@@ -1,5 +1,5 @@
 //! Вътрешни протоколи. Потвърждението мести артикули и ДМА между обекти.
-//! PDF печатът остава за фаза 6. Обектите нямат колона is_active.
+//! Обектите нямат колона is_active.
 
 use axum::extract::{Path, State};
 use axum::http::{HeaderMap, StatusCode};
@@ -347,7 +347,7 @@ async fn next_of(st: &AppState, company: i32) -> Result<String, ApiError> {
     Ok(format!("{:010}", max + 1))
 }
 
-async fn load(st: &AppState, id: i32, company: i32) -> Result<Value, ApiError> {
+pub(crate) async fn load(st: &AppState, id: i32, company: i32) -> Result<Value, ApiError> {
     need(id)?;
     let rows = invoice_read::qry(&st.db, &format!("{DOC_SEL} WHERE id = {id}")).await?;
     let Some(row) = rows.first() else {

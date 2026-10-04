@@ -13,11 +13,15 @@ mod dec;
 mod dividends;
 mod dump;
 mod form;
+mod fsform;
 mod identity;
 mod invoice_money;
 mod invoice_post;
+mod idoc_print;
 mod idocs;
+mod invoice_print;
 mod invoice_read;
+mod invoice_ubl;
 mod invoices;
 mod lists;
 mod mfg;
@@ -26,9 +30,21 @@ mod master;
 mod opening;
 mod periods;
 mod posting;
+mod print_load;
+mod print_sheet;
+mod print_words;
 mod profile;
 mod recipes;
 mod related;
+mod reports;
+mod reports_book;
+mod reports_corr;
+mod reports_data;
+mod reports_fs;
+mod reports_nom;
+mod reports_pdf;
+mod reports_sheet;
+mod reports_trial;
 mod s3store;
 mod saft;
 mod schema5;
@@ -207,6 +223,8 @@ async fn main() {
                 .delete(invoices::delete),
         )
         .route("/v1/invoices/{id}/post", post(invoice_post::post))
+        .route("/v1/invoices/{id}/print", get(invoice_print::print))
+        .route("/v1/invoices/{id}/ubl", get(invoice_ubl::export))
         .route("/v1/journal", get(lists::journal))
         .route("/v1/journal/{id}", get(lists::journal_show))
         .route("/v1/accounting-periods", get(periods::index))
@@ -264,6 +282,7 @@ async fn main() {
             get(idocs::show).patch(idocs::update).delete(idocs::delete),
         )
         .route("/v1/internal-docs/{id}/confirm", post(idocs::confirm))
+        .route("/v1/internal-docs/{id}/print", get(idoc_print::print))
         .route("/v1/recipes", get(recipes::index).post(recipes::create))
         .route(
             "/v1/recipes/{id}",
@@ -284,6 +303,13 @@ async fn main() {
             get(dividends::show).patch(dividends::update).delete(dividends::delete),
         )
         .route("/v1/dividends/{id}/pay", post(dividends::pay))
+        .route("/v1/reports", get(reports::index))
+        .route("/v1/reports/export", get(reports::export))
+        .route("/v1/fs/lines", get(fsform::lines))
+        .route("/v1/fs/formulas", get(fsform::index).put(fsform::put))
+        .route("/v1/fs/formulas/defaults", post(fsform::defaults))
+        .route("/v1/fs/formulas/validate", post(fsform::validate))
+        .route("/v1/fs/formulas/clear", post(fsform::clear))
         .fallback(fallback)
         .with_state(state);
 

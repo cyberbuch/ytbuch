@@ -317,6 +317,7 @@ pub async fn migrate(db: &Client) -> DbResult<()> {
     )
     .await?;
     exec(db, crate::schema5::SQL).await?;
+    exec(db, crate::fsform::SQL).await?;
     let n = query(db, "SELECT id FROM schema_migrations WHERE id = 1").await?;
     if n.is_empty() {
         exec(

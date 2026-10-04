@@ -41,6 +41,7 @@ const TABLES: &[(&str, &str)] = &[
     ("dividends", "id:i,company_id:i,distribution_id:i,beneficial_owner_id:i,owner_name,owner_egn,ownership_percentage,gross_amount,tax_rate,tax_amount,net_amount,decision_date,payment_date,is_paid:i,notes"),
     ("user_login", "id:i,username,totp_secret_b32,totp_pending_b32"),
     ("user_recovery_codes", "id:i,user_id:i,code_hash,used:i"),
+    ("fs_line_formulas", "id:i,company_id:i,statement,line_code,formula"),
 ];
 
 fn columns(spec: &str) -> Vec<(&str, bool)> {

@@ -54,6 +54,30 @@ fn field(line: &str, idx: usize) -> &str {
     line.split('|').nth(idx).unwrap_or("")
 }
 
+pub fn print_label(code: &str) -> String {
+    let Some(line) = find(code) else {
+        return code.to_string();
+    };
+    let name = field(line, 1);
+    let legal = field(line, 3);
+    if name.is_empty() {
+        return code.to_string();
+    }
+    if legal.is_empty() { name.to_string() } else { format!("{name} — {legal}") }
+}
+
+pub fn ubl_reason(code: &str) -> &'static str {
+    find(code).map(|line| field(line, 6)).unwrap_or("")
+}
+
+pub fn legal_en(code: &str) -> String {
+    let Some(line) = find(code) else {
+        return String::new();
+    };
+    let en = field(line, 4);
+    if en.is_empty() { field(line, 3).to_string() } else { en.to_string() }
+}
+
 /// Празно или непознато основание е `Z`, както в bagabuch.
 pub fn category(code: &str) -> &'static str {
     let Some(line) = find(code) else {
