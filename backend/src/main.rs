@@ -112,6 +112,11 @@ async fn main() {
     let db_url = env::var("YTBUCH_DATABASE_URL").unwrap_or_else(|_| {
         "host=127.0.0.1 port=1337 user=ydb password=ydbrocks dbname=ydb sslmode=disable".into()
     });
+    let db_pool_size = env::var("YTBUCH_DATABASE_POOL_SIZE")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .filter(|size| *size > 0)
+        .unwrap_or(8);
     let jwt_secret = env::var("YTBUCH_JWT_SECRET")
         .unwrap_or_else(|_| "ytbuch-local-jwt-secret-change-me".into());
     let port: u16 = env::var("YTBUCH_PORT")
@@ -119,16 +124,19 @@ async fn main() {
         .and_then(|s| s.parse().ok())
         .unwrap_or(8092);
 
-    let client = tokio::time::timeout(std::time::Duration::from_secs(8), db::connect(&db_url))
-        .await
-        .unwrap_or_else(|_| panic!("octo: timeout"))
-        .unwrap_or_else(|e| panic!("octo: {e}"));
-    tokio::time::timeout(std::time::Duration::from_secs(20), db::migrate(&client))
+    let db = tokio::time::timeout(
+        std::time::Duration::from_secs(8),
+        Db::connect(&db_url, db_pool_size),
+    )
+    .await
+    .unwrap_or_else(|_| panic!("octo: timeout"))
+    .unwrap_or_else(|e| panic!("octo: {e}"));
+    tokio::time::timeout(std::time::Duration::from_secs(20), db.migrate())
         .await
         .unwrap_or_else(|_| panic!("migrate: timeout"))
         .unwrap_or_else(|e| panic!("migrate: {e}"));
 
-    let db = Arc::new(Db::new(client));
+    let db = Arc::new(db);
     saft::ensure_chart(&db)
         .await
         .unwrap_or_else(|e| panic!("saft chart: {e}"));

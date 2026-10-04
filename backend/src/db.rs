@@ -1,37 +1,53 @@
-//! Връзка към Octo и схемата на първата фаза.
+//! Връзки към Octo и схемата на първата фаза.
 //! Octo няма CREATE INDEX и не записва вътре в транзакция.
-//! Разширеният протокол (Parse/Bind) забива при INSERT, затова заявките са simple query.
+//! Заявките са simple query за съвместимост с използваната версия на Octo.
+
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use tokio::sync::Mutex;
 use tokio_postgres::{Client, NoTls, SimpleQueryMessage};
 
 pub type DbResult<T> = Result<T, tokio_postgres::Error>;
 
-/// Една връзка към Octo. Заявките се пускат една по една:
-/// паралелен simple query забива протокола.
 pub struct Db {
-    inner: Mutex<Client>,
+    clients: Vec<Mutex<Client>>,
+    next_client: AtomicUsize,
 }
 
 impl Db {
-    pub fn new(client: Client) -> Self {
-        Self {
-            inner: Mutex::new(client),
+    pub async fn connect(url: &str, pool_size: usize) -> DbResult<Self> {
+        let mut clients = Vec::with_capacity(pool_size);
+        for _ in 0..pool_size {
+            clients.push(Mutex::new(connect(url).await?));
         }
+        Ok(Self {
+            clients,
+            next_client: AtomicUsize::new(0),
+        })
+    }
+
+    fn client(&self) -> &Mutex<Client> {
+        let index = self.next_client.fetch_add(1, Ordering::Relaxed) % self.clients.len();
+        &self.clients[index]
+    }
+
+    pub async fn migrate(&self) -> DbResult<()> {
+        let client = self.clients[0].lock().await;
+        migrate(&client).await
     }
 
     pub async fn query(&self, sql: &str) -> DbResult<Vec<Row>> {
-        let client = self.inner.lock().await;
+        let client = self.client().lock().await;
         query(&client, sql).await
     }
 
     pub async fn exec(&self, sql: &str) -> DbResult<u64> {
-        let client = self.inner.lock().await;
+        let client = self.client().lock().await;
         exec(&client, sql).await
     }
 
     pub async fn next_id(&self, table: &str) -> DbResult<i32> {
-        let client = self.inner.lock().await;
+        let client = self.client().lock().await;
         next_id(&client, table).await
     }
 }
