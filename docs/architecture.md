@@ -1,32 +1,34 @@
 # Архитектура
 
-ytbuch е в `app-product/ytbuch` вътре в baga монорепото. bagabuch и 7x7office
-не се пипат и портовете им остават техни.
+ytbuch е отделен проект. bagabuch и 7x7office не се пипат и портовете им
+остават техни.
 
-| Слой | Къде | Адрес |
-|------|------|--------|
-| YottaDB + Octo | контейнер `ytbuch-yottadb` | SQL `127.0.0.1:1337`, GUI http://127.0.0.1:9080 |
-| API | `backend/`, бинари `target/debug/ytbuch` | http://127.0.0.1:8092 |
-| UI | `frontend/`, `npm run dev` | http://127.0.0.1:3020 |
+| Слой | Контейнер | Адрес |
+|------|-----------|-------|
+| YottaDB + Octo | `ytbuch-yottadb` | SQL `127.0.0.1:1337`, GUI http://127.0.0.1:9080 |
+| API | `ytbuch-backend` | http://127.0.0.1:8092 |
+| UI | `ytbuch-frontend` | http://127.0.0.1:3020 |
 
 Браузърът говори само с `:3020`. Next препраща `/v1`, `/health` и `/ready`
-към `YTBUCH_API_PROXY` (по подразбиране `http://127.0.0.1:8092`).
+към `backend:8092` в Compose мрежата. При локален `npm run dev`
+`YTBUCH_API_PROXY` по подразбиране е `http://127.0.0.1:8092`.
 
 Next.js пуска JS и HMR само ако адресът в браузъра е в `allowedDevOrigins`:
 `127.0.0.1`, `localhost`, `192.168.1.145`, `192.168.1.146`. Нов адрес в
 мрежата се добавя там, иначе страницата изглежда празна.
 
-## Контейнер
+## Контейнери
 
 Compose: `deploy/docker-compose.yml`, проект `ytbuch`.
 
-- Образ `download.yottadb.com/yottadb/yottadb-debian:latest`
-- YottaDB r2.06, Octo 1.1.0
-- Потребител `ydb`, парола `ydbrocks`, база `ydb`
-- Volume `ytbuch_ydb-data` → `/data`
-- `restart: unless-stopped`, `stdin_open` и `tty`
+- `ytbuch-yottadb`: официалният YottaDB образ, YottaDB r2.06 и Octo 1.1.0.
+- `ytbuch-backend`: release build на Rust API-то, свързан към `yottadb:1337`.
+- `ytbuch-frontend`: standalone production build на Next.js, свързан към `backend:8092`.
+- Потребителят на Octo е `ydb`, паролата е `ydbrocks`, базата е `ydb`.
+- Volume `ytbuch_ydb-data` пази `/data` независимо от контейнерите.
+- Всички услуги са с `restart: unless-stopped` и healthcheck.
 
-Логът на `docker logs` за контейнера е празен. SQL сървърът пише своя лог
+Логът на `docker logs` за YottaDB контейнера е празен. SQL сървърът пише своя лог
 под `/data/logs/` във volume-то.
 
 Healthcheck в compose отваря SQL порта с празен ред. Octo записва невалидна

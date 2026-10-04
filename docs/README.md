@@ -19,9 +19,8 @@
 ## Стартиране
 
 ```bash
-docker compose -f app-product/ytbuch/deploy/docker-compose.yml up -d
-cd app-product/ytbuch/backend && cargo run
-cd app-product/ytbuch/frontend && npm install && npm run dev
+docker compose -f deploy/docker-compose.yml up -d --build
+docker compose -f deploy/docker-compose.yml ps
 ```
 
 Вход: **`superadmin` / `123+123`**.

@@ -1,14 +1,6 @@
-# YottaDB + Octo + GUI. Официален образ (YottaDB, Octo, GUI).
-# От корена на baga:
-#   docker compose -f app-product/ytbuch/deploy/docker-compose.yml up -d
-#
-# Octo (SQL): 127.0.0.1:1337
-#   потребител ydb, парола ydbrocks (така я създава образът)
-# GUI: http://127.0.0.1:9080
-# Данните са в volume ydb-data → /data в контейнера.
-# Портовете не се бъркат с bagabuch (3000/8080/6575/5050).
-# SMTP и S3 са в Rust API-то. Няма sidecar на :5050.
-# и 7x7office (3010/8085/6585/9980/6385).
+# Постоянен локален стек: YottaDB + Octo, Rust API и Next.js интерфейс.
+# От корена на ytbuch:
+#   docker compose -f deploy/docker-compose.yml up -d --build
 
 name: ytbuch
 
@@ -30,6 +22,52 @@ services:
       timeout: 3s
       retries: 30
       start_period: 180s
+
+  backend:
+    container_name: ytbuch-backend
+    build:
+      context: ../backend
+    restart: unless-stopped
+    environment:
+      YTBUCH_HOST: 0.0.0.0
+      YTBUCH_PORT: 8092
+      YTBUCH_DATABASE_URL: host=yottadb port=1337 user=ydb password=ydbrocks dbname=ydb sslmode=disable
+      YTBUCH_DATABASE_POOL_SIZE: 8
+      YTBUCH_JWT_SECRET: ${YTBUCH_JWT_SECRET:-ytbuch-local-jwt-secret-change-me}
+    ports:
+      - "127.0.0.1:8092:8092"
+    depends_on:
+      yottadb:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8092/ready"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+  frontend:
+    container_name: ytbuch-frontend
+    build:
+      context: ../frontend
+      args:
+        YTBUCH_API_PROXY: http://backend:8092
+    restart: unless-stopped
+    environment:
+      HOSTNAME: 0.0.0.0
+      PORT: 3020
+      NEXT_TELEMETRY_DISABLED: 1
+    ports:
+      - "127.0.0.1:3020:3020"
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3020/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
 
 volumes:
   ydb-data:

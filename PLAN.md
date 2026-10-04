@@ -88,9 +88,8 @@ API-то пази пътищата и JSON формата на bagabuch (`items`
 ## Пускане
 
 ```
-docker compose -f app-product/ytbuch/deploy/docker-compose.yml up -d
-cd app-product/ytbuch/backend && cargo run
-cd app-product/ytbuch/frontend && npm install && npm run dev
+docker compose -f deploy/docker-compose.yml up -d --build
+docker compose -f deploy/docker-compose.yml ps
 ```
 
 Вход както в bagabuch, докато няма друг потребител: `superadmin` / `123+123`.

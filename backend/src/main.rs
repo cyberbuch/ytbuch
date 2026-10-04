@@ -119,6 +119,7 @@ async fn main() {
         .unwrap_or(8);
     let jwt_secret = env::var("YTBUCH_JWT_SECRET")
         .unwrap_or_else(|_| "ytbuch-local-jwt-secret-change-me".into());
+    let host = env::var("YTBUCH_HOST").unwrap_or_else(|_| "127.0.0.1".into());
     let port: u16 = env::var("YTBUCH_PORT")
         .ok()
         .and_then(|s| s.parse().ok())
@@ -369,7 +370,7 @@ async fn main() {
         .fallback(fallback)
         .with_state(state);
 
-    let addr = format!("127.0.0.1:{port}");
+    let addr = format!("{host}:{port}");
     let listener = tokio::net::TcpListener::bind(&addr)
         .await
         .unwrap_or_else(|e| panic!("bind {addr}: {e}"));

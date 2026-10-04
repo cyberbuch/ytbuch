@@ -33,9 +33,9 @@
 Портовете `3000` и `3010` са на bagabuch и 7x7office. ytbuch не ги ползва.
 SQL и GUI слушат само на `127.0.0.1`.
 
-Образ: `download.yottadb.com/yottadb/yottadb-debian:latest`.
-Контейнер: `ytbuch-yottadb`. Данните са във volume `ytbuch_ydb-data` (`/data`).
-Потребител `ydb`, парола `ydbrocks`.
+Compose стартира `ytbuch-yottadb`, `ytbuch-backend` и `ytbuch-frontend` с
+`restart: unless-stopped`. Данните са във volume `ytbuch_ydb-data` (`/data`).
+Потребителят на Octo е `ydb`, паролата е `ydbrocks`.
 
 ## Какво работи сега
 
@@ -60,15 +60,15 @@ SQL и GUI слушат само на `127.0.0.1`.
 
 ## Стартиране
 
-От корена на baga:
+От корена на проекта:
 
 ```bash
-docker compose -f app-product/ytbuch/deploy/docker-compose.yml up -d
-cd app-product/ytbuch/backend && cargo run
-cd app-product/ytbuch/frontend && npm install && npm run dev
+docker compose -f deploy/docker-compose.yml up -d --build
+docker compose -f deploy/docker-compose.yml ps
 ```
 
-Отвори http://127.0.0.1:3020. Вход: **`superadmin` / `123+123`**.
+Трите контейнера се стартират автоматично след рестарт на Docker. Отвори
+http://127.0.0.1:3020. Вход: **`superadmin` / `123+123`**.
 
 При първи старт API-то създава таблиците, демо фирмата и липсващите сметки
 от каталога на НАП. Готовност: `GET /ready` връща `{"status":"ok","database":"up"}`.
@@ -77,6 +77,7 @@ cd app-product/ytbuch/frontend && npm install && npm run dev
 
 | Променлива | По подразбиране |
 |------------|-----------------|
+| `YTBUCH_HOST` | `127.0.0.1` (`0.0.0.0` в контейнера) |
 | `YTBUCH_PORT` | `8092` |
 | `YTBUCH_DATABASE_URL` | `host=127.0.0.1 port=1337 user=ydb password=ydbrocks dbname=ydb sslmode=disable` |
 | `YTBUCH_DATABASE_POOL_SIZE` | `8` |
@@ -85,6 +86,6 @@ cd app-product/ytbuch/frontend && npm install && npm run dev
 
 ## Изисквания
 
-- Docker, за контейнера с YottaDB и Octo
-- Rust (проектът е на edition 2021; локално е проверяван с 1.97)
-- Node ≥ 20 за Next.js
+- Docker с Compose за постоянния стек
+- Rust (edition 2021, проверен с 1.97) само за локална разработка без контейнер
+- Node ≥ 20 само за локална разработка без контейнер
