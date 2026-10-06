@@ -16,7 +16,7 @@ import { subscribeStorage, writeStorage } from "../lib/storage";
 
 export type Theme = "light" | "dark";
 
-const THEME_KEY = "***";
+const THEME_KEY = "bagabuch.theme";
 
 interface ThemeContextValue {
   theme: Theme;

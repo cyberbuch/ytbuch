@@ -4,7 +4,7 @@ import { readStorage, writeStorage } from "./storage";
 
 export const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "";
 
-export const TOKEN_KEY = "***";
+export const TOKEN_KEY = "bagabuch.token";
 
 export function getToken(): string | null {
   return readStorage(TOKEN_KEY);
