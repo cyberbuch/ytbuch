@@ -121,7 +121,10 @@ function UsersInner() {
     }
   };
 
-  const roleName = (id: number) => roles.find((r) => r.id === id)?.name ?? "";
+  const roleName = useCallback(
+    (id: number) => roles.find((r) => r.id === id)?.name ?? "",
+    [roles]
+  );
 
   const filtered = useMemo(() => {
     const s = q.trim().toLowerCase();
@@ -129,7 +132,7 @@ function UsersInner() {
     return rows.filter((u) =>
       `${u.email} ${u.name} ${roleName(u.role_id)}`.toLowerCase().includes(s)
     );
-  }, [rows, q, roles]);
+  }, [rows, q, roleName]);
 
   return (
     <div>

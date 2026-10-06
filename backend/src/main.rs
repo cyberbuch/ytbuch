@@ -126,7 +126,7 @@ async fn main() {
         .unwrap_or(8092);
 
     let db = tokio::time::timeout(
-        std::time::Duration::from_secs(8),
+        std::time::Duration::from_secs(90),
         Db::connect(&db_url, db_pool_size),
     )
     .await

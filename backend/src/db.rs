@@ -1,8 +1,10 @@
 //! Връзки към Octo и схемата на първата фаза.
 //! Octo няма CREATE INDEX и не записва вътре в транзакция.
 //! Заявките са simple query за съвместимост с използваната версия на Octo.
+//! Мъртва връзка се отваря наново; запис не се повтаря, за да не се дублира.
 
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::time::Duration;
 
 use tokio::sync::Mutex;
 use tokio_postgres::{Client, NoTls, SimpleQueryMessage};
@@ -10,45 +12,99 @@ use tokio_postgres::{Client, NoTls, SimpleQueryMessage};
 pub type DbResult<T> = Result<T, tokio_postgres::Error>;
 
 pub struct Db {
-    clients: Vec<Mutex<Client>>,
+    url: String,
+    clients: Vec<Mutex<Option<Client>>>,
     next_client: AtomicUsize,
 }
 
 impl Db {
     pub async fn connect(url: &str, pool_size: usize) -> DbResult<Self> {
         let mut clients = Vec::with_capacity(pool_size);
-        for _ in 0..pool_size {
-            clients.push(Mutex::new(connect(url).await?));
+        clients.push(Mutex::new(Some(dial(url).await?)));
+        for _ in 1..pool_size {
+            clients.push(Mutex::new(Some(connect(url).await?)));
         }
         Ok(Self {
+            url: url.to_string(),
             clients,
             next_client: AtomicUsize::new(0),
         })
     }
 
-    fn client(&self) -> &Mutex<Client> {
+    fn slot(&self) -> &Mutex<Option<Client>> {
         let index = self.next_client.fetch_add(1, Ordering::Relaxed) % self.clients.len();
         &self.clients[index]
     }
 
+    async fn ensure(slot: &mut Option<Client>, url: &str) -> DbResult<()> {
+        let dead = match slot {
+            Some(client) => client.is_closed(),
+            None => true,
+        };
+        if dead {
+            *slot = Some(connect(url).await?);
+        }
+        Ok(())
+    }
+
     pub async fn migrate(&self) -> DbResult<()> {
-        let client = self.clients[0].lock().await;
-        migrate(&client).await
+        let mut slot = self.clients[0].lock().await;
+        Self::ensure(&mut slot, &self.url).await?;
+        let client = slot.as_ref().expect("ensure sets the client");
+        match migrate(client).await {
+            Err(e) if client.is_closed() => Err(e),
+            other => other,
+        }
     }
 
     pub async fn query(&self, sql: &str) -> DbResult<Vec<Row>> {
-        let client = self.client().lock().await;
-        query(&client, sql).await
+        let mut slot = self.slot().lock().await;
+        for attempt in 0..2 {
+            Self::ensure(&mut slot, &self.url).await?;
+            let client = slot.as_ref().expect("ensure sets the client");
+            let result = query(client, sql).await;
+            let closed = client.is_closed();
+            match result {
+                Ok(rows) => return Ok(rows),
+                Err(e) if closed && attempt == 0 => {
+                    tracing::warn!("octo: reconnecting after closed connection");
+                    *slot = None;
+                }
+                Err(e) => return Err(e),
+            }
+        }
+        unreachable!("two query attempts")
     }
 
     pub async fn exec(&self, sql: &str) -> DbResult<u64> {
-        let client = self.client().lock().await;
-        exec(&client, sql).await
+        let mut slot = self.slot().lock().await;
+        Self::ensure(&mut slot, &self.url).await?;
+        let client = slot.as_ref().expect("ensure sets the client");
+        let result = exec(client, sql).await;
+        if result.is_err() && client.is_closed() {
+            // Записът не се повтаря, защото може вече да е минал в базата.
+            *slot = None;
+        }
+        result
     }
 
     pub async fn next_id(&self, table: &str) -> DbResult<i32> {
-        let client = self.client().lock().await;
-        next_id(&client, table).await
+        let mut slot = self.slot().lock().await;
+        for attempt in 0..2 {
+            Self::ensure(&mut slot, &self.url).await?;
+            let client = slot.as_ref().expect("ensure sets the client");
+            let result = next_id(client, table).await;
+            let closed = client.is_closed();
+            match result {
+                Ok(id) => return Ok(id),
+                Err(e) if closed && attempt == 0 => {
+                    tracing::warn!("octo: reconnecting after closed connection");
+                    *slot = None;
+                }
+                Err(e) => return Err(e),
+            }
+        }
+        unreachable!("two next_id attempts")
     }
 }
 
@@ -64,6 +120,22 @@ pub async fn connect(url: &str) -> DbResult<Client> {
         }
     });
     Ok(client)
+}
+
+/// Връзка с повторения, докато YottaDB се вдигне. За първата връзка на пула.
+async fn dial(url: &str) -> DbResult<Client> {
+    let mut last = None;
+    for _ in 0..20 {
+        match connect(url).await {
+            Ok(client) => return Ok(client),
+            Err(e) => {
+                tracing::warn!("octo: няма връзка, опитвам пак след 3s: {e}");
+                last = Some(e);
+                tokio::time::sleep(Duration::from_secs(3)).await;
+            }
+        }
+    }
+    Err(last.expect("at least one attempt"))
 }
 
 pub async fn migrate(db: &Client) -> DbResult<()> {

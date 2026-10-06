@@ -34,7 +34,10 @@ function Inner() {
     load();
   }, [load]);
 
-  const locName = (id: number) => locations.find((l) => l.id === id)?.name ?? String(id);
+  const locName = useCallback(
+    (id: number) => locations.find((l) => l.id === id)?.name ?? String(id),
+    [locations]
+  );
 
   const filtered = useMemo(() => {
     const s = q.trim().toLowerCase();
@@ -44,7 +47,7 @@ function Inner() {
         .toLowerCase()
         .includes(s)
     );
-  }, [rows, q, locations]);
+  }, [rows, q, locName]);
 
   return (
     <div>

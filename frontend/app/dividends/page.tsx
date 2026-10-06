@@ -142,7 +142,7 @@ function DividendsInner() {
     if (!Number.isFinite(total) || total <= 0 || totalPct <= 0) return [];
     return eligible.map((o, i) => {
       const pct = Number(String(o.ownership_percentage).replace(",", "."));
-      let gross =
+      const gross =
         i === eligible.length - 1
           ? 0
           : Math.round((total * pct) / totalPct * 100) / 100;

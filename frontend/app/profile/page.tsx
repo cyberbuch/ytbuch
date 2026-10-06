@@ -4,6 +4,7 @@
 // QR е картинка от API-то. Резервните кодове се свалят като текстов файл.
 
 import { FormEvent, Suspense, useCallback, useEffect, useState } from "react";
+import Image from "next/image";
 import { useSearchParams } from "next/navigation";
 import { RequireAuth } from "../../components/RequireAuth";
 import { useI18n } from "../../components/I18nProvider";
@@ -336,10 +337,11 @@ function ProfileInner() {
             <form onSubmit={confirmTotp}>
               <p className="muted">{t("security.scan")}</p>
               {qr && (
-                <img
+                <Image
                   alt={t("security.qr")}
                   width={220}
                   height={220}
+                  unoptimized
                   style={{ display: "block", maxWidth: "100%", height: "auto", background: "#fff", padding: 8 }}
                   src={`data:image/svg+xml;charset=utf-8,${encodeURIComponent(qr)}`}
                 />
