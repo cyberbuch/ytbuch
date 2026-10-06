@@ -68,7 +68,7 @@ fn blocks(doc: &print_load::Loaded, copy: bool) -> Vec<Block> {
     }
     out.push(Block::Table(parties(&recipient, &supplier)));
     out.push(Block::Table(lines(doc)));
-    out.push(Block::Table(totals(inv, currency)));
+    out.push(Block::Totals(totals(inv, currency)));
     if !company.iban.is_empty() {
         let mut bank = format!("IBAN: {}", company.iban);
         if !company.bic.is_empty() {

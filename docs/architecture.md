@@ -87,7 +87,7 @@ Next.js пуска JS и HMR само ако адресът в браузъра 
 | Фирма | `companies`, `related`, `lists`, `settings` | фирми, активна фирма, табло, обекти, собственици, серии, глобални настройки |
 | Номенклатура | `master`, `counterparts`, `saft` | сметки, стоки, контрагенти, каталог на НАП и seed |
 | Фактура | `invoices`, `invoice_read`, `invoice_money`, `invoice_post` | чернова, номер, суми, пост и отпост |
-| Печат и UBL | `print_load`, `print_words`, `print_sheet`, `invoice_print`, `invoice_ubl`, `ubl_xml`, `idoc_print` | PDF, DOCX, ODT и UBL 2.1. Печатът не пише в дневника |
+| Печат и UBL | `report`, `print_load`, `print_words`, `print_sheet`, `invoice_print`, `invoice_ubl`, `ubl_xml`, `idoc_print` | HTML5 към PDF, DOCX, ODT и UBL 2.1. Печатът не пише в дневника |
 | Дневник | `posting`, `lists` (четене) | общ запис за банка, ДМА и производство. Фактурата си пише сама |
 | Периоди | `periods`, `opening` | затваряне на месец и начални салда |
 | ДДС | `vat`, `vat_line`, `vat_files`, `vat_fmt`, `vat_ex` | дневници, клетки, файл за НАП, основания |
@@ -96,7 +96,7 @@ Next.js пуска JS и HMR само ако адресът в браузъра 
 | Склад | `stock`, `idocs` | партиди WAC/FIFO/LIFO и вътрешни протоколи |
 | Производство | `recipes`, `mfg` | рецепти и поръчки |
 | Дивиденти | `dividends` | разпределение към действителните собственици |
-| Справки | `reports`, `reports_data`, `reports_trial`, `reports_book`, `reports_corr`, `reports_fs`, `reports_nom`, `reports_pdf`, `reports_sheet`, `fsform`, `form` | книги, финансови отчети, формули, PDF/XLSX/ODS |
+| Справки | `reports`, `reports_data`, `reports_trial`, `reports_book`, `reports_corr`, `reports_fs`, `reports_nom`, `reports_sheet`, `fsform`, `form` | книги, финансови отчети, формули, PDF/XLSX/ODS |
 | SAF-T | `saft_export`, `saft_load`, `saft_gl`, `saft_src`, `saft_mode`, `saft_xml`, `smap`, `smap_def` | XML по BG_SAFT_Schema V1.0.1 и съпоставяне на движения |
 | Външни | `httpx`, `rates`, `vies`, `addr`, `scan`, `ubl_in`, `pnmap` | ЕЦБ, VIES, Mistral, UBL вход, имена на стоки |
 | Архив | `mail`, `s3store`, `dump` | SMTP, S3 и gzip на INSERT dump |
@@ -204,9 +204,11 @@ Next.js пуска JS и HMR само ако адресът в браузъра 
 ### Печат
 
 `print_load` чете фактурата. `print_words` смята сумата словом.
-`print_sheet` прави PDF (`reports_pdf`), DOCX и ODT. Протоколът минава
-през същия рендер. UBL 2.1 е отделен файл: кредитно `03`/`13`/`23` е
-`CreditNote`, проформата е фактура с код 325.
+`print_sheet` подава блоковете на пакета `report`: той сглобява HTML5 и
+го превръща в PDF (`ironpress`) и DOCX/ODT (`ferrodoc`). Шрифтът DejaVu
+е вграден в бинаря, затова няма зависимости от системата. Протоколът
+минава през същия рендер. UBL 2.1 е отделен файл: кредитно `03`/`13`/`23`
+е `CreditNote`, проформата е фактура с код 325.
 
 ## Пари и идентификатори
 

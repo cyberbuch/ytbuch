@@ -67,6 +67,7 @@ function ReportsInner() {
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
+  const [bgNums, setBgNums] = useState(true);
 
   useEffect(() => {
     api
@@ -142,7 +143,7 @@ function ReportsInner() {
       if (name) fname = `${fname}-${name}`;
       if (eik) fname = `${fname}-${eik}`;
       await downloadFile(
-        `/v1/reports/export?${qs(kind, from, to, account, cpid)}&format=${fmt}`,
+        `/v1/reports/export?${qs(kind, from, to, account, cpid)}&format=${fmt}&bg=${bgNums ? "1" : "0"}`,
         `${fname}-${from}-${to}.${fmt}`
       );
     } catch (e) {
@@ -237,6 +238,14 @@ function ReportsInner() {
               {fmt.toUpperCase()}
             </button>
           ))}
+          <label className="muted" style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <input
+              type="checkbox"
+              checked={bgNums}
+              onChange={(e) => setBgNums(e.target.checked)}
+            />
+            {t("reports.bg_numbers")}
+          </label>
         </div>
       )}
 

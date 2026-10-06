@@ -66,7 +66,7 @@ impl Db {
             let closed = client.is_closed();
             match result {
                 Ok(rows) => return Ok(rows),
-                Err(e) if closed && attempt == 0 => {
+                Err(_) if closed && attempt == 0 => {
                     tracing::warn!("octo: reconnecting after closed connection");
                     *slot = None;
                 }
@@ -97,7 +97,7 @@ impl Db {
             let closed = client.is_closed();
             match result {
                 Ok(id) => return Ok(id),
-                Err(e) if closed && attempt == 0 => {
+                Err(_) if closed && attempt == 0 => {
                     tracing::warn!("octo: reconnecting after closed connection");
                     *slot = None;
                 }

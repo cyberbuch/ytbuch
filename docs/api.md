@@ -311,7 +311,7 @@ QR е SVG картинка. Резервните кодове се показв�
 | Метод | Път | Бележка |
 |-------|-----|---------|
 | GET | `/v1/reports` | `kind`, `from`, `to`. По избор `account` и `counterpart_id` |
-| GET | `/v1/reports/export` | същите параметри и `format` `pdf`, `xlsx` или `ods` |
+| GET | `/v1/reports/export` | същите параметри и `format` `pdf`, `xlsx` или `ods`. `bg=1` дава български формат на числата (1 200,00); без него са в международен (1200.00) |
 
 `kind`: `trial_balance`, `general_ledger`, `correspondence_ledger`, `chronological`, `counterpart_trial`, `counterpart_chrono`, `balance_sheet`, `income_statement`, `cash_flow`, `equity`.
 Празен `kind` е оборотна. Непознат е `400` `непознат kind`.

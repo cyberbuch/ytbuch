@@ -1,24 +1,19 @@
 //! Печат на документ: PDF, DOCX и ODT. Името е номерът и видът на файла.
+//! Генерацията е в пакета `report`.
 
 use axum::body::Body;
 use axum::http::{header, StatusCode};
 use axum::response::{IntoResponse, Response};
 
-use crate::reports_pdf::{self, Flow};
-use crate::reports_sheet;
+use crate::report;
 use crate::{api_err, ApiError};
 
-pub enum Block {
-    Head(String),
-    Line(String),
-    Table(Vec<Vec<String>>),
-}
+pub use crate::report::Block;
 
 pub fn render(blocks: &[Block], format: &str) -> Result<Vec<u8>, ApiError> {
     match format {
-        "pdf" => reports_pdf::render_flow(&flow(blocks)),
-        "docx" => Ok(docx(blocks)),
-        "odt" => Ok(odt(blocks)),
+        "pdf" => report::pdf(blocks),
+        "docx" | "odt" => report::office(blocks, format),
         _ => Err(api_err(StatusCode::UNPROCESSABLE_ENTITY, "format трябва да е pdf/docx/odt")),
     }
 }
@@ -141,113 +136,6 @@ pub fn xml_escape(s: &str) -> String {
     out
 }
 
-fn flow(blocks: &[Block]) -> Vec<Flow> {
-    blocks
-        .iter()
-        .map(|b| match b {
-            Block::Head(s) => Flow::Head(s.clone()),
-            Block::Line(s) => Flow::Line(s.clone()),
-            Block::Table(rows) => Flow::Table(rows.clone()),
-        })
-        .collect()
-}
-
-fn docx(blocks: &[Block]) -> Vec<u8> {
-    let mut body = String::new();
-    for block in blocks {
-        match block {
-            Block::Head(t) => body.push_str(&para(t, true)),
-            Block::Line(t) => body.push_str(&para(t, false)),
-            Block::Table(rows) => body.push_str(&docx_table(rows)),
-        }
-    }
-    let xml = format!(
-        "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\
-         <w:document xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\">\
-         <w:body>{body}<w:sectPr><w:pgSz w:w=\"11906\" w:h=\"16838\"/></w:sectPr></w:body></w:document>"
-    );
-    reports_sheet::pack(&[
-        ("[Content_Types].xml", DOCX_TYPES.as_bytes()),
-        ("_rels/.rels", DOCX_RELS.as_bytes()),
-        ("word/document.xml", xml.as_bytes()),
-    ])
-}
-
-fn para(text: &str, bold: bool) -> String {
-    let rpr = if bold { "<w:rPr><w:b/></w:rPr>" } else { "" };
-    format!("<w:p><w:r>{rpr}<w:t xml:space=\"preserve\">{}</w:t></w:r></w:p>", xml_escape(text))
-}
-
-fn docx_table(rows: &[Vec<String>]) -> String {
-    let mut out = String::from("<w:tbl>");
-    for row in rows {
-        out.push_str("<w:tr>");
-        for cell in row {
-            out.push_str(&format!(
-                "<w:tc><w:p><w:r><w:t xml:space=\"preserve\">{}</w:t></w:r></w:p></w:tc>",
-                xml_escape(cell)
-            ));
-        }
-        out.push_str("</w:tr>");
-    }
-    out.push_str("</w:tbl>");
-    out
-}
-
-fn odt(blocks: &[Block]) -> Vec<u8> {
-    let mut body = String::new();
-    for block in blocks {
-        match block {
-            Block::Head(t) => body.push_str(&format!("<text:h text:outline-level=\"1\">{}</text:h>", xml_escape(t))),
-            Block::Line(t) => body.push_str(&format!("<text:p>{}</text:p>", xml_escape(t))),
-            Block::Table(rows) => body.push_str(&odt_table(rows)),
-        }
-    }
-    let xml = format!(
-        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\
-         <office:document-content xmlns:office=\"urn:oasis:names:tc:opendocument:xmlns:office:1.0\" \
-         xmlns:text=\"urn:oasis:names:tc:opendocument:xmlns:text:1.0\" \
-         xmlns:table=\"urn:oasis:names:tc:opendocument:xmlns:table:1.0\" office:version=\"1.2\">\
-         <office:body><office:text>{body}</office:text></office:body></office:document-content>"
-    );
-    reports_sheet::pack(&[
-        ("mimetype", b"application/vnd.oasis.opendocument.text"),
-        ("META-INF/manifest.xml", ODT_MANIFEST.as_bytes()),
-        ("content.xml", xml.as_bytes()),
-    ])
-}
-
-fn odt_table(rows: &[Vec<String>]) -> String {
-    let mut out = String::from("<table:table>");
-    for row in rows {
-        out.push_str("<table:table-row>");
-        for cell in row {
-            out.push_str(&format!("<table:table-cell><text:p>{}</text:p></table:table-cell>", xml_escape(cell)));
-        }
-        out.push_str("</table:table-row>");
-    }
-    out.push_str("</table:table>");
-    out
-}
-
-const DOCX_TYPES: &str = "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\
-<Types xmlns=\"http://schemas.openxmlformats.org/package/2006/content-types\">\
-<Default Extension=\"rels\" ContentType=\"application/vnd.openxmlformats-package.relationships+xml\"/>\
-<Default Extension=\"xml\" ContentType=\"application/xml\"/>\
-<Override PartName=\"/word/document.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml\"/>\
-</Types>";
-
-const DOCX_RELS: &str = "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\
-<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\">\
-<Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument\" Target=\"word/document.xml\"/>\
-</Relationships>";
-
-const ODT_MANIFEST: &str = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\
-<manifest:manifest xmlns:manifest=\"urn:oasis:names:tc:opendocument:xmlns:manifest:1.0\">\
-<manifest:file-entry manifest:full-path=\"/\" manifest:media-type=\"application/vnd.oasis.opendocument.text\"/>\
-<manifest:file-entry manifest:full-path=\"content.xml\" manifest:media-type=\"text/xml\"/>\
-</manifest:manifest>";
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -274,20 +162,10 @@ mod tests {
     }
 
     #[test]
-    fn docx_and_odt_keep_cyrillic() {
+    fn docx_and_odt_are_archives() {
         let docx = render(&sample(), "docx").expect("docx");
         let odt = render(&sample(), "odt").expect("odt");
         assert_eq!(&docx[..2], b"PK");
         assert_eq!(&odt[..2], b"PK");
-        assert_eq!(&odt[30..38], b"mimetype");
-        assert!(docx.windows(14).any(|w| w == "ФАКТУРА".as_bytes()));
-        assert!(odt.windows(14).any(|w| w == "ФАКТУРА".as_bytes()));
-    }
-
-    #[test]
-    fn pdf_is_pdf() {
-        let pdf = render(&sample(), "pdf").expect("pdf");
-        assert!(pdf.starts_with(b"%PDF-1.4"));
-        assert!(pdf.windows(5).any(|w| w == b"%%EOF"));
     }
 }

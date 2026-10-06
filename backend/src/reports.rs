@@ -23,6 +23,7 @@ pub struct Rq {
     account: Option<String>,
     counterpart_id: Option<String>,
     format: Option<String>,
+    bg: Option<String>,
 }
 
 pub async fn index(
@@ -44,13 +45,14 @@ pub async fn export(
         return Err(api_err(StatusCode::BAD_REQUEST, "format трябва да е pdf, xlsx или ods"));
     }
     let built = prepare(&st, &headers, &q).await?;
+    let bg = q.bg.as_deref() == Some("1");
     let (bytes, mime) = match format {
-        "pdf" => (crate::reports_pdf::render(&built.grid)?, "application/pdf"),
+        "pdf" => (crate::report::grid_pdf(&built.grid)?, "application/pdf"),
         "xlsx" => (
-            crate::reports_sheet::xlsx(&built.grid),
+            crate::reports_sheet::xlsx(&built.grid, bg),
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         ),
-        _ => (crate::reports_sheet::ods(&built.grid), "application/vnd.oasis.opendocument.spreadsheet"),
+        _ => (crate::reports_sheet::ods(&built.grid, bg), "application/vnd.oasis.opendocument.spreadsheet"),
     };
     let from = q.from.as_deref().unwrap_or("").trim();
     let to = q.to.as_deref().unwrap_or("").trim();
