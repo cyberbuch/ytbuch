@@ -455,15 +455,15 @@ async fn seed_demo(db: &Client) -> DbResult<()> {
         db,
         "companies",
         "id, name, eik, is_vat_registered, currency, country, vat_period, fiscal_year_start_month, inventory_valuation_method, created_at",
-        &[(1, "1, 'Бага ООД', '207123456', 1, 'EUR', 'BG', 'monthly', 1, 'WAC', '2026-10-01T00:00:00Z'")],
+        &[(1, "1, 'YT ООД', '207123456', 1, 'EUR', 'BG', 'monthly', 1, 'WAC', '2026-10-01T00:00:00Z'")],
     )
     .await?;
     exec(
         db,
-        "UPDATE companies SET name = 'Бага ООД', eik = '207123456', vat_number = 'BG207123456', \
+        "UPDATE companies SET name = 'YT ООД', eik = '207123456', vat_number = 'BG207123456', \
          is_vat_registered = 1, vat_period = 'monthly', currency = 'EUR', country = 'BG', \
          city = 'София', post_code = '1000', address = 'бул. Витоша 1', phone = '02 000 0000', \
-         email = 'office@baga.example', mol = 'Иван Петров', manager_name = 'Иван Петров', \
+         email = 'office@yt.example', mol = 'Иван Петров', manager_name = 'Иван Петров', \
          street_name = 'бул. Витоша', building_number = '1', region = 'София', \
          tax_accounting_basis = 'A', nap_office = 'ТД на НАП София', \
          iban = 'BG80BNBG96611020345678', bic = 'BNBGBGSD', \
@@ -511,7 +511,7 @@ async fn seed_demo(db: &Client) -> DbResult<()> {
         db,
         "ultimate_parents",
         "id, company_id, name_bg, uic, name_latin, country",
-        &[(1, "1, 1, 'Бага Холдинг ЕАД', '175000001', 'Baga Holding', 'BG'")],
+        &[(1, "1, 1, 'YT Холдинг ЕАД', '175000001', 'YT Holding', 'BG'")],
     )
     .await?;
     insert_missing(
