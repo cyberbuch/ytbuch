@@ -152,8 +152,13 @@ pub async fn ensure_chart(db: &db::Db) -> Result<(), tokio_postgres::Error> {
         return Ok(());
     }
     fill_chart(db).await?;
-    db.exec("INSERT INTO schema_migrations (id, name) VALUES (3, 'saft_accounts')")
+    let marked = db
+        .query("SELECT id FROM schema_migrations WHERE id = 3")
         .await?;
+    if marked.is_empty() {
+        db.exec("INSERT INTO schema_migrations (id, name) VALUES (3, 'saft_accounts')")
+            .await?;
+    }
     Ok(())
 }
 

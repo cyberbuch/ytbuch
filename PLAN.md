@@ -15,7 +15,8 @@
 
 ## Какво вече върви
 
-Текущото състояние е в [`docs/`](docs/README.md). Накратко:
+Текущото състояние е в [`docs/`](docs/README.md).
+Архитектурата на работещия код е в [`docs/architecture.md`](docs/architecture.md). Накратко:
 
 - Контейнер `ytbuch-yottadb` (`download.yottadb.com/yottadb/yottadb-debian`).
   Octo: `127.0.0.1:1337`, потребител `ydb`, парола `ydbrocks`.

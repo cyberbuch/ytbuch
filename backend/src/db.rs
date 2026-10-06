@@ -342,15 +342,35 @@ pub async fn migrate(db: &Client) -> DbResult<()> {
     exec(db, crate::schema5::SQL).await?;
     exec(db, crate::schema_late::SQL).await?;
     exec(db, crate::fsform::SQL).await?;
-    let n = query(db, "SELECT id FROM schema_migrations WHERE id = 1").await?;
-    if n.is_empty() {
-        exec(
-            db,
-            "INSERT INTO schema_migrations (id, name) VALUES (1, 'phase1_auth_companies')",
-        )
-        .await?;
-    }
+    insert_missing(
+        db,
+        "schema_migrations",
+        "id, name",
+        &[(1, "1, 'phase1_auth_companies'")],
+    )
+    .await?;
     seed_demo(db).await?;
+    Ok(())
+}
+
+/// Запис само за липсващ `id`. Повторен старт довършва прекъсната стъпка.
+/// Octo не записва вътре в транзакция, затова всяка миграция с данни е такава.
+async fn insert_missing(db: &Client, table: &str, columns: &str, rows: &[(i32, &str)]) -> DbResult<()> {
+    let mut values = Vec::new();
+    for (id, vals) in rows {
+        let found = query(db, &format!("SELECT id FROM {table} WHERE id = {id}")).await?;
+        if found.is_empty() {
+            values.push(format!("({vals})"));
+        }
+    }
+    if values.is_empty() {
+        return Ok(());
+    }
+    exec(
+        db,
+        &format!("INSERT INTO {table} ({columns}) VALUES {}", values.join(", ")),
+    )
+    .await?;
     Ok(())
 }
 
@@ -359,15 +379,13 @@ async fn seed_demo(db: &Client) -> DbResult<()> {
     if !n.is_empty() {
         return Ok(());
     }
-    let companies = query(db, "SELECT id FROM companies WHERE id = 1").await?;
-    if companies.is_empty() {
-        exec(
-            db,
-            "INSERT INTO companies (id, name, eik, is_vat_registered, currency, country, vat_period, fiscal_year_start_month, inventory_valuation_method, created_at) \
-             VALUES (1, 'Бага ООД', '207123456', 1, 'EUR', 'BG', 'monthly', 1, 'WAC', '2026-10-01T00:00:00Z')",
-        )
-        .await?;
-    }
+    insert_missing(
+        db,
+        "companies",
+        "id, name, eik, is_vat_registered, currency, country, vat_period, fiscal_year_start_month, inventory_valuation_method, created_at",
+        &[(1, "1, 'Бага ООД', '207123456', 1, 'EUR', 'BG', 'monthly', 1, 'WAC', '2026-10-01T00:00:00Z'")],
+    )
+    .await?;
     exec(
         db,
         "UPDATE companies SET name = 'Бага ООД', eik = '207123456', vat_number = 'BG207123456', \
@@ -400,98 +418,114 @@ async fn seed_demo(db: &Client) -> DbResult<()> {
         )
         .await?;
     }
-    exec(
+    insert_missing(
         db,
-        "INSERT INTO company_locations (id, company_id, name, location_type, street_name, building_number, city, post_code, region, country, is_main) \
-         VALUES (1, 1, 'Офис Витоша', 'OFFICE', 'бул. Витоша', '1', 'София', '1000', 'София', 'BG', 1)",
+        "company_locations",
+        "id, company_id, name, location_type, street_name, building_number, city, post_code, region, country, is_main",
+        &[
+            (1, "1, 1, 'Офис Витоша', 'OFFICE', 'бул. Витоша', '1', 'София', '1000', 'София', 'BG', 1"),
+            (2, "2, 1, 'Склад Младост', 'WAREHOUSE', 'ул. Пример', '12', 'София', '1784', 'София', 'BG', 0"),
+        ],
     )
     .await?;
-    exec(
+    insert_missing(
         db,
-        "INSERT INTO company_locations (id, company_id, name, location_type, street_name, building_number, city, post_code, region, country, is_main) \
-         VALUES (2, 1, 'Склад Младост', 'WAREHOUSE', 'ул. Пример', '12', 'София', '1784', 'София', 'BG', 0)",
+        "beneficial_owners",
+        "id, company_id, first_name_bg, last_name_bg, egn, first_name_latin, last_name_latin, country, ownership_percentage",
+        &[(1, "1, 1, 'Иван', 'Петров', '8001010000', 'Ivan', 'Petrov', 'BG', '100.00'")],
     )
     .await?;
-    exec(
+    insert_missing(
         db,
-        "INSERT INTO beneficial_owners (id, company_id, first_name_bg, last_name_bg, egn, first_name_latin, last_name_latin, country, ownership_percentage) \
-         VALUES (1, 1, 'Иван', 'Петров', '8001010000', 'Ivan', 'Petrov', 'BG', '100.00')",
+        "ultimate_parents",
+        "id, company_id, name_bg, uic, name_latin, country",
+        &[(1, "1, 1, 'Бага Холдинг ЕАД', '175000001', 'Baga Holding', 'BG'")],
     )
     .await?;
-    exec(
+    insert_missing(
         db,
-        "INSERT INTO ultimate_parents (id, company_id, name_bg, uic, name_latin, country) \
-         VALUES (1, 1, 'Бага Холдинг ЕАД', '175000001', 'Baga Holding', 'BG')",
+        "document_series",
+        "id, company_id, name, document_types, pad_width, start_number, next_number",
+        &[(1, "1, 1, 'Фактури', '01,02,03', 10, 1, '0000000003'")],
     )
     .await?;
-    exec(
+    insert_missing(
         db,
-        "INSERT INTO document_series (id, company_id, name, document_types, pad_width, start_number, next_number) \
-         VALUES (1, 1, 'Фактури', '01,02,03', 10, 1, '0000000003')",
+        "accounts",
+        "id, company_id, number, name, saft_account_type, analytic_type",
+        &[
+            (1, "1, 1, '302', 'Материали', 'Asset', 'none'"),
+            (2, "2, 1, '401', 'Доставчици', 'Liability', 'counterpart'"),
+            (3, "3, 1, '411', 'Клиенти', 'Asset', 'counterpart'"),
+            (4, "4, 1, '4531', 'Начислен ДДС', 'Liability', 'none'"),
+            (5, "5, 1, '501', 'Каса в лева', 'Asset', 'none'"),
+            (6, "6, 1, '601', 'Разходи за материали', 'Expense', 'none'"),
+            (7, "7, 1, '702', 'Приходи от продажби', 'Revenue', 'none'"),
+        ],
     )
     .await?;
-    exec(
+    insert_missing(
         db,
-        "INSERT INTO accounts (id, company_id, number, name, saft_account_type, analytic_type) VALUES \
-         (1, 1, '302', 'Материали', 'Asset', 'none'), \
-         (2, 1, '401', 'Доставчици', 'Liability', 'counterpart'), \
-         (3, 1, '411', 'Клиенти', 'Asset', 'counterpart'), \
-         (4, 1, '4531', 'Начислен ДДС', 'Liability', 'none'), \
-         (5, 1, '501', 'Каса в лева', 'Asset', 'none'), \
-         (6, 1, '601', 'Разходи за материали', 'Expense', 'none'), \
-         (7, 1, '702', 'Приходи от продажби', 'Revenue', 'none')",
+        "counterparts",
+        "id, company_id, name, counterpart_type, eik, vat_number, address, city, post_code, country, contact_person",
+        &[
+            (1, "1, 1, 'Клиент Демо ЕООД', 'customer', '111111111', 'BG111111111', 'ул. Клиент 2', 'Пловдив', '4000', 'BG', 'Мария Георгиева'"),
+            (2, "2, 1, 'Доставчик Демо ООД', 'supplier', '222222222', 'BG222222222', 'ул. Доставчик 3', 'Варна', '9000', 'BG', 'Георги Димитров'"),
+        ],
     )
     .await?;
-    exec(
+    insert_missing(
         db,
-        "INSERT INTO counterparts (id, company_id, name, counterpart_type, eik, vat_number, address, city, post_code, country, contact_person) VALUES \
-         (1, 1, 'Клиент Демо ЕООД', 'customer', '111111111', 'BG111111111', 'ул. Клиент 2', 'Пловдив', '4000', 'BG', 'Мария Георгиева'), \
-         (2, 1, 'Доставчик Демо ООД', 'supplier', '222222222', 'BG222222222', 'ул. Доставчик 3', 'Варна', '9000', 'BG', 'Георги Димитров')",
+        "products",
+        "id, company_id, name, code, description, unit, price, cost_price, vat_rate, is_service, is_inventory, inventory_account_id, revenue_account_id, stock_quantity, stock_value, is_active",
+        &[(1, "1, 1, 'Консултация', 'SRV-1', 'Счетоводна консултация', 'HUR', '100.00', '0.00', '20', 1, 0, 0, 7, '0', '0.00', 1")],
     )
     .await?;
-    exec(
+    insert_missing(
         db,
-        "INSERT INTO products (id, company_id, name, code, description, unit, price, cost_price, vat_rate, is_service, is_inventory, inventory_account_id, revenue_account_id, stock_quantity, stock_value, is_active) \
-         VALUES (1, 1, 'Консултация', 'SRV-1', 'Счетоводна консултация', 'HUR', '100.00', '0.00', '20', 1, 0, 0, 7, '0', '0.00', 1)",
+        "invoices",
+        "id, company_id, direction, document_type, number, issue_date, due_date, counterpart_id, counterpart_name, currency, net_amount, vat_amount, total_amount, status, payment_method, notes",
+        &[
+            (1, "1, 1, 'out', '01', '0000000001', '2026-10-01', '2026-10-15', 1, 'Клиент Демо ЕООД', 'EUR', '1000.00', '200.00', '1200.00', 'posted', 'bank', 'Демо продажба'"),
+            (2, "2, 1, 'in', '01', '0000000042', '2026-10-02', '2026-10-16', 2, 'Доставчик Демо ООД', 'EUR', '250.00', '50.00', '300.00', 'draft', 'bank', 'Демо покупка'"),
+        ],
     )
     .await?;
-    exec(
+    insert_missing(
         db,
-        "INSERT INTO invoices (id, company_id, direction, document_type, number, issue_date, due_date, counterpart_id, counterpart_name, currency, net_amount, vat_amount, total_amount, status, payment_method, notes) VALUES \
-         (1, 1, 'out', '01', '0000000001', '2026-10-01', '2026-10-15', 1, 'Клиент Демо ЕООД', 'EUR', '1000.00', '200.00', '1200.00', 'posted', 'bank', 'Демо продажба'), \
-         (2, 1, 'in', '01', '0000000042', '2026-10-02', '2026-10-16', 2, 'Доставчик Демо ООД', 'EUR', '250.00', '50.00', '300.00', 'draft', 'bank', 'Демо покупка')",
+        "invoice_lines",
+        "id, invoice_id, code, description, quantity, unit, unit_price, vat_rate, net_amount, vat_amount, total_amount",
+        &[
+            (1, "1, 1, 'SRV-1', 'Счетоводна консултация', '10', 'HUR', '100.00', '20', '1000.00', '200.00', '1200.00'"),
+            (2, "2, 2, 'MAT-1', 'Канцеларски материали', '1', 'C62', '250.00', '20', '250.00', '50.00', '300.00'"),
+        ],
     )
     .await?;
-    exec(
+    insert_missing(
         db,
-        "INSERT INTO invoice_lines (id, invoice_id, code, description, quantity, unit, unit_price, vat_rate, net_amount, vat_amount, total_amount) VALUES \
-         (1, 1, 'SRV-1', 'Счетоводна консултация', '10', 'HUR', '100.00', '20', '1000.00', '200.00', '1200.00'), \
-         (2, 2, 'MAT-1', 'Канцеларски материали', '1', 'C62', '250.00', '20', '250.00', '50.00', '300.00')",
+        "journal_entries",
+        "id, company_id, entry_date, document_type, document_id, document_number, description, vat_type, counterpart_id, counterpart_name, document_date, vat_period",
+        &[
+            (1, "1, 1, '2026-10-01', '01', 1, '0000000001', 'Продажба към Клиент Демо ЕООД', 'sales', 1, 'Клиент Демо ЕООД', '2026-10-01', '2026-10'"),
+            (2, "2, 1, '2026-10-02', '01', 2, '0000000042', 'Покупка от Доставчик Демо ООД', 'purchase', 2, 'Доставчик Демо ООД', '2026-10-02', '2026-10'"),
+        ],
     )
     .await?;
-    exec(
+    insert_missing(
         db,
-        "INSERT INTO journal_entries (id, company_id, entry_date, document_type, document_id, document_number, description, vat_type, counterpart_id, counterpart_name, document_date, vat_period) VALUES \
-         (1, 1, '2026-10-01', '01', 1, '0000000001', 'Продажба към Клиент Демо ЕООД', 'sales', 1, 'Клиент Демо ЕООД', '2026-10-01', '2026-10'), \
-         (2, 1, '2026-10-02', '01', 2, '0000000042', 'Покупка от Доставчик Демо ООД', 'purchase', 2, 'Доставчик Демо ООД', '2026-10-02', '2026-10')",
+        "journal_lines",
+        "id, entry_id, account_id, account_number, account_name, direction, amount, vat_amount",
+        &[
+            (1, "1, 1, 3, '411', 'Клиенти', 'debit', '1200.00', '0.00'"),
+            (2, "2, 1, 7, '702', 'Приходи от продажби', 'credit', '1000.00', '0.00'"),
+            (3, "3, 1, 4, '4531', 'Начислен ДДС', 'credit', '200.00', '200.00'"),
+            (4, "4, 2, 6, '601', 'Разходи за материали', 'debit', '250.00', '0.00'"),
+            (5, "5, 2, 4, '4531', 'Начислен ДДС', 'debit', '50.00', '50.00'"),
+            (6, "6, 2, 2, '401', 'Доставчици', 'credit', '300.00', '0.00'"),
+        ],
     )
     .await?;
-    exec(
-        db,
-        "INSERT INTO journal_lines (id, entry_id, account_id, account_number, account_name, direction, amount, vat_amount) VALUES \
-         (1, 1, 3, '411', 'Клиенти', 'debit', '1200.00', '0.00'), \
-         (2, 1, 7, '702', 'Приходи от продажби', 'credit', '1000.00', '0.00'), \
-         (3, 1, 4, '4531', 'Начислен ДДС', 'credit', '200.00', '200.00'), \
-         (4, 2, 6, '601', 'Разходи за материали', 'debit', '250.00', '0.00'), \
-         (5, 2, 4, '4531', 'Начислен ДДС', 'debit', '50.00', '50.00'), \
-         (6, 2, 2, '401', 'Доставчици', 'credit', '300.00', '0.00')",
-    )
-    .await?;
-    exec(
-        db,
-        "INSERT INTO schema_migrations (id, name) VALUES (2, 'demo_company')",
-    )
-    .await?;
+    insert_missing(db, "schema_migrations", "id, name", &[(2, "2, 'demo_company'")]).await?;
     Ok(())
 }
 

@@ -376,7 +376,7 @@ QR е SVG картинка. Резервните кодове се показв�
 |-------|-----|---------|
 | GET, POST | `/v1/users` | списък и създаване. Паролата е поне 8 знака |
 | PATCH, DELETE | `/v1/users/{id}` | частичен PATCH. Смяна на имейл иска нова парола |
-| GET, POST | `/v1/roles` | `permissions` е списък от низове |
+| GET, POST | `/v1/roles` | `permissions` е списък от низове. Маршрутите не го проверяват |
 | PATCH, DELETE | `/v1/roles/{id}` | |
 | GET | `/v1/exchange-rates` | `date`, `base`, `items`. Без дата е последният ден |
 | GET | `/v1/exchange-rates/rate` | `currency`, `date`. Липсващ ден е най-близкият по-ранен |

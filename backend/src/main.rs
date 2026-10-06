@@ -132,7 +132,7 @@ async fn main() {
     .await
     .unwrap_or_else(|_| panic!("octo: timeout"))
     .unwrap_or_else(|e| panic!("octo: {e}"));
-    tokio::time::timeout(std::time::Duration::from_secs(20), db.migrate())
+    tokio::time::timeout(std::time::Duration::from_secs(120), db.migrate())
         .await
         .unwrap_or_else(|_| panic!("migrate: timeout"))
         .unwrap_or_else(|e| panic!("migrate: {e}"));
