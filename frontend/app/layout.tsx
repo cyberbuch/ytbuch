@@ -7,7 +7,7 @@ import "./globals-pages.css";
 import { Providers } from "../components/Providers";
 
 export const metadata: Metadata = {
-  title: "БагаСчетоводство",
+  title: "YT Счетоводство",
   description: "Счетоводна програма",
 };
 

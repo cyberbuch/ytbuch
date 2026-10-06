@@ -1,7 +1,7 @@
 // i18n dictionary fragment. Merged in i18n.ts.
 
 export const enA = {
-  "app.name": "BagaAccounting",
+  "app.name": "YT Accounting",
   "common.save": "Save",
   "common.cancel": "Cancel",
   "common.create": "Create",

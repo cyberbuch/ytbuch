@@ -2,7 +2,7 @@
 
 export const bgA = {
   // общи
-  "app.name": "БагаСчетоводство",
+  "app.name": "YT Счетоводство",
   "common.save": "Запази",
   "common.cancel": "Отказ",
   "common.create": "Създай",
