@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
-import { api, downloadFile } from "../../../lib/api";
+import { api, downloadFile, printFile } from "../../../lib/api";
 import { Invoice, docTypePrefix, invoiceDownloadName } from "../../../lib/invoice";
 import { PrintableInvoice } from "../../../components/PrintableInvoice";
 import { RequireAuth } from "../../../components/RequireAuth";
@@ -101,7 +101,16 @@ function DetailInner() {
             />
             {t("invoices.copy")}
           </label>
-          <IconButton icon="print" title={t("invoices.print")} onClick={() => window.print()} />
+          <IconButton
+            icon="print"
+            title={t("invoices.print")}
+            disabled={!!busy}
+            onClick={() =>
+              run("print", () =>
+                printFile(`/v1/invoices/${inv.id}/print?format=pdf${isCopy ? "&copy=1" : ""}`)
+              )
+            }
+          />
           <button
             className="btn btn-sm"
             disabled={busy === "ubl"}

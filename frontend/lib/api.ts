@@ -132,6 +132,46 @@ export async function downloadFile(path: string, filename: string): Promise<void
   URL.revokeObjectURL(url);
 }
 
+// Принтира получения файл (PDF) през скрит iframe, за да е изходът
+// същият като експорта. Ако браузърът не дава, отваря файла в нов раздел.
+export async function printFile(path: string): Promise<void> {
+  const headers: Record<string, string> = {};
+  const token = getToken();
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+  const res = await fetch(`${API_BASE}${path}`, { headers, cache: "no-store" });
+  if (!res.ok) {
+    const text = await res.text();
+    let parsed: unknown = text;
+    try {
+      parsed = JSON.parse(text);
+    } catch {
+      parsed = text;
+    }
+    throw new ApiError(res.status, formatApiDetail(parsed, res.statusText || text));
+  }
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const frame = document.createElement("iframe");
+  frame.style.cssText = "position:fixed;right:0;bottom:0;width:0;height:0;border:0";
+  frame.src = url;
+  const loaded = new Promise<void>((resolve) => {
+    frame.onload = () => resolve();
+  });
+  document.body.appendChild(frame);
+  await loaded;
+  try {
+    frame.contentWindow?.focus();
+    frame.contentWindow?.print();
+    setTimeout(() => {
+      frame.remove();
+      URL.revokeObjectURL(url);
+    }, 60_000);
+  } catch {
+    frame.remove();
+    window.open(url, "_blank");
+  }
+}
+
 export type TokenResponse = {
   access_token?: string;
   mfa?: string;
