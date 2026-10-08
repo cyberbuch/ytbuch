@@ -246,7 +246,7 @@ export const enB = {
   "reports.col.prior": "Prior",
   "reports.need_counterpart": "Pick a counterpart.",
   "admin.title": "Global settings",
-  "admin.hint": "SMTP and S3 run as a Python sidecar (:5050). Backups are a boilaDB COPY dump, not a tar of the data files.",
+  "admin.hint": "SMTP and S3 run directly in the API (lettre and aws-sdk-s3), no separate Python process. The database is backed up the YottaDB way — MUPIP backup (online, journal switch) every 6 hours. S3 also gets a logical SQL dump for portable restore.",
   "admin.tab.app": "Application",
   "admin.tab.smtp": "SMTP",
   "admin.tab.s3": "S3 / Backups",

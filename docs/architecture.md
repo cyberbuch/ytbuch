@@ -99,7 +99,7 @@ Next.js пуска JS и HMR само ако адресът в браузъра 
 | Справки | `reports`, `reports_data`, `reports_trial`, `reports_book`, `reports_corr`, `reports_fs`, `reports_nom`, `reports_sheet`, `fsform`, `form` | книги, финансови отчети, формули, PDF/XLSX/ODS |
 | SAF-T | `saft_export`, `saft_load`, `saft_gl`, `saft_src`, `saft_mode`, `saft_xml`, `smap`, `smap_def` | XML по BG_SAFT_Schema V1.0.1 и съпоставяне на движения |
 | Външни | `httpx`, `rates`, `vies`, `addr`, `scan`, `ubl_in`, `pnmap` | ЕЦБ, VIES, Mistral, UBL вход, имена на стоки |
-| Архив | `mail`, `s3store`, `dump` | SMTP, S3 и gzip на INSERT dump |
+| Архив | `mail`, `s3store`, `dump` | SMTP, S3 и MUPIP backup + SQL dump |
 | Основа | `db`, `schema5`, `schema_late`, `dec`, `main` | пул, схема, суми, маршрути |
 
 `schema5.rs`, `schema_late.rs` и `fsform.rs` носят `CREATE TABLE` за
@@ -261,9 +261,14 @@ JWT е HS256, издател `ytbuch`, живот 604800 секунди (7 дн�
 низа локално. UBL входът връща чернова и не записва фактура.
 `product_name_mappings` пази име от документа към артикул.
 
-Бекъпът е gzip на логически INSERT dump (`dump.rs`, `flate2`). Името е
-`ytbuch_backup_ГГГГММДД_ЧЧММСС.sql.gz`. Списъкът на таблиците в dump-а е
-източникът за пълния набор в [data.md](data.md).
+Архивът на базата е по правилата на YottaDB: `deploy/ydb-backup.sh` пуска
+`mupip backup -database "*"` в контейнера `ytbuch-yottadb` на всеки 6 часа
+(`YDB_BACKUP_EVERY`), онлайн и с превключване на журналите след архива.
+Резултатът е `ydb_backup_ГГГГММДД_ЧЧММСС.tar.gz` в volume `ytbuch_ydb-backup`
+(последните 8). Бутонът за S3 качва последния MUPIP архив и логически SQL
+dump (`ytbuch_backup_ГГГГММДД_ЧЧММСС.sql.gz`, `dump.rs`, `flate2`) за
+преносимо възстановяване. Списъкът на таблиците в dump-а е източникът за
+пълния набор в [data.md](data.md).
 
 ## Интерфейс
 

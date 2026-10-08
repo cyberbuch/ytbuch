@@ -247,7 +247,7 @@ export const bgB = {
   "reports.col.prior": "Предходна",
   "reports.need_counterpart": "Изберете контрагент.",
   "admin.title": "Глобални настройки",
-  "admin.hint": "SMTP и S3 са Python sidecar (:5050). Архивът е dump през boilaDB COPY, не tar на файловете на базата.",
+  "admin.hint": "SMTP и S3 минават директно през API-то (lettre и aws-sdk-s3), без отделен Python процес. Базата се архивира по правилата на YottaDB — MUPIP backup (онлайн, с превключване на журналите) на всеки 6 часа. В S3 влиза и логически SQL dump за преносимо възстановяване.",
   "admin.tab.app": "Приложение",
   "admin.tab.smtp": "SMTP",
   "admin.tab.s3": "S3 / Архиви",

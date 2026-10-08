@@ -99,7 +99,7 @@ pub async fn s3_list(State(st): State<AppState>, headers: HeaderMap) -> Result<J
         for obj in page.contents() {
             let key = obj.key().unwrap_or("");
             let filename = key.strip_prefix(&cfg.prefix).unwrap_or(key);
-            if !filename.contains("ytbuch_backup") {
+            if !is_backup_name(filename) {
                 continue;
             }
             let size = obj.size().unwrap_or(0);
@@ -144,7 +144,7 @@ pub async fn s3_delete(
     if key.is_empty() {
         return Err(api_err(StatusCode::UNPROCESSABLE_ENTITY, "s3_key е задължителен"));
     }
-    if !key.contains("ytbuch_backup") {
+    if !is_backup_name(key) {
         return Err(api_err(StatusCode::BAD_REQUEST, "ключът не е архив на ytbuch"));
     }
     let cfg = settings::s3_cfg(&settings::load(&st.db).await?);
@@ -181,11 +181,49 @@ pub async fn s3_backup(State(st): State<AppState>, headers: HeaderMap) -> Result
         .send()
         .await
         .map_err(|e| api_err(StatusCode::BAD_REQUEST, explain(&e, &cfg.bucket)))?;
+    let mut message = format!("Бекъп създаден: {filename} ({tables} таблици)");
+    // Последният MUPIP архив на YottaDB от /backup също влиза в S3.
+    if let Some((name, data)) = newest_ydb_backup() {
+        let ydb_key = format!("{}{name}", cfg.prefix);
+        s3.put_object()
+            .bucket(cfg.bucket.as_str())
+            .key(ydb_key.as_str())
+            .body(ByteStream::from(data))
+            .content_type("application/gzip")
+            .send()
+            .await
+            .map_err(|e| api_err(StatusCode::BAD_REQUEST, explain(&e, &cfg.bucket)))?;
+        message.push_str(&format!(" + {name} (MUPIP)"));
+    } else {
+        message.push_str(" + няма MUPIP архив в /backup");
+    }
     Ok(Json(json!({
-        "message": format!("Бекъп създаден: {filename} ({tables} таблици)"),
+        "message": message,
         "filename": filename,
         "s3_key": key,
         "size": size,
         "tables": tables,
     })))
+}
+
+/// Последният архив от `mupip backup` (ydb_backup_*.tar.gz).
+fn newest_ydb_backup() -> Option<(String, Vec<u8>)> {
+    let dir = std::env::var("YTBUCH_YDB_BACKUP_DIR").unwrap_or_else(|_| "/ydb-backup".into());
+    let mut best: Option<(String, std::path::PathBuf)> = None;
+    for entry in std::fs::read_dir(dir).ok()? {
+        let path = entry.ok()?.path();
+        let name = path.file_name()?.to_string_lossy().to_string();
+        if name.starts_with("ydb_backup_") && name.ends_with(".tar.gz") {
+            if best.as_ref().map(|(n, _)| name > *n).unwrap_or(true) {
+                best = Some((name, path));
+            }
+        }
+    }
+    let (name, path) = best?;
+    let data = std::fs::read(path).ok()?;
+    Some((name, data))
+}
+
+fn is_backup_name(name: &str) -> bool {
+    name.contains("ytbuch_backup") || name.starts_with("ydb_backup_")
 }

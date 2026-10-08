@@ -11,11 +11,14 @@ services:
     restart: unless-stopped
     stdin_open: true
     tty: true
+    entrypoint: ["/bin/bash", "-c", "/usr/local/bin/ydb-backup.sh loop >/dev/null 2>&1 & exec /docker-debian-startup.sh"]
     ports:
       - "127.0.0.1:1337:1337"
       - "127.0.0.1:9080:9080"
     volumes:
       - ydb-data:/data
+      - ydb-backup:/backup
+      - ./ydb-backup.sh:/usr/local/bin/ydb-backup.sh:ro
     healthcheck:
       test: ["CMD-SHELL", "bash -c 'echo >/dev/tcp/127.0.0.1/1337'"]
       interval: 10s
@@ -33,9 +36,12 @@ services:
       YTBUCH_PORT: 8092
       YTBUCH_DATABASE_URL: host=yottadb port=1337 user=ydb password=ydbrocks dbname=ydb sslmode=disable
       YTBUCH_DATABASE_POOL_SIZE: 8
+      YTBUCH_YDB_BACKUP_DIR: /ydb-backup
       YTBUCH_JWT_SECRET: ${YTBUCH_JWT_SECRET:-ytbuch-local-jwt-secret-change-me}
     ports:
       - "127.0.0.1:8092:8092"
+    volumes:
+      - ydb-backup:/ydb-backup:ro
     depends_on:
       yottadb:
         condition: service_healthy
@@ -71,3 +77,4 @@ services:
 
 volumes:
   ydb-data:
+  ydb-backup:
