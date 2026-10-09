@@ -32,12 +32,12 @@ struct Co {
     branch: String,
 }
 
-struct Pack {
-    body: Value,
-    pok: Vec<u8>,
-    pro: Vec<u8>,
-    dek: Vec<u8>,
-    period_nap: String,
+pub(crate) struct Pack {
+    pub(crate) body: Value,
+    pub(crate) pok: Vec<u8>,
+    pub(crate) pro: Vec<u8>,
+    pub(crate) dek: Vec<u8>,
+    pub(crate) period_nap: String,
 }
 
 fn period_err(raw: &str) -> ApiError {
@@ -235,7 +235,7 @@ async fn collect(st: &AppState, company_id: i32, period: &vat_fmt::Period) -> Re
     })
 }
 
-async fn pack(st: &AppState, headers: &HeaderMap, raw: &str) -> Result<Pack, ApiError> {
+pub(crate) async fn pack(st: &AppState, headers: &HeaderMap, raw: &str) -> Result<Pack, ApiError> {
     let sub = auth_sub(st, headers)?;
     let company_id = active_or_one(st, &sub).await?;
     let period = match vat_fmt::parse_period(raw) {

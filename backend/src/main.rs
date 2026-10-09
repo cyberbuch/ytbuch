@@ -83,6 +83,9 @@ mod vat_files;
 mod vat_fmt;
 mod vat_line;
 
+#[cfg(test)]
+mod fiscal_check;
+
 use std::env;
 use std::sync::Arc;
 
@@ -102,8 +105,8 @@ pub fn api_err(status: StatusCode, detail: impl Into<String>) -> ApiError {
 
 #[derive(Clone)]
 pub struct AppState {
-    db: Arc<Db>,
-    jwt_secret: String,
+    pub(crate) db: Arc<Db>,
+    pub(crate) jwt_secret: String,
 }
 
 #[tokio::main]
