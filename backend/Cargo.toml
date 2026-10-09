@@ -9,6 +9,7 @@ aws-sdk-s3 = "1.152.0"
 axum = "0.8"
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
 flate2 = "1.1.10"
+governor = "0.10"
 hex = "0.4"
 hmac = "0.12"
 jsonwebtoken = "9"
@@ -22,6 +23,7 @@ sha1 = "0.10"
 sha2 = "0.10"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "signal", "sync"] }
 tokio-postgres = "0.7"
+tower_governor = "0.8"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }
 ironpress = "1"

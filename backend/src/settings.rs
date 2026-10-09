@@ -2,13 +2,14 @@
 
 use std::collections::HashMap;
 
-use axum::extract::State;
+use axum::extract::{Query, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::Json;
 use serde_json::{json, Value};
 
 use crate::db::{self, cell_str, lit, Db};
-use crate::form::{auth_sub, db_err, listed};
+use crate::form::{auth_sub, db_err};
+use crate::pagination::{paginate, PageQuery};
 use crate::{api_err, AppState, ApiError};
 
 pub async fn load(db: &Db) -> Result<HashMap<String, String>, ApiError> {
@@ -48,15 +49,20 @@ fn items_json(map: &HashMap<String, String>) -> Vec<Value> {
         .collect()
 }
 
-pub async fn index(State(st): State<AppState>, headers: HeaderMap) -> Result<Json<Value>, ApiError> {
+pub async fn index(
+    State(st): State<AppState>,
+    headers: HeaderMap,
+    Query(q): Query<PageQuery>,
+) -> Result<Json<Value>, ApiError> {
     auth_sub(&st, &headers)?;
     let map = load(&st.db).await?;
-    Ok(listed(items_json(&map)))
+    Ok(paginate(items_json(&map), &q))
 }
 
 pub async fn update(
     State(st): State<AppState>,
     headers: HeaderMap,
+    Query(q): Query<PageQuery>,
     Json(body): Json<Value>,
 ) -> Result<Json<Value>, ApiError> {
     auth_sub(&st, &headers)?;
@@ -84,7 +90,7 @@ pub async fn update(
         upsert(&st.db, key, &value).await?;
     }
     let map = load(&st.db).await?;
-    Ok(listed(items_json(&map)))
+    Ok(paginate(items_json(&map), &q))
 }
 
 pub(crate) async fn upsert(db: &Db, key: &str, value: &str) -> Result<(), ApiError> {

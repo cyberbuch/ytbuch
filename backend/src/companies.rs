@@ -1,6 +1,6 @@
 //! Фирми и активна фирма. JSON-ът съвпада с company_to_json в bagabuch.
 
-use axum::extract::{Path, State};
+use axum::extract::{Path, Query, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::Json;
 use serde::Serialize;
@@ -9,6 +9,7 @@ use serde_json::{json, Value};
 use crate::db::Db;
 use crate::auth;
 use crate::db::{self, cell_i32_at, cell_str};
+use crate::pagination::{paginate, PageQuery};
 use crate::{api_err, AppState, ApiError};
 
 const SELECT: &str = "SELECT id, name, eik, vat_number, is_vat_registered, vat_period, currency, \
@@ -293,14 +294,17 @@ async fn save(db: &Db, c: &Company) -> Result<(), ApiError> {
     Ok(())
 }
 
-pub async fn index(State(st): State<AppState>, headers: HeaderMap) -> Result<Json<Value>, ApiError> {
+pub async fn index(
+    State(st): State<AppState>,
+    headers: HeaderMap,
+    Query(q): Query<PageQuery>,
+) -> Result<Json<Value>, ApiError> {
     auth::subject(&st.jwt_secret, &headers)?;
     let rows = st.db.query( &format!("{SELECT} ORDER BY id"))
         .await
         .map_err(|e| api_err(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     let items: Vec<Value> = rows.iter().map(|r| to_json(&from_row(r))).collect();
-    let count = items.len();
-    Ok(Json(json!({ "items": items, "count": count, "limit": 50, "offset": 0 })))
+    Ok(paginate(items, &q))
 }
 
 async fn insert_company(db: &Db, c: &Company) -> Result<(), ApiError> {

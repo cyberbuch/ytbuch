@@ -1,13 +1,14 @@
 //! Четене на фактура. Допълнителните колони са в invoice_extra,
 //! защото този Octo няма ALTER TABLE.
 
-use axum::extract::{Path, State};
+use axum::extract::{Path, Query, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::Json;
 use serde_json::{json, Value};
 
 use crate::db::{cell_i32, cell_i32_at, cell_str, lit, Db, Row};
-use crate::form::{self, active_or_one, auth_sub, db_err};
+use crate::form::{active_or_one, auth_sub, db_err};
+use crate::pagination::{paginate, PageQuery};
 use crate::{api_err, companies, counterparts, AppState, ApiError};
 
 const SEL: &str = "SELECT i.id, i.company_id, i.direction, i.document_type, i.number, i.issue_date, \
@@ -274,7 +275,11 @@ pub(crate) async fn detail(st: &AppState, sub: &str, id: i32) -> Result<Value, A
     Ok(v)
 }
 
-pub async fn invoices(State(st): State<AppState>, headers: HeaderMap) -> Result<Json<Value>, ApiError> {
+pub async fn invoices(
+    State(st): State<AppState>,
+    headers: HeaderMap,
+    Query(q): Query<PageQuery>,
+) -> Result<Json<Value>, ApiError> {
     let sub = auth_sub(&st, &headers)?;
     let company = active_or_one(&st, &sub).await?;
     let rows = qry(&st.db, &format!("{SEL} WHERE i.company_id = {company} ORDER BY i.id")).await?;
@@ -282,7 +287,7 @@ pub async fn invoices(State(st): State<AppState>, headers: HeaderMap) -> Result<
     for row in &rows {
         items.push(invoice_value(&st.db, from_row(row), false).await?);
     }
-    Ok(form::listed(items))
+    Ok(paginate(items, &q))
 }
 
 pub async fn invoice_show(

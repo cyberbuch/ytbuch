@@ -33,11 +33,13 @@ mod invoice_print;
 mod invoice_read;
 mod invoice_ubl;
 mod invoices;
+mod journal_manual;
 mod lists;
 mod mfg;
 mod mail;
 mod master;
 mod opening;
+mod pagination;
 mod periods;
 mod pnmap;
 mod posting;
@@ -45,6 +47,7 @@ mod print_load;
 mod print_sheet;
 mod print_words;
 mod profile;
+mod rate_limit;
 mod recipes;
 mod related;
 mod report;
@@ -271,8 +274,13 @@ async fn main() {
         .route("/v1/invoices/{id}/post", post(invoice_post::post))
         .route("/v1/invoices/{id}/print", get(invoice_print::print))
         .route("/v1/invoices/{id}/ubl", get(invoice_ubl::export))
-        .route("/v1/journal", get(lists::journal))
-        .route("/v1/journal/{id}", get(lists::journal_show))
+        .route("/v1/journal", get(lists::journal).post(journal_manual::create))
+        .route(
+            "/v1/journal/{id}",
+            get(lists::journal_show)
+                .patch(journal_manual::update)
+                .delete(journal_manual::delete),
+        )
         .route("/v1/accounting-periods", get(periods::index))
         .route("/v1/accounting-periods/close", post(periods::close))
         .route("/v1/accounting-periods/reopen", post(periods::reopen))
@@ -382,6 +390,7 @@ async fn main() {
         .route("/v1/scans/ubl", post(ubl_in::import))
         .route("/v1/product-name-mappings", get(pnmap::index).post(pnmap::save))
         .fallback(fallback)
+        .layer(rate_limit::general_layer())
         .layer(axum::middleware::from_fn_with_state(
             state.clone(),
             gate::gate,

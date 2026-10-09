@@ -1,7 +1,7 @@
 //! Дивиденти към действителните собственици. Плащането не пише в дневника.
 //! Собствениците нямат колона is_active.
 
-use axum::extract::{Path, State};
+use axum::extract::{Path, Query, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::Json;
 use serde_json::{json, Map, Value};
@@ -10,6 +10,7 @@ use crate::db::{cell_i32_at, cell_str, lit};
 use crate::dec::{self, money};
 use crate::form::{self, active_or_one, auth_sub};
 use crate::invoice_read;
+use crate::pagination::{paginate, PageQuery};
 use crate::{api_err, AppState, ApiError};
 
 const DIST: &str = "SELECT id, year, total_amount, decision_date, decision_number, status, notes, company_id FROM dividend_distributions";
@@ -31,23 +32,24 @@ struct Share {
     rate: String,
 }
 
-pub async fn index(State(st): State<AppState>, headers: HeaderMap) -> Result<Json<Value>, ApiError> {
+pub async fn index(
+    State(st): State<AppState>,
+    headers: HeaderMap,
+    Query(q): Query<PageQuery>,
+) -> Result<Json<Value>, ApiError> {
     let company = company(&st, &headers).await?;
     let owners = owners_of(&st, company).await?;
     let currency = currency_of(&st, company).await?;
     let rows = invoice_read::qry(&st.db, &format!("{DIST} WHERE company_id = {company} ORDER BY id")).await?;
     let kids = kids_of(&st, company).await?;
-    let mut items = Vec::new();
+    let mut items: Vec<Value> = Vec::new();
     for row in &rows {
         items.push(pack(row, &kids, false));
     }
-    let count = items.len();
-    Ok(Json(json!({
-        "items": items,
-        "count": count,
-        "owners": owners.iter().map(owner_json).collect::<Vec<_>>(),
-        "currency": currency,
-    })))
+    let mut resp = paginate(items, &q);
+    resp.0["owners"] = json!(owners.iter().map(owner_json).collect::<Vec<_>>());
+    resp.0["currency"] = json!(currency);
+    Ok(resp)
 }
 
 pub async fn show(

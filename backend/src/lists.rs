@@ -1,17 +1,13 @@
 //! Списъци за демо фирмата: сметки, контрагенти, фактури, дневник, настройки.
 
-use axum::extract::{Path, State};
+use axum::extract::{Path, Query, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::Json;
 use serde_json::{json, Value};
 
 use crate::db::{self, cell_i32_at, cell_str};
+use crate::pagination::{paginate, PageQuery};
 use crate::{api_err, auth, companies, AppState, ApiError};
-
-fn list(items: Vec<Value>) -> Json<Value> {
-    let count = items.len();
-    Json(json!({ "items": items, "count": count, "limit": 50, "offset": 0 }))
-}
 
 async fn rows(st: &AppState, headers: &HeaderMap, sql: &str) -> Result<Vec<db::Row>, ApiError> {
     auth::subject(&st.jwt_secret, headers)?;
@@ -21,14 +17,18 @@ async fn rows(st: &AppState, headers: &HeaderMap, sql: &str) -> Result<Vec<db::R
         .map_err(|e| api_err(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
 }
 
-pub async fn accounts(State(st): State<AppState>, headers: HeaderMap) -> Result<Json<Value>, ApiError> {
+pub async fn accounts(
+    State(st): State<AppState>,
+    headers: HeaderMap,
+    Query(q): Query<PageQuery>,
+) -> Result<Json<Value>, ApiError> {
     let rows = rows(
         &st,
         &headers,
         "SELECT id, number, name, saft_account_type, analytic_type FROM accounts ORDER BY number",
     )
     .await?;
-    let items = rows
+    let items: Vec<Value> = rows
         .iter()
         .map(|r| {
             json!({
@@ -40,17 +40,21 @@ pub async fn accounts(State(st): State<AppState>, headers: HeaderMap) -> Result<
             })
         })
         .collect();
-    Ok(list(items))
+    Ok(paginate(items, &q))
 }
 
-pub async fn products(State(st): State<AppState>, headers: HeaderMap) -> Result<Json<Value>, ApiError> {
+pub async fn products(
+    State(st): State<AppState>,
+    headers: HeaderMap,
+    Query(q): Query<PageQuery>,
+) -> Result<Json<Value>, ApiError> {
     let rows = rows(
         &st,
         &headers,
         "SELECT id, name, code, description, unit, price, cost_price, vat_rate, is_service, is_inventory, inventory_account_id, revenue_account_id, stock_quantity, stock_value, is_active FROM products ORDER BY id",
     )
     .await?;
-    let items = rows
+    let items: Vec<Value> = rows
         .iter()
         .map(|r| {
             json!({
@@ -72,7 +76,7 @@ pub async fn products(State(st): State<AppState>, headers: HeaderMap) -> Result<
             })
         })
         .collect();
-    Ok(list(items))
+    Ok(paginate(items, &q))
 }
 
 fn entry_json(r: &db::Row) -> Value {
@@ -91,14 +95,19 @@ fn entry_json(r: &db::Row) -> Value {
     })
 }
 
-pub async fn journal(State(st): State<AppState>, headers: HeaderMap) -> Result<Json<Value>, ApiError> {
+pub async fn journal(
+    State(st): State<AppState>,
+    headers: HeaderMap,
+    Query(q): Query<PageQuery>,
+) -> Result<Json<Value>, ApiError> {
     let rows = rows(
         &st,
         &headers,
         "SELECT id, entry_date, document_type, document_id, document_number, description, vat_type, counterpart_id, counterpart_name, document_date, vat_period FROM journal_entries ORDER BY id",
     )
     .await?;
-    Ok(list(rows.iter().map(entry_json).collect()))
+    let items: Vec<Value> = rows.iter().map(entry_json).collect();
+    Ok(paginate(items, &q))
 }
 
 pub async fn journal_show(

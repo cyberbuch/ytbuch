@@ -101,7 +101,18 @@ async function request<T>(
 }
 
 export const api = {
-  get: <T>(path: string) => request<T>(path, "GET"),
+  get: <T>(path: string, query?: Record<string, string | number | undefined>) => {
+    let url = path;
+    if (query) {
+      const params = new URLSearchParams();
+      for (const [k, v] of Object.entries(query)) {
+        if (v !== undefined) params.set(k, String(v));
+      }
+      const qs = params.toString();
+      if (qs) url = `${path}?${qs}`;
+    }
+    return request<T>(url, "GET");
+  },
   post: <T>(path: string, body?: unknown) => request<T>(path, "POST", body),
   put: <T>(path: string, body?: unknown) => request<T>(path, "PUT", body),
   patch: <T>(path: string, body?: unknown) => request<T>(path, "PATCH", body),
@@ -226,6 +237,10 @@ export function getMe(): Promise<Me> {
 export interface ListResponse<T> {
   items: T[];
   count: number;
+  total?: number;
+  limit?: number;
+  offset?: number;
+  has_more?: boolean;
 }
 
 // фирма

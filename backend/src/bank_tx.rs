@@ -10,8 +10,9 @@ use serde_json::{json, Value};
 use crate::bank_csv::{self, Tx};
 use crate::db::{cell_i32_at, cell_str, lit};
 use crate::dec::{self, money};
-use crate::form::{self, active_or_one, auth_sub, listed};
+use crate::form::{self, active_or_one, auth_sub};
 use crate::invoice_read;
+use crate::pagination::{paginate, PageQuery};
 use crate::periods;
 use crate::posting::{self, Side};
 use crate::{api_err, AppState, ApiError};
@@ -22,6 +23,8 @@ const UNKNOWN: &str = "Непознат формат на файла. Поддъ
 pub(crate) struct TxQ {
     bank_account_id: Option<String>,
     status: Option<String>,
+    #[serde(flatten)]
+    page: PageQuery,
 }
 
 pub async fn index(
@@ -52,7 +55,7 @@ pub async fn index(
             items.push(tx_json(row));
         }
     }
-    Ok(listed(items))
+    Ok(paginate(items, &q.page))
 }
 
 pub async fn preview(

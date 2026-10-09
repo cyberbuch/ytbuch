@@ -2,6 +2,7 @@
 // инлайн скрипт преди хидратация (без проблясък), провайдерите са клиентски.
 
 import type { Metadata } from "next";
+import { headers } from "next/headers";
 import "./globals.css";
 import "./globals-pages.css";
 import { Providers } from "../components/Providers";
@@ -12,7 +13,8 @@ export const metadata: Metadata = {
 };
 
 // Задава тема/език в <html> преди Реакт да хидратира.
-const themeInitScript = `
+function themeInitScript(): string {
+  return `
 (function () {
   try {
     var t = localStorage.getItem("bagabuch.theme");
@@ -27,15 +29,21 @@ const themeInitScript = `
     else document.documentElement.lang = "bg";
   } catch (e) {}
 })();
-`;
+`.trim();
+}
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
+  const headersList = await headers();
+  const nonce = headersList.get("x-nonce") ?? "";
   return (
     <html lang="bg" suppressHydrationWarning>
       <head>
-        <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
+        <script
+          nonce={nonce}
+          dangerouslySetInnerHTML={{ __html: themeInitScript() }}
+        />
       </head>
       <body>
         <Providers>{children}</Providers>

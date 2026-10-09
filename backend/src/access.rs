@@ -1,14 +1,15 @@
 //! Потребители и роли. Правата са JSON текст, защото Octo няма тип JSON.
 
-use axum::extract::{Path, State};
+use axum::extract::{Path, Query, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::Json;
 use serde_json::{json, Value};
 
 use crate::auth;
 use crate::db::{self, cell_i32_at, cell_str, lit, Db};
-use crate::form::{self, auth_sub, db_err, listed};
+use crate::form::{self, auth_sub, db_err};
 use crate::identity;
+use crate::pagination::{paginate, PageQuery};
 use crate::{api_err, AppState, ApiError};
 
 fn user_json(row: &db::Row) -> Value {
@@ -104,14 +105,19 @@ pub async fn role_permissions(db: &Db, role_id: i32) -> Result<Vec<Value>, ApiEr
         .unwrap_or_default())
 }
 
-pub async fn users_index(State(st): State<AppState>, headers: HeaderMap) -> Result<Json<Value>, ApiError> {
+pub async fn users_index(
+    State(st): State<AppState>,
+    headers: HeaderMap,
+    Query(q): Query<PageQuery>,
+) -> Result<Json<Value>, ApiError> {
     auth_sub(&st, &headers)?;
     let rows = st
         .db
         .query(&format!("{USER_SEL} ORDER BY name"))
         .await
         .map_err(db_err)?;
-    Ok(listed(rows.iter().map(user_json).collect()))
+    let items: Vec<Value> = rows.iter().map(user_json).collect();
+    Ok(paginate(items, &q))
 }
 
 pub async fn users_create(
@@ -284,14 +290,19 @@ pub async fn users_delete(
     Ok(StatusCode::NO_CONTENT)
 }
 
-pub async fn roles_index(State(st): State<AppState>, headers: HeaderMap) -> Result<Json<Value>, ApiError> {
+pub async fn roles_index(
+    State(st): State<AppState>,
+    headers: HeaderMap,
+    Query(q): Query<PageQuery>,
+) -> Result<Json<Value>, ApiError> {
     auth_sub(&st, &headers)?;
     let rows = st
         .db
         .query("SELECT id, name, description, permissions, created_at FROM roles ORDER BY name")
         .await
         .map_err(db_err)?;
-    Ok(listed(rows.iter().map(role_json).collect()))
+    let items: Vec<Value> = rows.iter().map(role_json).collect();
+    Ok(paginate(items, &q))
 }
 
 async fn role_one(db: &Db, id: i32) -> Result<Value, ApiError> {

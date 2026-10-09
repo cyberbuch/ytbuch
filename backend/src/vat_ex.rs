@@ -7,6 +7,7 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 
 use crate::form::auth_sub;
+use crate::pagination::{paginate, PageQuery};
 use crate::{AppState, ApiError};
 
 const CATALOG: &[&str] = &[
@@ -112,6 +113,8 @@ fn item(line: &str) -> Value {
 #[derive(Deserialize, Default)]
 pub(crate) struct SearchQ {
     search: Option<String>,
+    #[serde(flatten)]
+    page: PageQuery,
 }
 
 pub async fn index(
@@ -127,6 +130,5 @@ pub async fn index(
         .filter(|line| needle.is_empty() || ascii_lower(line).contains(&needle))
         .map(item)
         .collect();
-    let count = items.len();
-    Ok(Json(json!({ "items": items, "count": count })))
+    Ok(paginate(items, &q.page))
 }

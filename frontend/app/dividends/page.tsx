@@ -7,6 +7,7 @@ import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { api } from "../../lib/api";
 import { formatBgDate, todayIso } from "../../lib/dates";
+import { escapeHtml } from "../../lib/html";
 import { useI18n } from "../../components/I18nProvider";
 import { RequireAuth } from "../../components/RequireAuth";
 import { IconButton } from "../../components/IconButton";
@@ -238,13 +239,13 @@ function DividendsInner() {
     const rows = d.dividends ?? [];
     const tax = rows.reduce((s, r) => s + Number(r.tax_amount), 0);
     const net = rows.reduce((s, r) => s + Number(r.net_amount), 0);
-    const html = `<!doctype html><html><head><meta charset="utf-8"><title>${t("div.protocol")} ${d.year}</title>
+    const html = `<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(t("div.protocol"))} ${escapeHtml(d.year)}</title>
 <style>body{font-family:sans-serif;padding:24px}table{width:100%;border-collapse:collapse}td,th{border:1px solid #ccc;padding:6px;text-align:left}.num{text-align:right}h1{font-size:18px}</style></head><body>
-<h1>${t("div.protocol")} ${d.year}</h1>
-<p>${t("div.decision_date")}: ${formatBgDate(d.decision_date)} · ${t("div.decision_number")}: ${d.decision_number || "—"}</p>
-<table><thead><tr><th>${t("div.owner")}</th><th>${t("div.egn")}</th><th class="num">${t("div.share")}</th><th class="num">${t("div.gross")}</th><th class="num">${t("div.tax")}</th><th class="num">${t("div.net")}</th></tr></thead><tbody>
-${rows.map((r) => `<tr><td>${r.owner_name}</td><td>${r.owner_egn || ""}</td><td class="num">${money(r.ownership_percentage)}</td><td class="num">${money(r.gross_amount)}</td><td class="num">${money(r.tax_amount)}</td><td class="num">${money(r.net_amount)}</td></tr>`).join("")}
-<tr><th colspan="3">${t("div.total")}</th><th class="num">${money(d.total_amount)}</th><th class="num">${money(String(tax))}</th><th class="num">${money(String(net))}</th></tr>
+<h1>${escapeHtml(t("div.protocol"))} ${escapeHtml(d.year)}</h1>
+<p>${escapeHtml(t("div.decision_date"))}: ${escapeHtml(formatBgDate(d.decision_date))} · ${escapeHtml(t("div.decision_number"))}: ${escapeHtml(d.decision_number || "—")}</p>
+<table><thead><tr><th>${escapeHtml(t("div.owner"))}</th><th>${escapeHtml(t("div.egn"))}</th><th class="num">${escapeHtml(t("div.share"))}</th><th class="num">${escapeHtml(t("div.gross"))}</th><th class="num">${escapeHtml(t("div.tax"))}</th><th class="num">${escapeHtml(t("div.net"))}</th></tr></thead><tbody>
+${rows.map((r) => `<tr><td>${escapeHtml(r.owner_name)}</td><td>${escapeHtml(r.owner_egn || "")}</td><td class="num">${escapeHtml(money(r.ownership_percentage))}</td><td class="num">${escapeHtml(money(r.gross_amount))}</td><td class="num">${escapeHtml(money(r.tax_amount))}</td><td class="num">${escapeHtml(money(r.net_amount))}</td></tr>`).join("")}
+<tr><th colspan="3">${escapeHtml(t("div.total"))}</th><th class="num">${escapeHtml(money(d.total_amount))}</th><th class="num">${escapeHtml(money(String(tax)))}</th><th class="num">${escapeHtml(money(String(net)))}</th></tr>
 </tbody></table></body></html>`;
     const w = window.open("", "_blank");
     if (!w) return;

@@ -1,22 +1,27 @@
 //! Дълготрайни активи и категории. Сумите остават низ.
 
-use axum::extract::{Path, State};
+use axum::extract::{Path, Query, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::Json;
 use serde_json::{json, Map, Value};
 
 use crate::db::{cell_i32_at, cell_str, lit};
 use crate::dec::{self, money};
-use crate::form::{self, active_or_one, auth_sub, listed};
+use crate::form::{self, active_or_one, auth_sub};
 use crate::invoice_read;
+use crate::pagination::{paginate, PageQuery};
 use crate::{api_err, AppState, ApiError};
 
 const FA_SEL: &str = "SELECT id, name, inventory_number, category_id, acquisition_date, put_into_service_date, cost, salvage_value, useful_life_months, depreciation_method, accounting_depreciation_rate, tax_depreciation_rate, accumulated_depreciation, tax_accumulated_depreciation, status, serial_number, manufacturer, model, responsible_person, is_conserved, location_id, company_id FROM fixed_assets";
 
-pub async fn categories(State(st): State<AppState>, headers: HeaderMap) -> Result<Json<Value>, ApiError> {
+pub async fn categories(
+    State(st): State<AppState>,
+    headers: HeaderMap,
+    Query(q): Query<PageQuery>,
+) -> Result<Json<Value>, ApiError> {
     let _ = company(&st, &headers).await?;
     let rows = invoice_read::qry(&st.db, "SELECT id, name, cita_category, min_depreciation_rate, max_depreciation_rate, default_method FROM fixed_asset_categories ORDER BY id").await?;
-    let items = rows.iter().map(|r| json!({
+    let items: Vec<Value> = rows.iter().map(|r| json!({
         "id": cell_i32_at(r, 0),
         "name": cell_str(r, 1),
         "cita_category": cell_str(r, 2),
@@ -24,7 +29,7 @@ pub async fn categories(State(st): State<AppState>, headers: HeaderMap) -> Resul
         "max_depreciation_rate": cell_str(r, 4),
         "default_method": cell_str(r, 5),
     })).collect();
-    Ok(listed(items))
+    Ok(paginate(items, &q))
 }
 
 pub async fn category_create(
@@ -101,10 +106,15 @@ pub async fn category_delete(
     Ok(StatusCode::NO_CONTENT)
 }
 
-pub async fn index(State(st): State<AppState>, headers: HeaderMap) -> Result<Json<Value>, ApiError> {
+pub async fn index(
+    State(st): State<AppState>,
+    headers: HeaderMap,
+    Query(q): Query<PageQuery>,
+) -> Result<Json<Value>, ApiError> {
     let company = company(&st, &headers).await?;
     let rows = invoice_read::qry(&st.db, &format!("{FA_SEL} WHERE company_id = {company} ORDER BY id")).await?;
-    Ok(listed(rows.iter().map(fa_json).collect()))
+    let items: Vec<Value> = rows.iter().map(fa_json).collect();
+    Ok(paginate(items, &q))
 }
 
 pub async fn create(

@@ -1,15 +1,16 @@
 //! Вътрешни протоколи. Потвърждението мести артикули и ДМА между обекти.
 //! Обектите нямат колона is_active.
 
-use axum::extract::{Path, State};
+use axum::extract::{Path, Query, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::Json;
 use serde_json::{json, Map, Value};
 
 use crate::db::{cell_i32_at, cell_str, lit};
 use crate::dec::{self, money, qty};
-use crate::form::{self, active_or_one, auth_sub, listed};
+use crate::form::{self, active_or_one, auth_sub};
 use crate::invoice_read;
+use crate::pagination::{paginate, PageQuery};
 use crate::periods;
 use crate::stock;
 use crate::{api_err, AppState, ApiError};
@@ -21,14 +22,18 @@ pub async fn next_number(State(st): State<AppState>, headers: HeaderMap) -> Resu
     Ok(Json(json!({ "number": next_of(&st, company).await? })))
 }
 
-pub async fn index(State(st): State<AppState>, headers: HeaderMap) -> Result<Json<Value>, ApiError> {
+pub async fn index(
+    State(st): State<AppState>,
+    headers: HeaderMap,
+    Query(q): Query<PageQuery>,
+) -> Result<Json<Value>, ApiError> {
     let company = company(&st, &headers).await?;
     let rows = invoice_read::qry(&st.db, &format!("{DOC_SEL} WHERE company_id = {company} ORDER BY id")).await?;
-    let mut items = Vec::new();
+    let mut items: Vec<Value> = Vec::new();
     for row in &rows {
         items.push(one(&st, row).await?);
     }
-    Ok(listed(items))
+    Ok(paginate(items, &q))
 }
 
 pub async fn show(

@@ -3,7 +3,7 @@
 
 use axum::http::{HeaderMap, StatusCode};
 use axum::Json;
-use serde_json::{json, Map, Value};
+use serde_json::{Map, Value};
 
 use crate::db::Db;
 use crate::{api_err, auth, companies, AppState, ApiError};
@@ -127,8 +127,7 @@ pub fn required(value: Option<String>, key: &str) -> Result<String, ApiError> {
 }
 
 pub fn listed(items: Vec<Value>) -> Json<Value> {
-    let count = items.len();
-    Json(json!({ "items": items, "count": count, "limit": 50, "offset": 0 }))
+    crate::pagination::paginate_default(items)
 }
 
 pub fn auth_sub(st: &AppState, headers: &HeaderMap) -> Result<String, ApiError> {

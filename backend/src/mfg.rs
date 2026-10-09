@@ -1,15 +1,16 @@
 //! Поръчки за производство. Потвърждението изписва материали и заприходява продукция.
 //! Сметка 611, а ако я няма — 601.
 
-use axum::extract::{Path, State};
+use axum::extract::{Path, Query, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::Json;
 use serde_json::{json, Value};
 
 use crate::db::{cell_i32_at, cell_str, lit};
 use crate::dec::{self, money, qty};
-use crate::form::{self, active_or_one, auth_sub, listed};
+use crate::form::{self, active_or_one, auth_sub};
 use crate::invoice_read;
+use crate::pagination::{paginate, PageQuery};
 use crate::periods;
 use crate::posting::{self, Acct, Side};
 use crate::recipes;
@@ -18,14 +19,18 @@ use crate::{api_err, AppState, ApiError};
 
 const SEL: &str = "SELECT id, number, recipe_id, output_product_id, quantity, location_id, order_date, status, notes, material_cost, journal_entry_id, company_id FROM production_orders";
 
-pub async fn index(State(st): State<AppState>, headers: HeaderMap) -> Result<Json<Value>, ApiError> {
+pub async fn index(
+    State(st): State<AppState>,
+    headers: HeaderMap,
+    Query(q): Query<PageQuery>,
+) -> Result<Json<Value>, ApiError> {
     let company = company(&st, &headers).await?;
     let rows = invoice_read::qry(&st.db, &format!("{SEL} WHERE company_id = {company} ORDER BY id")).await?;
-    let mut items = Vec::new();
+    let mut items: Vec<Value> = Vec::new();
     for row in &rows {
         items.push(one(&st, row, false).await?);
     }
-    Ok(listed(items))
+    Ok(paginate(items, &q))
 }
 
 pub async fn show(

@@ -7,12 +7,15 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 
 use crate::db::{self, cell_i32_at, cell_str, lit, Db};
-use crate::form::{self, auth_sub, db_err, listed};
+use crate::form::{self, auth_sub, db_err};
+use crate::pagination::{paginate, PageQuery};
 use crate::{api_err, AppState, ApiError};
 
 #[derive(Deserialize)]
 pub struct ListQuery {
     counterpart_id: Option<i32>,
+    #[serde(flatten)]
+    page: PageQuery,
 }
 
 pub fn norm(raw: &str) -> String {
@@ -56,7 +59,8 @@ pub async fn index(
         "SELECT id, counterpart_id, scanned_name, product_id FROM product_name_mappings".into()
     };
     let rows = st.db.query(&sql).await.map_err(db_err)?;
-    Ok(listed(rows.iter().map(row_json).collect()))
+    let items: Vec<Value> = rows.iter().map(row_json).collect();
+    Ok(paginate(items, &q.page))
 }
 
 pub async fn save(
@@ -121,7 +125,8 @@ pub async fn save(
         ))
         .await
         .map_err(db_err)?;
-    Ok(listed(rows.iter().map(row_json).collect()))
+    let items: Vec<Value> = rows.iter().map(row_json).collect();
+    Ok(paginate(items, &PageQuery::default()))
 }
 
 fn digits(raw: &str) -> String {

@@ -1,23 +1,28 @@
 //! Рецепти за производство. Редовете се подменят цели при запис.
 
-use axum::extract::{Path, State};
+use axum::extract::{Path, Query, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::Json;
 use serde_json::{json, Map, Value};
 
 use crate::db::{cell_i32_at, cell_str, lit};
 use crate::dec::{self, qty};
-use crate::form::{self, active_or_one, auth_sub, listed};
+use crate::form::{self, active_or_one, auth_sub};
 use crate::invoice_read;
+use crate::pagination::{paginate, PageQuery};
 use crate::{api_err, AppState, ApiError};
 
 const SEL: &str = "SELECT id, code, name, output_product_id, output_quantity, output_unit, notes, is_active, company_id FROM recipes";
 
-pub async fn index(State(st): State<AppState>, headers: HeaderMap) -> Result<Json<Value>, ApiError> {
+pub async fn index(
+    State(st): State<AppState>,
+    headers: HeaderMap,
+    Query(q): Query<PageQuery>,
+) -> Result<Json<Value>, ApiError> {
     let company = company(&st, &headers).await?;
     let rows = invoice_read::qry(&st.db, &format!("{SEL} WHERE company_id = {company} ORDER BY id")).await?;
-    let items = rows.iter().map(head).collect();
-    Ok(listed(items))
+    let items: Vec<Value> = rows.iter().map(head).collect();
+    Ok(paginate(items, &q))
 }
 
 pub async fn show(

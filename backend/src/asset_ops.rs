@@ -1,7 +1,7 @@
 //! Амортизация и събития по ДМА. Един запис: Дт 603 / Кт 241.
 //! И двете натрупани колони стават счетоводната сума.
 
-use axum::extract::{Path, State};
+use axum::extract::{Path, Query, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::Json;
 use serde_json::{json, Value};
@@ -9,8 +9,9 @@ use serde_json::{json, Value};
 use crate::assets::{self, SEL};
 use crate::db::{cell_i32_at, cell_str, lit};
 use crate::dec::{self, money};
-use crate::form::{self, listed};
+use crate::form::{self};
 use crate::invoice_read;
+use crate::pagination::{paginate, PageQuery};
 use crate::periods;
 use crate::posting::{self, Side};
 use crate::{api_err, AppState, ApiError};
@@ -174,6 +175,7 @@ pub async fn events(
     State(st): State<AppState>,
     headers: HeaderMap,
     Path(id): Path<i32>,
+    Query(q): Query<PageQuery>,
 ) -> Result<Json<Value>, ApiError> {
     let company = assets::company(&st, &headers).await?;
     assets::need(id)?;
@@ -186,7 +188,7 @@ pub async fn events(
         ),
     )
     .await?;
-    let items = rows
+    let items: Vec<Value> = rows
         .iter()
         .map(|r| {
             json!({
@@ -201,7 +203,7 @@ pub async fn events(
             })
         })
         .collect();
-    Ok(listed(items))
+    Ok(paginate(items, &q))
 }
 
 async fn flag_event(

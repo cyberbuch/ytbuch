@@ -1,17 +1,22 @@
 //! Банкови сметки. Салдото е низ с два знака.
 
-use axum::extract::{Path, State};
+use axum::extract::{Path, Query, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::Json;
 use serde_json::{json, Map, Value};
 
 use crate::db::{cell_i32_at, cell_str, lit};
 use crate::dec::{self, money};
-use crate::form::{self, active_or_one, auth_sub, listed};
+use crate::form::{self, active_or_one, auth_sub};
 use crate::invoice_read;
+use crate::pagination::{paginate, PageQuery};
 use crate::{api_err, AppState, ApiError};
 
-pub async fn index(State(st): State<AppState>, headers: HeaderMap) -> Result<Json<Value>, ApiError> {
+pub async fn index(
+    State(st): State<AppState>,
+    headers: HeaderMap,
+    Query(q): Query<PageQuery>,
+) -> Result<Json<Value>, ApiError> {
     let company = company(&st, &headers).await?;
     let rows = invoice_read::qry(
         &st.db,
@@ -22,7 +27,7 @@ pub async fn index(State(st): State<AppState>, headers: HeaderMap) -> Result<Jso
     for row in &rows {
         items.push(one(&st, row).await?);
     }
-    Ok(listed(items))
+    Ok(paginate(items, &q))
 }
 
 pub async fn create(

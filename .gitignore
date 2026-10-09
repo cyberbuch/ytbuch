@@ -5,3 +5,4 @@ target/
 ydb-data/
 logs/
 secret/
+.kilo/

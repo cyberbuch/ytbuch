@@ -1,0 +1,273 @@
+//! Ръчен запис в дневника: създаване, редактиране и изтриване.
+//! Само записи без фактура (document_type = 'manual') могат да се променят.
+
+use axum::extract::{Path, State};
+use axum::http::{HeaderMap, StatusCode};
+use axum::Json;
+use serde_json::{json, Map, Value};
+
+use crate::db::{cell_i32_at, cell_str, lit};
+use crate::form::{self, active_or_one, auth_sub};
+use crate::invoice_read;
+use crate::periods;
+use crate::{api_err, AppState, ApiError};
+
+const MANUAL_TYPE: &str = "manual";
+
+fn is_manual(row_type: &str) -> bool {
+    row_type == MANUAL_TYPE
+}
+
+async fn entry_type(db: &crate::db::Db, id: i32) -> Result<String, ApiError> {
+    let rows = invoice_read::qry(db, &format!("SELECT document_type FROM journal_entries WHERE id = {id}")).await?;
+    Ok(cell_str(rows.first().ok_or_else(|| {
+        api_err(StatusCode::NOT_FOUND, "записът не е намерен")
+    })?, 0))
+}
+
+fn parse_lines(obj: &Map<String, Value>) -> Result<Vec<Line>, ApiError> {
+    let arr = obj.get("lines").and_then(|v| v.as_array()).ok_or_else(|| {
+        api_err(StatusCode::UNPROCESSABLE_ENTITY, "lines е задължително")
+    })?;
+    if arr.is_empty() {
+        return Err(api_err(StatusCode::UNPROCESSABLE_ENTITY, "lines не може да е празен"));
+    }
+    let mut lines = Vec::new();
+    for (i, item) in arr.iter().enumerate() {
+        let o = item.as_object().ok_or_else(|| {
+            api_err(StatusCode::UNPROCESSABLE_ENTITY, format!("lines[{i}] трябва да е обект"))
+        })?;
+        let account_id = form::i32_field(o, "account_id")?.unwrap_or(0);
+        if account_id <= 0 {
+            return Err(api_err(StatusCode::UNPROCESSABLE_ENTITY, format!("lines[{i}].account_id е задължителен")));
+        }
+        let direction = form::str_field(o, "direction")?.unwrap_or_default();
+        let direction = direction.trim().to_string();
+        if direction != "debit" && direction != "credit" {
+            return Err(api_err(StatusCode::UNPROCESSABLE_ENTITY, format!("lines[{i}].direction трябва да е debit или credit")));
+        }
+        let amount = form::str_field(o, "amount")?.unwrap_or_default();
+        let amount = amount.trim().to_string();
+        if amount.is_empty() || amount == "0" || amount == "0.00" {
+            return Err(api_err(StatusCode::UNPROCESSABLE_ENTITY, format!("lines[{i}].amount не може да е 0")));
+        }
+        let vat_amount = form::str_field(o, "vat_amount")?.unwrap_or_else(|| "0".to_string());
+        lines.push(Line { account_id, direction, amount, vat_amount: vat_amount.trim().to_string() });
+    }
+    Ok(lines)
+}
+
+struct Line {
+    account_id: i32,
+    direction: String,
+    amount: String,
+    vat_amount: String,
+}
+
+fn check_balanced(lines: &[Line]) -> Result<(), ApiError> {
+    let mut debit = 0i64;
+    let mut credit = 0i64;
+    for l in lines {
+        let cents = crate::invoice_money::cents(&l.amount).ok_or_else(|| {
+            api_err(StatusCode::UNPROCESSABLE_ENTITY, format!("невалидна сума: {}", l.amount))
+        })?;
+        if l.direction == "debit" {
+            debit += cents;
+        } else {
+            credit += cents;
+        }
+    }
+    if debit != credit {
+        return Err(api_err(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            format!("записът не е балансиран: Дт={} Кт={}", crate::invoice_money::money(debit), crate::invoice_money::money(credit)),
+        ));
+    }
+    Ok(())
+}
+
+async fn write_lines(db: &crate::db::Db, entry_id: i32, lines: &[Line]) -> Result<(), ApiError> {
+    for l in lines {
+        let acct = invoice_read::qry(
+            db,
+            &format!("SELECT id, number, name FROM accounts WHERE id = {}", l.account_id),
+        ).await?;
+        let Some(row) = acct.first() else {
+            return Err(api_err(StatusCode::UNPROCESSABLE_ENTITY, format!("липсва сметка с id {}", l.account_id)));
+        };
+        let line_id = invoice_read::nid(db, "journal_lines").await?;
+        invoice_read::exe(
+            db,
+            &format!(
+                "INSERT INTO journal_lines (id, entry_id, account_id, account_number, account_name, direction, amount, vat_amount) VALUES ({line_id}, {entry_id}, {}, {}, {}, {}, {}, {})",
+                l.account_id,
+                lit(&cell_str(row, 1)),
+                lit(&cell_str(row, 2)),
+                lit(&l.direction),
+                lit(&l.amount),
+                lit(&l.vat_amount),
+            ),
+        ).await?;
+    }
+    Ok(())
+}
+
+async fn entry_json_full(st: &AppState, id: i32) -> Result<Value, ApiError> {
+    let rows = invoice_read::qry(
+        &st.db,
+        &format!("SELECT id, company_id, entry_date, document_type, document_id, document_number, description, vat_type, counterpart_id, counterpart_name, document_date, vat_period FROM journal_entries WHERE id = {id}"),
+    ).await?;
+    let Some(row) = rows.first() else {
+        return Err(api_err(StatusCode::NOT_FOUND, "записът не е намерен"));
+    };
+    let mut value = json!({
+        "id": cell_i32_at(row, 0),
+        "company_id": cell_i32_at(row, 1),
+        "entry_date": cell_str(row, 2),
+        "document_type": cell_str(row, 3),
+        "document_id": cell_i32_at(row, 4),
+        "document_number": cell_str(row, 5),
+        "description": cell_str(row, 6),
+        "vat_type": cell_str(row, 7),
+        "counterpart_id": cell_i32_at(row, 8),
+        "counterpart_name": cell_str(row, 9),
+        "document_date": cell_str(row, 10),
+        "vat_period": cell_str(row, 11),
+    });
+    let lines = invoice_read::qry(
+        &st.db,
+        &format!("SELECT id, account_id, direction, amount, vat_amount, account_number, account_name FROM journal_lines WHERE entry_id = {id} ORDER BY id"),
+    ).await?;
+    value["lines"] = json!(lines.iter().map(|r| json!({
+        "id": cell_i32_at(r, 0),
+        "account_id": cell_i32_at(r, 1),
+        "direction": cell_str(r, 2),
+        "amount": cell_str(r, 3),
+        "vat_amount": cell_str(r, 4),
+        "account_number": cell_str(r, 5),
+        "account_name": cell_str(r, 6),
+    })).collect::<Vec<_>>());
+    Ok(value)
+}
+
+pub async fn create(
+    State(st): State<AppState>,
+    headers: HeaderMap,
+    Json(body): Json<Value>,
+) -> Result<(StatusCode, Json<Value>), ApiError> {
+    let sub = auth_sub(&st, &headers)?;
+    let company = active_or_one(&st, &sub).await?;
+    let obj = form::object(&body)?;
+
+    let entry_date = form::required(form::str_field(obj, "entry_date")?, "entry_date")?;
+    let description = form::str_field(obj, "description")?.unwrap_or_default();
+    let counterpart_id = form::i32_field(obj, "counterpart_id")?.unwrap_or(0);
+    let counterpart_name = form::str_field(obj, "counterpart_name")?.unwrap_or_default();
+    let document_date = form::str_field(obj, "document_date")?.unwrap_or_else(|| entry_date.clone());
+    let vat_period = form::str_field(obj, "vat_period")?.unwrap_or_else(|| {
+        if entry_date.len() >= 7 { entry_date[..7].to_string() } else { entry_date.clone() }
+    });
+
+    let lines = parse_lines(obj)?;
+    check_balanced(&lines)?;
+
+    periods::assert_open(&st.db, &entry_date).await?;
+
+    let entry_id = invoice_read::nid(&st.db, "journal_entries").await?;
+    if let Err(e) = invoice_read::exe(
+        &st.db,
+        &format!(
+            "INSERT INTO journal_entries (id, company_id, entry_date, document_type, document_id, document_number, description, vat_type, counterpart_id, counterpart_name, document_date, vat_period) VALUES ({entry_id}, {company}, {}, '{}', 0, 'MANUAL-{}', {}, 'no_vat', {counterpart_id}, {}, {}, {})",
+            lit(&entry_date),
+            MANUAL_TYPE,
+            entry_id,
+            lit(&description),
+            lit(&counterpart_name),
+            lit(&document_date),
+            lit(&vat_period),
+        ),
+    ).await
+    {
+        let _ = invoice_read::wipe_journal(&st.db, entry_id).await;
+        return Err(e);
+    }
+
+    if let Err(e) = write_lines(&st.db, entry_id, &lines).await {
+        let _ = invoice_read::wipe_journal(&st.db, entry_id).await;
+        return Err(e);
+    }
+
+    let value = entry_json_full(&st, entry_id).await?;
+    Ok((StatusCode::CREATED, Json(value)))
+}
+
+pub async fn update(
+    State(st): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<i32>,
+    Json(body): Json<Value>,
+) -> Result<Json<Value>, ApiError> {
+    let sub = auth_sub(&st, &headers)?;
+    let _company = active_or_one(&st, &sub).await?;
+    let obj = form::object(&body)?;
+
+    let doc_type = entry_type(&st.db, id).await?;
+    if !is_manual(&doc_type) {
+        return Err(api_err(StatusCode::FORBIDDEN, "само ръчни записи могат да се редактират"));
+    }
+
+    let entry_date = form::required(form::str_field(obj, "entry_date")?, "entry_date")?;
+    periods::assert_open(&st.db, &entry_date).await?;
+
+    let description = form::str_field(obj, "description")?.unwrap_or_default();
+    let counterpart_id = form::i32_field(obj, "counterpart_id")?.unwrap_or(0);
+    let counterpart_name = form::str_field(obj, "counterpart_name")?.unwrap_or_default();
+    let document_date = form::str_field(obj, "document_date")?.unwrap_or_else(|| entry_date.clone());
+    let vat_period = form::str_field(obj, "vat_period")?.unwrap_or_else(|| {
+        if entry_date.len() >= 7 { entry_date[..7].to_string() } else { entry_date.clone() }
+    });
+
+    invoice_read::exe(
+        &st.db,
+        &format!(
+            "UPDATE journal_entries SET entry_date = {}, description = {}, counterpart_id = {counterpart_id}, counterpart_name = {}, document_date = {}, vat_period = {} WHERE id = {id}",
+            lit(&entry_date),
+            lit(&description),
+            lit(&counterpart_name),
+            lit(&document_date),
+            lit(&vat_period),
+        ),
+    ).await?;
+
+    invoice_read::exe(&st.db, &format!("DELETE FROM journal_lines WHERE entry_id = {id}")).await?;
+
+    let lines = parse_lines(obj)?;
+    check_balanced(&lines)?;
+    write_lines(&st.db, id, &lines).await?;
+
+    let value = entry_json_full(&st, id).await?;
+    Ok(Json(value))
+}
+
+pub async fn delete(
+    State(st): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<i32>,
+) -> Result<StatusCode, ApiError> {
+    let sub = auth_sub(&st, &headers)?;
+    let _company = active_or_one(&st, &sub).await?;
+
+    let doc_type = entry_type(&st.db, id).await?;
+    if !is_manual(&doc_type) {
+        return Err(api_err(StatusCode::FORBIDDEN, "само ръчни записи могат да се изтриват"));
+    }
+
+    let rows = invoice_read::qry(&st.db, &format!("SELECT entry_date FROM journal_entries WHERE id = {id}")).await?;
+    let entry_date = cell_str(rows.first().ok_or_else(|| {
+        api_err(StatusCode::NOT_FOUND, "записът не е намерен")
+    })?, 0);
+    periods::assert_open(&st.db, &entry_date).await?;
+
+    let _ = invoice_read::wipe_journal(&st.db, id).await;
+    Ok(StatusCode::NO_CONTENT)
+}

@@ -1,12 +1,13 @@
 //! Контрагенти. Допълнителният адрес е в counterpart_extra.
 
-use axum::extract::{Path, State};
+use axum::extract::{Path, Query, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::Json;
 use serde_json::{json, Value};
 
 use crate::db::{cell_i32_at, cell_str, lit, Row};
-use crate::form::{self, active_or_one, auth_sub, db_err, listed};
+use crate::form::{self, active_or_one, auth_sub, db_err};
+use crate::pagination::{paginate, PageQuery};
 use crate::saft;
 use crate::{api_err, AppState, ApiError};
 
@@ -92,14 +93,18 @@ async fn cp_rows(st: &AppState, sql: &str) -> Result<Vec<Counterpart>, ApiError>
     Ok(rows.iter().map(cp_from).collect())
 }
 
-pub async fn counterparts(State(st): State<AppState>, headers: HeaderMap) -> Result<Json<Value>, ApiError> {
+pub async fn counterparts(
+    State(st): State<AppState>,
+    headers: HeaderMap,
+    Query(q): Query<PageQuery>,
+) -> Result<Json<Value>, ApiError> {
     auth_sub(&st, &headers)?;
-    let items = cp_rows(&st, &format!("{CP_SEL} ORDER BY c.id"))
+    let items: Vec<Value> = cp_rows(&st, &format!("{CP_SEL} ORDER BY c.id"))
         .await?
         .iter()
         .map(cp_json)
         .collect();
-    Ok(listed(items))
+    Ok(paginate(items, &q))
 }
 
 async fn cp_load(st: &AppState, id: i32) -> Result<Counterpart, ApiError> {
