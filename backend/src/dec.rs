@@ -8,7 +8,7 @@ pub fn or0(raw: &str) -> i128 {
 }
 
 pub fn parse(raw: &str) -> Option<i128> {
-    let s = raw.trim().replace(' ', "").replace('\u{00a0}', "");
+    let s = raw.trim().replace([' ', '\u{00a0}'], "");
     if s.is_empty() {
         return Some(0);
     }

@@ -301,7 +301,7 @@ fn country(vat: &str, fallback: &str) -> String {
     let v = vat.trim();
     if v.len() >= 2 {
         let p = if &v[..2] == "EL" { "GR" } else { &v[..2] };
-        if EU.iter().any(|c| *c == p) {
+        if EU.contains(&p) {
             return p.to_string();
         }
     }

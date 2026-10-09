@@ -92,9 +92,7 @@ pub async fn update(
     if obj.contains_key("lines") {
         let lines = parse_lines(obj)?;
         invoice_read::exe(&st.db, &format!("DELETE FROM internal_doc_lines WHERE doc_id = {id}")).await?;
-        if let Err(e) = insert_lines(&st, id, &lines).await {
-            return Err(e);
-        }
+        insert_lines(&st, id, &lines).await?;
     }
     Ok(Json(load(&st, id, company).await?))
 }

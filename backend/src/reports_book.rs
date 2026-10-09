@@ -6,7 +6,7 @@ use serde_json::{json, Value};
 
 use crate::reports_data::{self, get, in_range, money, pair, starts, turns, Books, Built, Side};
 
-fn grouped<'a>(b: &'a Books) -> HashMap<i32, Vec<&'a reports_data::Line>> {
+fn grouped(b: &Books) -> HashMap<i32, Vec<&reports_data::Line>> {
     let mut map = HashMap::new();
     for line in &b.lines {
         map.entry(line.entry_id).or_insert_with(Vec::new).push(line);

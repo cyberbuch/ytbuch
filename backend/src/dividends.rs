@@ -135,9 +135,7 @@ pub async fn update(
         )
         .await?;
         invoice_read::exe(&st.db, &format!("DELETE FROM dividends WHERE distribution_id = {id}")).await?;
-        if let Err(e) = insert_shares(&st, company, id, &date, &shares).await {
-            return Err(e);
-        }
+        insert_shares(&st, company, id, &date, &shares).await?;
     } else {
         if let Some(number) = form::str_field(obj, "decision_number")? {
             invoice_read::exe(&st.db, &format!("UPDATE dividend_distributions SET decision_number = {} WHERE id = {id}", lit(&number))).await?;

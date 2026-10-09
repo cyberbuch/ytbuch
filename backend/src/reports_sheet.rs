@@ -143,7 +143,7 @@ fn number(s: &str) -> Option<Num> {
     let sign = if neg { "-" } else { "" };
     let mut grouped = String::new();
     for (i, c) in int_digits.chars().enumerate() {
-        if i > 0 && (int_digits.len() - i) % 3 == 0 {
+        if i > 0 && (int_digits.len() - i).is_multiple_of(3) {
             grouped.push(' ');
         }
         grouped.push(c);

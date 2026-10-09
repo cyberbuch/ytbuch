@@ -171,9 +171,9 @@ fn parse_mt940(content: &str) -> Parsed {
             if let Some(tx) = mt_line(rest, &result.account_currency) {
                 pending = Some(tx);
             }
-        } else if line.starts_with(":86:") {
+        } else if let Some(rest) = line.strip_prefix(":86:") {
             if let Some(tx) = pending.as_mut() {
-                let extra = line[4..].trim();
+                let extra = rest.trim();
                 if !extra.is_empty() {
                     if !tx.description.is_empty() { tx.description.push(' '); }
                     tx.description.push_str(extra);
@@ -229,7 +229,7 @@ fn norm_money(raw: &str) -> String {
 
 fn flex_date(raw: &str) -> String {
     let t = raw.trim();
-    if t.len() >= 10 && t.as_bytes().get(4) == Some(&b'-') && t.as_bytes().get(0).is_some_and(u8::is_ascii_digit) {
+    if t.len() >= 10 && t.as_bytes().get(4) == Some(&b'-') && t.as_bytes().first().is_some_and(u8::is_ascii_digit) {
         return t[..10].to_string();
     }
     let sep = if t.contains('/') { '/' } else if t.contains('.') { '.' } else if t.contains('-') { '-' } else { return String::new() };

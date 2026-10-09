@@ -58,11 +58,11 @@ pub fn send_html(cfg: &SmtpCfg, to: &str, subject: &str, html: &str) -> Result<(
         .map_err(|e| format!("Грешка: {e}"))?;
     let mut builder = if cfg.port == 465 {
         SmtpTransport::relay(&cfg.host)
-            .map_err(|e| smtp_text(e))?
+            .map_err(smtp_text)?
             .port(465)
     } else if cfg.use_tls {
         SmtpTransport::starttls_relay(&cfg.host)
-            .map_err(|e| smtp_text(e))?
+            .map_err(smtp_text)?
             .port(cfg.port)
     } else {
         SmtpTransport::builder_dangerous(&cfg.host).port(cfg.port)

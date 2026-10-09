@@ -213,11 +213,10 @@ fn newest_ydb_backup() -> Option<(String, Vec<u8>)> {
     for entry in std::fs::read_dir(dir).ok()? {
         let path = entry.ok()?.path();
         let name = path.file_name()?.to_string_lossy().to_string();
-        if name.starts_with("ydb_backup_") && name.ends_with(".tar.gz") {
-            if best.as_ref().map(|(n, _)| name > *n).unwrap_or(true) {
+        if name.starts_with("ydb_backup_") && name.ends_with(".tar.gz")
+            && best.as_ref().map(|(n, _)| name > *n).unwrap_or(true) {
                 best = Some((name, path));
             }
-        }
     }
     let (name, path) = best?;
     let data = std::fs::read(path).ok()?;

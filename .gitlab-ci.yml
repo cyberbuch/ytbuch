@@ -1,0 +1,44 @@
+# CI за ytbuch. Проверява backend-а (Rust) и интерфейса (Next.js).
+# Тестовете на backend-а са чисти unit тестове — Octo не е нужен.
+# Интерфейсът има defaults за YTBUCH_API_PROXY и NEXT_PUBLIC_API_URL,
+# така че build-ът минава без тайни.
+# cargo fmt не е тук нарочно: кодът е плътен по формат (вж. filesize.sh,
+# максимум 800 реда на файл), а fmt разпъва редовете и го чупи.
+
+stages:
+  - check
+
+backend:
+  stage: check
+  image: rust:1.97
+  variables:
+    CARGO_HOME: "$CI_PROJECT_DIR/.cargo"
+  before_script:
+    - rustup component add clippy
+  script:
+    - bash scripts/filesize.sh
+    - cd backend
+    - cargo clippy --all-targets -- -D warnings
+    - cargo test
+  cache:
+    key:
+      files:
+        - backend/Cargo.lock
+      paths:
+        - backend/target/
+        - .cargo/
+
+frontend:
+  stage: check
+  image: node:22
+  script:
+    - cd frontend
+    - npm ci
+    - npm run lint
+    - npm run build
+  cache:
+    key:
+      files:
+        - frontend/package-lock.json
+      paths:
+        - frontend/node_modules/

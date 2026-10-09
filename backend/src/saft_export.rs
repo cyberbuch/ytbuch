@@ -264,7 +264,11 @@ fn push_owner(o: &Owner, names: &mut Vec<String>, egns: &mut Vec<String>, latin:
     }
 }
 
-fn parents_of(s: &Snap) -> (Vec<String>, Vec<String>, Vec<String>, Vec<String>, Vec<String>) {
+/// Крайните майки: имена на кирилица, ЕИК, име на кирилица, име на латиница,
+/// код на държава.
+type Parents = (Vec<String>, Vec<String>, Vec<String>, Vec<String>, Vec<String>);
+
+fn parents_of(s: &Snap) -> Parents {
     let mut bg_names = Vec::new();
     let mut bg_uic = Vec::new();
     let mut f_cyr = Vec::new();

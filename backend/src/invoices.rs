@@ -582,9 +582,7 @@ async fn insert_header(
         ),
     )
     .await;
-    if let Err(e) = inserted {
-        return Err(e);
-    }
+    inserted?;
     if let Err(e) = invoice_read::save_extra(&st.db, id, &extra_of(head, 0)).await {
         let _ = invoice_read::wipe_invoice(&st.db, id).await;
         return Err(e);
