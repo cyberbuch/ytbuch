@@ -100,7 +100,7 @@ pub async fn user_count(db: &Db) -> Result<i32, ApiError> {
 }
 
 pub async fn provision_superadmin(db: &Db) -> Result<(), ApiError> {
-    let hash = auth::hash_password("superadmin", "123+123");
+    let hash = auth::hash_new("123+123")?;
     let existing = db
         .query("SELECT id FROM users WHERE email = 'superadmin'")
         .await
@@ -136,8 +136,10 @@ pub async fn ensure_login(db: &Db, id: i32, username: &str) -> Result<(), ApiErr
     Ok(())
 }
 
-pub async fn set_password(db: &Db, id: i32, email: &str, password: &str) -> Result<(), ApiError> {
-    let hash = auth::hash_password(email, password);
+/// Имейлът е наследен от стария sha256 хеш; argon2 не го ползва,
+/// но сигнатурата остава, за да не се менят извикващите.
+pub async fn set_password(db: &Db, id: i32, _email: &str, password: &str) -> Result<(), ApiError> {
+    let hash = auth::hash_new(password)?;
     db.exec(&format!(
         "UPDATE users SET password_hash = {} WHERE id = {id}",
         lit(&hash)
@@ -148,7 +150,7 @@ pub async fn set_password(db: &Db, id: i32, email: &str, password: &str) -> Resu
 }
 
 pub async fn set_email(db: &Db, id: i32, email: &str, password: &str) -> Result<(), ApiError> {
-    let hash = auth::hash_password(email, password);
+    let hash = auth::hash_new(password)?;
     db.exec(&format!(
         "UPDATE users SET email = {}, password_hash = {} WHERE id = {id}",
         lit(email),

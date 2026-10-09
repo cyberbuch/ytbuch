@@ -1,4 +1,5 @@
-//! Профил: име, парола, имейл и 2FA. Паролата се хешира с текущия имейл.
+//! Профил: име, парола, имейл и 2FA. Паролата е argon2id; смяната на имейл
+//! изисква парола за потвърждение.
 
 use axum::extract::State;
 use axum::http::{HeaderMap, StatusCode};
@@ -19,7 +20,11 @@ async fn current(st: &AppState, headers: &HeaderMap) -> Result<User, ApiError> {
 }
 
 fn password_ok(user: &User, password: &str) -> bool {
-    !password.is_empty() && user.password_hash == auth::hash_password(&user.email, password)
+    !password.is_empty()
+        && !matches!(
+            auth::check_password(&user.password_hash, &user.email, password),
+            auth::PasswordCheck::Fail
+        )
 }
 
 fn str_val(body: &Value, key: &str) -> String {

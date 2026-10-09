@@ -123,8 +123,6 @@ async fn main() {
         .and_then(|s| s.parse().ok())
         .filter(|size| *size > 0)
         .unwrap_or(8);
-    let jwt_secret = env::var("YTBUCH_JWT_SECRET")
-        .unwrap_or_else(|_| "ytbuch-local-jwt-secret-change-me".into());
     let host = env::var("YTBUCH_HOST").unwrap_or_else(|_| "127.0.0.1".into());
     let port: u16 = env::var("YTBUCH_PORT")
         .ok()
@@ -144,6 +142,13 @@ async fn main() {
         .unwrap_or_else(|e| panic!("migrate: {e}"));
 
     let db = Arc::new(db);
+    // Тайна без hardcoded fallback: env или уникална за базата.
+    let jwt_secret = match env::var("YTBUCH_JWT_SECRET") {
+        Ok(s) if !s.trim().is_empty() => s,
+        _ => settings::jwt_secret(&db)
+            .await
+            .unwrap_or_else(|e| panic!("jwt secret: {e:?}")),
+    };
     saft::ensure_chart(&db)
         .await
         .unwrap_or_else(|e| panic!("saft chart: {e}"));

@@ -141,7 +141,7 @@ pub async fn users_create(
         return Err(api_err(StatusCode::CONFLICT, "имейлът вече се ползва"));
     }
     let id = st.db.next_id("users").await.map_err(db_err)?;
-    let hash = auth::hash_password(&email, &password);
+    let hash = auth::hash_new(&password)?;
     st.db
         .exec(&format!(
             "INSERT INTO users (id, email, name, password_hash, role, is_active, is_super_admin, role_id, totp_enabled, created_at) \

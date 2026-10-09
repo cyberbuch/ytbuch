@@ -54,8 +54,17 @@ pub async fn token(State(st): State<AppState>, Json(body): Json<TokenBody>) -> R
     if user.is_active == 0 {
         return Err(api_err(StatusCode::FORBIDDEN, "потребителят е неактивен"));
     }
-    if user.password_hash != auth::hash_password(&user.email, &password) {
-        return Err(api_err(StatusCode::UNAUTHORIZED, "грешен потребител или парола"));
+    match auth::check_password(&user.password_hash, &user.email, &password) {
+        auth::PasswordCheck::Fail => {
+            return Err(api_err(StatusCode::UNAUTHORIZED, "грешен потребител или парола"));
+        }
+        // Стар sha256 хеш: паролата е вярна, записваме я отново с argon2.
+        auth::PasswordCheck::Rehash => {
+            if let Err(e) = identity::set_password(&st.db, user.id, &user.email, &password).await {
+                tracing::warn!("argon2 rehash на потребител {}: {e:?}", user.id);
+            }
+        }
+        auth::PasswordCheck::Ok => {}
     }
     if user.totp_enabled == 1 {
         let mfa = auth::issue_mfa(&st.jwt_secret, &user.username)?;

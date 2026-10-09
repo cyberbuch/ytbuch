@@ -23,10 +23,27 @@ pub async fn load(db: &Db) -> Result<HashMap<String, String>, ApiError> {
     Ok(map)
 }
 
+/// Тайната за JWT, когато `YTBUCH_JWT_SECRET` липсва: уникална за
+/// инсталацията, пазена тук. API-то не я показва и не я сменя.
+pub async fn jwt_secret(db: &Db) -> Result<String, ApiError> {
+    if let Some(v) = load(db).await?.get("auth.jwt_secret") {
+        if !v.trim().is_empty() {
+            return Ok(v.clone());
+        }
+    }
+    use argon2::password_hash::rand_core::{OsRng, RngCore};
+    let mut raw = [0u8; 32];
+    OsRng.fill_bytes(&mut raw);
+    let secret = hex::encode(raw);
+    upsert(db, "auth.jwt_secret", &secret).await?;
+    Ok(secret)
+}
+
 fn items_json(map: &HashMap<String, String>) -> Vec<Value> {
     let mut keys: Vec<&String> = map.keys().collect();
     keys.sort();
     keys.into_iter()
+        .filter(|k| *k != "auth.jwt_secret")
         .map(|k| json!({ "key": k, "value": map.get(k).cloned().unwrap_or_default() }))
         .collect()
 }
@@ -49,7 +66,7 @@ pub async fn update(
         .ok_or_else(|| api_err(StatusCode::BAD_REQUEST, "items е задължителен масив"))?;
     for item in items {
         let key = item.get("key").and_then(Value::as_str).unwrap_or("").trim();
-        if key.is_empty() {
+        if key.is_empty() || key == "auth.jwt_secret" {
             continue;
         }
         let value = match item.get("value") {
