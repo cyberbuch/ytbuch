@@ -65,7 +65,7 @@
 |-------|-----|---------|
 | PATCH | `/v1/me` | `{"name"}`. Празно име е `422` |
 | POST | `/v1/me/password` | `current_password`, `new_password`. Под 8 символа е `422`. Грешна текуща е `401` |
-| POST | `/v1/me/email` | `email`, `current_password`. Зает имейл е `409`. Хешът се смята с новия имейл |
+| POST | `/v1/me/email` | `email`, `current_password`. Зает имейл е `409`. Новият хеш е argon2 на подадената парола |
 | POST | `/v1/me/totp/start` | `secret`, `uri`, `qr_svg`, `recovery_codes`. Вече включена 2FA е `409` |
 | POST | `/v1/me/totp/confirm` | `{"code"}`. Включва 2FA |
 | POST | `/v1/me/totp/disable` | `password` и TOTP или резервен код. Триe кодовете |
@@ -376,7 +376,7 @@ QR е SVG картинка. Резервните кодове се показв�
 |-------|-----|---------|
 | GET, POST | `/v1/users` | списък и създаване. Паролата е поне 8 знака |
 | PATCH, DELETE | `/v1/users/{id}` | частичен PATCH. Смяна на имейл иска нова парола |
-| GET, POST | `/v1/roles` | `permissions` е списък от низове. Маршрутите не го проверяват |
+| GET, POST | `/v1/roles` | `permissions` е списък от низове. Проверява ги `gate.rs` по маршрут; без право е `403` |
 | PATCH, DELETE | `/v1/roles/{id}` | |
 | GET | `/v1/exchange-rates` | `date`, `base`, `items`. Без дата е последният ден |
 | GET | `/v1/exchange-rates/rate` | `currency`, `date`. Липсващ ден е най-близкият по-ранен |

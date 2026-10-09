@@ -18,7 +18,7 @@
 | Backend | Rust + Axum 0.8, JWT HS256 |
 | База | YottaDB r2.06, SQL през Octo 1.1.0 |
 | Frontend | Next.js 16 (App Router), същите екрани като bagabuch |
-| Автентикация | `POST /v1/auth/token`, SHA-256 на `bagabuch\|{email}\|{парола}` |
+| Автентикация | `POST /v1/auth/token`, argon2id (наследени sha256 хешове се мигрират при вход), JWT HS256 |
 | Поща и архив | `lettre` и `aws-sdk-s3` в API процеса. Няма Python контейнер |
 
 ## Портове
