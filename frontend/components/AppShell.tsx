@@ -18,40 +18,43 @@ import {
   setActiveCompany,
 } from "../lib/api";
 
+// Менюто се скрива без съответното право (permission). Празен perm е
+// винаги видим: табло, каталози, собствен профил. Ключовете са тези,
+// които backend-ът проверява в gate.rs.
 const NAV_ITEMS = [
   { href: "/", key: "nav.dashboard" },
-  { href: "/companies", key: "nav.companies" },
-  { href: "/settings", key: "nav.settings" },
-  { href: "/accounts", key: "nav.accounts" },
-  { href: "/counterparts", key: "nav.counterparts" },
-  { href: "/products", key: "nav.products" },
-  { href: "/bank-accounts", key: "nav.bank_accounts" },
-  { href: "/bank-transactions", key: "nav.bank_transactions" },
-  { href: "/invoices", key: "nav.invoices" },
-  { href: "/scan", key: "nav.scan" },
-  { href: "/internal-docs", key: "nav.internal_docs" },
-  { href: "/production", key: "nav.production" },
-  { href: "/journal", key: "nav.journal" },
-  { href: "/reports", key: "nav.reports" },
-  { href: "/opening-balances", key: "nav.opening_balances" },
-  { href: "/accounting-periods", key: "nav.periods" },
-  { href: "/vat", key: "nav.vat" },
-  { href: "/dividends", key: "nav.dividends" },
-  { href: "/exchange-rates", key: "nav.exchange_rates" },
-  { href: "/saft", key: "nav.saft" },
-  { href: "/saft-movement-mappings", key: "nav.saft_mappings" },
+  { href: "/companies", key: "nav.companies", perm: "companies" },
+  { href: "/settings", key: "nav.settings", perm: "companies" },
+  { href: "/accounts", key: "nav.accounts", perm: "accounts" },
+  { href: "/counterparts", key: "nav.counterparts", perm: "counterparts" },
+  { href: "/products", key: "nav.products", perm: "products" },
+  { href: "/bank-accounts", key: "nav.bank_accounts", perm: "banking" },
+  { href: "/bank-transactions", key: "nav.bank_transactions", perm: "banking" },
+  { href: "/invoices", key: "nav.invoices", perm: "invoices" },
+  { href: "/scan", key: "nav.scan", perm: "scans" },
+  { href: "/internal-docs", key: "nav.internal_docs", perm: "stock" },
+  { href: "/production", key: "nav.production", perm: "production" },
+  { href: "/journal", key: "nav.journal", perm: "journal" },
+  { href: "/reports", key: "nav.reports", perm: "reports" },
+  { href: "/opening-balances", key: "nav.opening_balances", perm: "periods" },
+  { href: "/accounting-periods", key: "nav.periods", perm: "periods" },
+  { href: "/vat", key: "nav.vat", perm: "vat" },
+  { href: "/dividends", key: "nav.dividends", perm: "dividends" },
+  { href: "/exchange-rates", key: "nav.exchange_rates", perm: "rates" },
+  { href: "/saft", key: "nav.saft", perm: "saft" },
+  { href: "/saft-movement-mappings", key: "nav.saft_mappings", perm: "saft" },
   { href: "/nomenclatures", key: "nav.nomenclatures" },
-  { href: "/fixed-assets", key: "nav.fixed_assets" },
-  { href: "/admin", key: "nav.admin" },
+  { href: "/fixed-assets", key: "nav.fixed_assets", perm: "assets" },
+  { href: "/admin", key: "nav.admin", perm: "settings" },
   { href: "/profile", key: "nav.profile" },
-  { href: "/users", key: "nav.users" },
-  { href: "/roles", key: "nav.roles" },
+  { href: "/users", key: "nav.users", perm: "users" },
+  { href: "/roles", key: "nav.roles", perm: "users" },
 ];
 
 export function AppShell({ children }: { children: ReactNode }) {
   const { t, lang, setLang } = useI18n();
   const { theme, toggleTheme } = useTheme();
-  const { logout } = useAuth();
+  const { logout, can } = useAuth();
   const pathname = usePathname();
   const router = useRouter();
 
@@ -109,7 +112,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       <aside className="sidebar">
         <div className="sidebar-brand">{t("app.name")}</div>
         <nav className="sidebar-nav">
-          {NAV_ITEMS.map((item) => {
+          {NAV_ITEMS.filter((item) => !item.perm || can(item.perm)).map((item) => {
             const active =
               item.href === "/"
                 ? pathname === "/"

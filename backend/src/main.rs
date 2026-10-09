@@ -22,6 +22,7 @@ mod dividends;
 mod dump;
 mod form;
 mod fsform;
+mod gate;
 mod httpx;
 mod identity;
 mod invoice_money;
@@ -373,6 +374,10 @@ async fn main() {
         .route("/v1/scans/ubl", post(ubl_in::import))
         .route("/v1/product-name-mappings", get(pnmap::index).post(pnmap::save))
         .fallback(fallback)
+        .layer(axum::middleware::from_fn_with_state(
+            state.clone(),
+            gate::gate,
+        ))
         .with_state(state);
 
     let addr = format!("{host}:{port}");

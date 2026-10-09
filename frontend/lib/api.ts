@@ -206,6 +206,22 @@ export function logout(): void {
   setToken(null);
 }
 
+// собствен профил с правата на ролята
+export interface Me {
+  sub: string;
+  id?: number;
+  email?: string;
+  name?: string;
+  is_super_admin?: number;
+  role_id?: number;
+  totp_enabled?: number;
+  permissions?: string[];
+}
+
+export function getMe(): Promise<Me> {
+  return api.get<Me>("/v1/me");
+}
+
 // общ тип за списък
 export interface ListResponse<T> {
   items: T[];
