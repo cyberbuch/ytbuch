@@ -2,7 +2,6 @@
 //! `null` на низ го изчиства.
 
 use axum::http::{HeaderMap, StatusCode};
-use axum::Json;
 use serde_json::{Map, Value};
 
 use crate::db::Db;
@@ -124,10 +123,6 @@ pub fn required(value: Option<String>, key: &str) -> Result<String, ApiError> {
             format!("{key} е задължително"),
         )),
     }
-}
-
-pub fn listed(items: Vec<Value>) -> Json<Value> {
-    crate::pagination::paginate_default(items)
 }
 
 pub fn auth_sub(st: &AppState, headers: &HeaderMap) -> Result<String, ApiError> {

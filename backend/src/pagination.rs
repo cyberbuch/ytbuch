@@ -18,7 +18,7 @@ pub struct PageQuery {
 
 impl PageQuery {
     pub fn limit(&self) -> u32 {
-        self.limit.unwrap_or(DEFAULT_LIMIT).min(MAX_LIMIT).max(1)
+        self.limit.unwrap_or(DEFAULT_LIMIT).clamp(1, MAX_LIMIT)
     }
 
     pub fn offset(&self) -> u32 {
@@ -42,10 +42,4 @@ pub fn paginate(items: Vec<Value>, q: &PageQuery) -> Json<Value> {
         "offset": offset,
         "has_more": end < total as usize,
     }))
-}
-
-/// Обратно-съвместима версия без query параметри: връща първите 50 записа.
-pub fn paginate_default(items: Vec<Value>) -> Json<Value> {
-    let q = PageQuery { limit: None, offset: None };
-    paginate(items, &q)
 }
