@@ -24,9 +24,9 @@ backend:
     key:
       files:
         - backend/Cargo.lock
-      paths:
-        - backend/target/
-        - .cargo/
+    paths:
+      - backend/target/
+      - .cargo/
 
 frontend:
   stage: check
@@ -40,5 +40,5 @@ frontend:
     key:
       files:
         - frontend/package-lock.json
-      paths:
-        - frontend/node_modules/
+    paths:
+      - frontend/node_modules/
