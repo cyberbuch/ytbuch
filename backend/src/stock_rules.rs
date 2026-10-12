@@ -44,7 +44,7 @@ pub fn pair<'a>(rules: &'a [Rule], kind: &str, inventory: i32, offset: i32) -> O
     rules.iter().find(|r| r.kind == kind && r.inventory_account_id == inventory && r.offset_account_id == offset)
 }
 
-pub fn material_inventory<'a>(rules: &'a [Rule], inventory: i32) -> Option<&'a Rule> {
+pub fn material_inventory(rules: &[Rule], inventory: i32) -> Option<&Rule> {
     rules.iter().find(|r| r.kind == "material" && r.inventory_account_id == inventory && inventory > 0)
 }
 

@@ -141,7 +141,7 @@ async fn one_month(db: &crate::db::Db, company: i32, month: &str, sales: &[SaleH
     }
     let mut sides = Vec::new();
     let mut total = 0i128;
-    for (_pid, (name, cost, inventory, revenue)) in &by {
+    for (name, cost, inventory, revenue) in by.values() {
         let rule = stock_rules::pair(rules, "goods", *inventory, *revenue)
             .or_else(|| stock_rules::pair(rules, "production", *inventory, *revenue));
         let Some(rule) = rule else {

@@ -61,6 +61,7 @@ struct Lot {
     line: i32,
 }
 
+#[derive(Default)]
 struct State {
     qty: i128,
     val: i128,
@@ -164,11 +165,10 @@ fn fy_start(date: &str, start_month: i32) -> (i32, String) {
     (year, format!("{year}-{sm:02}-01"))
 }
 
-fn apply(
-    items: &[Item],
-    products: &HashMap<i32, Meta>,
-    method: &str,
-) -> (Vec<String>, Vec<SaleHit>, Vec<Flow>, HashMap<i32, State>, Books) {
+/// Резултат на преиграването: предупреждения, продажби, потоци, наличности, книги.
+type Replay = (Vec<String>, Vec<SaleHit>, Vec<Flow>, HashMap<i32, State>, Books);
+
+fn apply(items: &[Item], products: &HashMap<i32, Meta>, method: &str) -> Replay {
     let mut warnings = Vec::new();
     let mut sales = Vec::new();
     let mut flows = Vec::new();
@@ -730,10 +730,4 @@ async fn load_issues(db: &Db, company: i32, products: &HashMap<i32, Meta>, items
         }
     }
     Ok(meta)
-}
-
-impl Default for State {
-    fn default() -> Self {
-        Self { qty: 0, val: 0, lots: Vec::new() }
-    }
 }
