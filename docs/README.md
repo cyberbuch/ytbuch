@@ -1,6 +1,6 @@
 # Документация — ytbuch
 
-Счетоводна програма като bagabuch: Rust и Axum, YottaDB с Octo, Next.js на
+Счетоводна програма на Rust и Axum, YottaDB с Octo, Next.js на
 порт 3020. Базова валута EUR.
 
 Този каталог е **текущото състояние на кода**. `PLAN.md` в корена е пътната
