@@ -173,12 +173,27 @@ async fn main() {
         .route("/health", get(health))
         .route("/ready", get(ready))
         .route("/readyz", get(ready))
-        .route("/v1/auth/token", post(session::token))
-        .route("/v1/auth/mfa", post(session::mfa))
+        .route(
+            "/v1/auth/token",
+            post(session::token).layer(rate_limit::auth_layer()),
+        )
+        .route(
+            "/v1/auth/mfa",
+            post(session::mfa).layer(rate_limit::auth_layer()),
+        )
         .route("/v1/auth/registration-status", get(auth_flow::registration_status))
-        .route("/v1/auth/register", post(auth_flow::register))
-        .route("/v1/auth/forgot-password", post(auth_flow::forgot_password))
-        .route("/v1/auth/reset-password", post(auth_flow::reset_password))
+        .route(
+            "/v1/auth/register",
+            post(auth_flow::register).layer(rate_limit::auth_layer()),
+        )
+        .route(
+            "/v1/auth/forgot-password",
+            post(auth_flow::forgot_password).layer(rate_limit::auth_layer()),
+        )
+        .route(
+            "/v1/auth/reset-password",
+            post(auth_flow::reset_password).layer(rate_limit::auth_layer()),
+        )
         .route("/v1/me", get(session::me).patch(profile::update_name))
         .route("/v1/me/password", post(profile::change_password))
         .route("/v1/me/email", post(profile::change_email))
