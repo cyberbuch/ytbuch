@@ -9,6 +9,7 @@ import { RequireAuth } from "../../components/RequireAuth";
 import { useI18n } from "../../components/I18nProvider";
 import { DocumentSeriesTab, DocSeries } from "../../components/DocumentSeriesTab";
 import { FsFormulasTab } from "../../components/FsFormulasTab";
+import { SettingsStockTab } from "../../components/SettingsStockTab";
 import { SettingsCompanyTab } from "../../components/SettingsCompanyTab";
 import { SettingsSaftTab } from "../../components/SettingsSaftTab";
 import {
@@ -49,7 +50,7 @@ function parseKeys(raw: unknown): { mistral_api_key: string; zhipu_api_key: stri
 function SettingsInner() {
   const { t } = useI18n();
   const [activeId, setActiveId] = useState(0);
-  const [tab, setTab] = useState<0 | 1 | 2 | 3>(0);
+  const [tab, setTab] = useState(0);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [splitting, setSplitting] = useState(false);
@@ -500,6 +501,13 @@ function SettingsInner() {
         >
           {t("settings.tab.fs")}
         </button>
+        <button
+          type="button"
+          className={`tab${tab === 4 ? " tab-active" : ""}`}
+          onClick={() => setTab(4)}
+        >
+          {t("settings.tab.stock")}
+        </button>
       </div>
 
       {tab === 0 && (
@@ -572,6 +580,7 @@ function SettingsInner() {
       )}
 
       {tab === 3 && <FsFormulasTab />}
+      {tab === 4 && <SettingsStockTab />}
     </>
   );
 }

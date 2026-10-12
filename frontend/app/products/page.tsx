@@ -4,7 +4,7 @@ import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { RequireAuth } from "../../components/RequireAuth";
 import { UnitPicker } from "../../components/UnitPicker";
 import { useI18n } from "../../components/I18nProvider";
-import { api, ListResponse } from "../../lib/api";
+import { api, fetchAll, ListResponse } from "../../lib/api";
 import { UnitOfMeasure } from "../../lib/units";
 import { IconButton } from "../../components/IconButton";
 
@@ -71,12 +71,12 @@ function ProductsInner() {
     setError("");
     try {
       const [p, a, u] = await Promise.all([
-        api.get<ListResponse<Product>>("/v1/products"),
-        api.get<ListResponse<Account>>("/v1/accounts"),
+        fetchAll<Product>("/v1/products"),
+        fetchAll<Account>("/v1/accounts"),
         api.get<ListResponse<UnitOfMeasure>>("/v1/units"),
       ]);
-      setRows(p.items ?? []);
-      setAccounts(a.items ?? []);
+      setRows(p);
+      setAccounts(a);
       setUnits(u.items ?? []);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -341,7 +341,7 @@ function ProductsInner() {
                       })
                     }
                   >
-                    <option value="0">{t("products.account_default")} 702</option>
+                    <option value="0">{t("products.account_required")}</option>
                     {accounts.map((a) => (
                       <option key={a.id} value={a.id}>
                         {accLabel(a)}
@@ -361,10 +361,7 @@ function ProductsInner() {
                       })
                     }
                   >
-                    <option value="0">
-                      {t("products.account_default")}{" "}
-                      {form.is_inventory ? "304" : "602"}
-                    </option>
+                    <option value="0">{t("products.account_required")}</option>
                     {accounts.map((a) => (
                       <option key={a.id} value={a.id}>
                         {accLabel(a)}
@@ -418,19 +415,10 @@ function ProductsInner() {
                 {form.is_inventory && (
                   <div className="field">
                     <label className="label">{t("products.stock_quantity")}</label>
-                    <input
-                      className="input"
-                      value={form.stock_quantity}
-                      disabled={Boolean(editing)}
-                      onChange={(e) =>
-                        setForm({ ...form, stock_quantity: e.target.value })
-                      }
-                    />
-                    {editing && (
-                      <div className="muted" style={{ fontSize: 12 }}>
-                        {t("products.stock_hint")} {editing.stock_value}
-                      </div>
-                    )}
+                    <input className="input" value={form.stock_quantity} disabled readOnly />
+                    <div className="muted" style={{ fontSize: 12 }}>
+                      {t("products.stock_hint")} {editing?.stock_value ?? "0.00"}
+                    </div>
                   </div>
                 )}
               </div>

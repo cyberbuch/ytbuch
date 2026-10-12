@@ -12,7 +12,7 @@ use crate::form::{self, active_or_one, auth_sub};
 use crate::invoice_read;
 use crate::pagination::{paginate, PageQuery};
 use crate::periods;
-use crate::stock;
+use crate::stock_replay;
 use crate::{api_err, AppState, ApiError};
 
 const DOC_SEL: &str = "SELECT id, number, doc_date, from_location_id, to_location_id, status, notes, handed_by, received_by, company_id FROM internal_docs";
@@ -138,18 +138,21 @@ pub async fn confirm(
     let from_name = place(&st, company, from_id, "обектът-източник не е намерен").await?;
     let to_name = place(&st, company, to_id, "обектът-приемник не е намерен").await?;
     let lines = cur.get("lines").and_then(|v| v.as_array()).cloned().unwrap_or_default();
-    let mut snaps = Vec::new();
     let mut moved = Vec::new();
     for line in &lines {
-        if let Err(e) = apply_line(&st, company, &cur, line, from_id, to_id, &from_name, &to_name, &doc_date, &mut snaps, &mut moved).await {
-            let _ = stock::undo(&st.db, &snaps).await;
+        if let Err(e) = apply_line(&st, company, &cur, line, from_id, to_id, &from_name, &to_name, &doc_date, &mut moved).await {
             undo_assets(&st, &moved).await;
             return Err(e);
         }
     }
     if let Err(e) = invoice_read::exe(&st.db, &format!("UPDATE internal_docs SET status = 'confirmed' WHERE id = {id}")).await {
-        let _ = stock::undo(&st.db, &snaps).await;
         undo_assets(&st, &moved).await;
+        return Err(e);
+    }
+    if let Err(e) = stock_replay::rebuild(&st.db, company, "9999-12-31").await {
+        if moved.is_empty() {
+            let _ = invoice_read::exe(&st.db, &format!("UPDATE internal_docs SET status = 'draft' WHERE id = {id}")).await;
+        }
         return Err(e);
     }
     Ok(Json(load(&st, id, company).await?))
@@ -165,16 +168,16 @@ async fn apply_line(
     from_name: &str,
     to_name: &str,
     doc_date: &str,
-    snaps: &mut Vec<stock::Snap>,
     moved: &mut Vec<(i32, i32, i32)>,
 ) -> Result<(), ApiError> {
     let kind = line.get("line_kind").and_then(|v| v.as_str()).unwrap_or("");
     if kind == "product" {
         let product_id = line.get("product_id").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
-        let name = product_name(st, company, product_id).await?;
+        let _name = product_name(st, company, product_id).await?;
         let q = line.get("quantity").and_then(|v| v.as_str()).unwrap_or("0");
-        let snap = stock::transfer(&st.db, product_id, q, from_id, to_id, doc_date, &name).await?;
-        snaps.push(snap);
+        if dec::or0(q) <= 0 {
+            return Err(api_err(StatusCode::UNPROCESSABLE_ENTITY, "количеството трябва да е положително"));
+        }
         return Ok(());
     }
     let asset_id = line.get("asset_id").and_then(|v| v.as_i64()).unwrap_or(0) as i32;

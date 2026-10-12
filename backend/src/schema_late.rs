@@ -34,4 +34,33 @@ CREATE TABLE IF NOT EXISTS product_name_mappings (
     product_id INTEGER,
     created_at VARCHAR
 );
+CREATE TABLE IF NOT EXISTS stock_account_rules (
+    id INTEGER PRIMARY KEY,
+    company_id INTEGER,
+    kind VARCHAR,
+    inventory_account_id INTEGER,
+    offset_account_id INTEGER,
+    clearing_account_id INTEGER
+);
+CREATE TABLE IF NOT EXISTS material_issues (
+    id INTEGER PRIMARY KEY,
+    company_id INTEGER,
+    number VARCHAR,
+    doc_date VARCHAR,
+    location_id INTEGER,
+    status VARCHAR,
+    notes VARCHAR,
+    journal_entry_id INTEGER
+);
+CREATE TABLE IF NOT EXISTS material_issue_lines (
+    id INTEGER PRIMARY KEY,
+    doc_id INTEGER,
+    product_id INTEGER,
+    quantity VARCHAR,
+    unit_cost VARCHAR,
+    amount VARCHAR,
+    account_id INTEGER,
+    inventory_account_id INTEGER,
+    line_no INTEGER
+);
 ";

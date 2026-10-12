@@ -1,5 +1,5 @@
-//! Поръчки за производство. Потвърждението изписва материали и заприходява продукция.
-//! Сметка 611, а ако я няма — 601.
+//! Поръчки за производство. Потвърждението маркира поръчката.
+//! Себестойността и записът в дневника идват от преизчислението по правилата.
 
 use axum::extract::{Path, Query, State};
 use axum::http::{HeaderMap, StatusCode};
@@ -7,14 +7,15 @@ use axum::Json;
 use serde_json::{json, Value};
 
 use crate::db::{cell_i32_at, cell_str, lit};
-use crate::dec::{self, money, qty};
+use crate::dec::{self, qty};
 use crate::form::{self, active_or_one, auth_sub};
 use crate::invoice_read;
 use crate::pagination::{paginate, PageQuery};
 use crate::periods;
-use crate::posting::{self, Acct, Side};
+
 use crate::recipes;
-use crate::stock::{self, Snap};
+use crate::stock_replay;
+use crate::stock_rules;
 use crate::{api_err, AppState, ApiError};
 
 const SEL: &str = "SELECT id, number, recipe_id, output_product_id, quantity, location_id, order_date, status, notes, material_cost, journal_entry_id, company_id FROM production_orders";
@@ -117,180 +118,31 @@ pub async fn confirm(
     }
     let order_date = text(&cur, "order_date");
     periods::assert_open(&st.db, &order_date).await?;
-    let acc611 = acc_611(&st, company).await?;
-    let method = stock::valuation(&st.db, company).await?;
-    let mut snaps: Vec<Snap> = Vec::new();
-    let mut sides: Vec<Side> = Vec::new();
-    let mut total = 0i128;
-    let mut updates = Vec::new();
-    for line in &lines {
-        let line_id = line.get("id").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
-        let product_id = line.get("product_id").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
-        let q = line.get("quantity").and_then(|v| v.as_str()).unwrap_or("0");
-        let prod = match product(&st, product_id).await {
-            Ok(p) => p,
-            Err(e) => return Err(undo_all(&st, &snaps, 0, e).await),
-        };
-        let (cost_s, snap) = match stock::issue(&st.db, product_id, q, &method, &prod.name, location_id).await {
-            Ok(v) => v,
-            Err(e) => return Err(undo_all(&st, &snaps, 0, e).await),
-        };
-        snaps.push(snap);
-        let cost = dec::or0(&cost_s);
-        if cost != 0 {
-            let inv = match posting::prefer(&st.db, company, prod.inventory_account_id, &["302", "304"], "липсва складова сметка 302/304").await {
-                Ok(a) => a,
-                Err(e) => return Err(undo_all(&st, &snaps, 0, e).await),
-            };
-            sides.push(Side { account: copy_acct(&acc611), direction: "debit", amount: cost_s.clone() });
-            sides.push(Side { account: inv, direction: "credit", amount: cost_s.clone() });
-        }
-        total = dec::add(total, cost).unwrap_or(total);
-        let unit = if dec::or0(q) > 0 {
-            dec::text(dec::div(cost, dec::or0(q)).unwrap_or(0), 6)
-        } else {
-            "0.000000".into()
-        };
-        updates.push((line_id, unit, cost_s));
-    }
-    let out_qty = dec::or0(&text(&cur, "quantity"));
-    let unit_out = if out_qty > 0 { dec::text(dec::div(total, out_qty).unwrap_or(0), 6) } else { "0.000000".into() };
-    let snap = match stock::receive(&st.db, output_id, id, 0, &order_date, &text(&cur, "quantity"), &unit_out, location_id).await {
-        Ok((_, snap)) => snap,
-        Err(e) => return Err(undo_all(&st, &snaps, 0, e).await),
-    };
-    snaps.push(snap);
-    let mut entry = 0;
-    if total != 0 {
-        let out = match product(&st, output_id).await {
-            Ok(p) => p,
-            Err(e) => return Err(undo_all(&st, &snaps, 0, e).await),
-        };
-        let inv = match posting::prefer(
-            &st.db,
-            company,
-            out.inventory_account_id,
-            &["303", "304"],
-            "липсва складова сметка 303/304 за готовата продукция",
-        )
-        .await
-        {
-            Ok(a) => a,
-            Err(e) => return Err(undo_all(&st, &snaps, 0, e).await),
-        };
-        let total_s = money(total);
-        sides.push(Side { account: inv, direction: "debit", amount: total_s.clone() });
-        sides.push(Side { account: copy_acct(&acc611), direction: "credit", amount: total_s });
-        entry = match posting::write_entry(
-            &st.db,
-            company,
-            &order_date,
-            "production",
-            id,
-            &text(&cur, "number"),
-            &format!("Производство {}", text(&cur, "number")),
-            0,
-            "",
-            &posting::month_of(&order_date),
-            &sides,
-        )
-        .await
-        {
-            Ok(v) => v,
-            Err(e) => return Err(undo_all(&st, &snaps, 0, e).await),
-        };
-    }
-    if let Err(e) = finish(&st, id, &updates, &money(total), entry).await {
-        return Err(undo_all(&st, &snaps, entry, e).await);
+    stock_rules::check_production(&st.db, company, output_id, &lines).await?;
+    invoice_read::exe(
+        &st.db,
+        &format!("UPDATE production_orders SET status = 'completed', material_cost = '0.00', journal_entry_id = 0 WHERE id = {id}"),
+    )
+    .await?;
+    if let Err(e) = stock_replay::rebuild(&st.db, company, "9999-12-31").await {
+        let _ = invoice_read::exe(&st.db, &format!("UPDATE production_orders SET status = 'draft' WHERE id = {id}")).await;
+        return Err(e);
     }
     Ok(Json(load(&st, id, company).await?))
 }
 
-struct Prod {
-    name: String,
-    inventory_account_id: i32,
-}
-
-async fn product(st: &AppState, id: i32) -> Result<Prod, ApiError> {
-    let rows = invoice_read::qry(
-        &st.db,
-        &format!("SELECT name, inventory_account_id FROM products WHERE id = {id}"),
-    )
-    .await?;
+async fn product_name(st: &AppState, id: i32) -> Result<String, ApiError> {
+    let rows = invoice_read::qry(&st.db, &format!("SELECT name FROM products WHERE id = {id}")).await?;
     let Some(row) = rows.first() else {
         return Err(api_err(StatusCode::UNPROCESSABLE_ENTITY, "артикулът не е намерен"));
     };
-    Ok(Prod { name: cell_str(row, 0), inventory_account_id: cell_i32_at(row, 1) })
-}
-
-async fn acc_611(st: &AppState, company: i32) -> Result<Acct, ApiError> {
-    if let Some(a) = posting::by_number(&st.db, company, "611").await? {
-        return Ok(a);
-    }
-    posting::by_number(&st.db, company, "601")
-        .await?
-        .ok_or_else(|| api_err(StatusCode::UNPROCESSABLE_ENTITY, "липсва сметка с номер 601"))
-}
-
-fn copy_acct(a: &Acct) -> Acct {
-    Acct { id: a.id, number: a.number.clone(), name: a.name.clone() }
-}
-
-async fn undo_all(st: &AppState, snaps: &[Snap], entry: i32, e: ApiError) -> ApiError {
-    let _ = stock::undo(&st.db, snaps).await;
-    if entry > 0 {
-        let _ = invoice_read::wipe_journal(&st.db, entry).await;
-    }
-    e
-}
-
-async fn finish(st: &AppState, id: i32, updates: &[(i32, String, String)], total: &str, entry: i32) -> Result<(), ApiError> {
-    for (i, (line_id, unit, amount)) in updates.iter().enumerate() {
-        if let Err(e) = invoice_read::exe(
-            &st.db,
-            &format!(
-                "UPDATE production_order_lines SET unit_cost = {}, amount = {} WHERE id = {line_id}",
-                lit(unit),
-                lit(amount)
-            ),
-        )
-        .await
-        {
-            for (line_id2, _, _) in updates.iter().take(i) {
-                let _ = invoice_read::exe(
-                    &st.db,
-                    &format!("UPDATE production_order_lines SET unit_cost = '0.000000', amount = '0.00' WHERE id = {line_id2}"),
-                )
-                .await;
-            }
-            return Err(e);
-        }
-    }
-    if let Err(e) = invoice_read::exe(
-        &st.db,
-        &format!(
-            "UPDATE production_orders SET status = 'completed', material_cost = {}, journal_entry_id = {entry} WHERE id = {id}",
-            lit(total)
-        ),
-    )
-    .await
-    {
-        for (line_id, _, _) in updates {
-            let _ = invoice_read::exe(
-                &st.db,
-                &format!("UPDATE production_order_lines SET unit_cost = '0.000000', amount = '0.00' WHERE id = {line_id}"),
-            )
-            .await;
-        }
-        return Err(e);
-    }
-    Ok(())
+    Ok(cell_str(row, 0))
 }
 
 async fn copy_lines(st: &AppState, order_id: i32, recipe: &recipes::Recipe, order_qty: &str) -> Result<(), ApiError> {
     for line in &recipe.lines {
         let need = scale(&line.quantity, order_qty, &recipe.output_qty, &line.wastage);
-        let name = product(st, line.product_id).await.map(|p| p.name).unwrap_or_default();
+        let name = product_name(st, line.product_id).await.unwrap_or_default();
         let id = invoice_read::nid(&st.db, "production_order_lines").await?;
         invoice_read::exe(
             &st.db,

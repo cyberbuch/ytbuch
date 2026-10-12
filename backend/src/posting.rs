@@ -39,18 +39,6 @@ pub async fn by_number(db: &Db, company: i32, number: &str) -> Result<Option<Acc
     Ok(rows.into_iter().next().map(acct))
 }
 
-pub async fn prefer(db: &Db, company: i32, pref: i32, fallbacks: &[&str], missing: &str) -> Result<Acct, ApiError> {
-    if pref > 0 {
-        return by_id(db, pref).await;
-    }
-    for number in fallbacks {
-        if let Some(a) = by_number(db, company, number).await? {
-            return Ok(a);
-        }
-    }
-    Err(api_err(StatusCode::UNPROCESSABLE_ENTITY, missing))
-}
-
 fn acct(row: crate::db::Row) -> Acct {
     Acct { id: cell_i32_at(&row, 0), number: cell_str(&row, 1), name: cell_str(&row, 2) }
 }

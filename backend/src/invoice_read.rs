@@ -420,11 +420,14 @@ pub(crate) async fn wipe_invoice(db: &Db, id: i32) -> Result<(), ApiError> {
 /// Маха дневника, ако има такъв, после редовете и самата фактура.
 pub(crate) async fn delete_one(db: &Db, id: i32) -> Result<(), ApiError> {
     let inv = load(db, id).await?;
-    if inv.status == "posted" {
-        crate::stock::restore_posted(db, &inv).await?;
-    }
+    let posted = inv.status == "posted";
+    let company = inv.company_id;
     for entry_id in journal_ids(db, &inv).await? {
         wipe_journal(db, entry_id).await?;
     }
-    wipe_invoice(db, id).await
+    wipe_invoice(db, id).await?;
+    if posted {
+        crate::stock_replay::rebuild(db, company, "9999-12-31").await?;
+    }
+    Ok(())
 }

@@ -50,7 +50,11 @@ pub fn required_permission(method: &Method, path: &str) -> Option<&'static str> 
         Some("vat") => Some("vat"),
         Some("bank-accounts") | Some("bank-transactions") => Some("banking"),
         Some("fixed-assets") | Some("fixed-asset-categories") => Some("assets"),
-        Some("inventory") | Some("internal-docs") => Some("stock"),
+        Some("inventory") | Some("internal-docs") | Some("material-issues") => Some("stock"),
+        Some("stock") => match s.get(2).copied() {
+            Some("rules") => Some("companies"),
+            _ => Some("stock"),
+        },
         Some("recipes") | Some("production-orders") => Some("production"),
         Some("dividend-distributions") | Some("dividends") => Some("dividends"),
         Some("reports") | Some("fs") => Some("reports"),
@@ -153,6 +157,10 @@ mod tests {
         assert_eq!(perm("DELETE", "/v1/fixed-asset-categories/2"), Some("assets"));
         assert_eq!(perm("GET", "/v1/inventory/at-location"), Some("stock"));
         assert_eq!(perm("POST", "/v1/internal-docs/5/confirm"), Some("stock"));
+        assert_eq!(perm("GET", "/v1/stock/rules"), Some("companies"));
+        assert_eq!(perm("POST", "/v1/stock/rebuild"), Some("stock"));
+        assert_eq!(perm("GET", "/v1/stock/report"), Some("stock"));
+        assert_eq!(perm("POST", "/v1/material-issues/1/confirm"), Some("stock"));
         assert_eq!(perm("POST", "/v1/production-orders/2/confirm"), Some("production"));
         assert_eq!(perm("PUT", "/v1/recipes/1"), Some("production"));
         assert_eq!(perm("POST", "/v1/dividends/3/pay"), Some("dividends"));

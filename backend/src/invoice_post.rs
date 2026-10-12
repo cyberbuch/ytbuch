@@ -1,7 +1,7 @@
-//! Осчетоводяване. Продажба: Дт 411 / Кт приход (702) / Кт 4532.
-//! Покупка: Дт 304 или 602 / Дт 4531 / Кт 401.
+//! Осчетоводяване. Продажба: Дт 411 / Кт приходната сметка на артикула / Кт 4532.
+//! Покупка: Дт сметката за покупка на артикула / Дт 4531 / Кт 401.
+//! Себестойността не се пише тук. Складът се сглобява наново след записа.
 //! Кредитното известие пази същите страни и слага минус.
-//! Типове 01 и 11 движат склада. При грешка след движението наличността се връща.
 //! Затворен счетоводен месец спира поста.
 //!
 //! Octo не записва вътре в BEGIN, а процесът на хоста не отваря YottaDB
@@ -20,7 +20,7 @@ use crate::invoice_money::{self, amount_for_doc};
 use crate::invoice_read::{self, Inv};
 use crate::invoices::{bulk_body, bulk_ids, err_text};
 use crate::periods;
-use crate::stock;
+use crate::stock_replay;
 use crate::{api_err, AppState, ApiError};
 
 struct Acct {
@@ -37,9 +37,9 @@ struct Jl {
 }
 
 struct Prod {
+    name: String,
     revenue_account_id: i32,
     inventory_account_id: i32,
-    is_inventory: i32,
 }
 
 async fn acct_number(st: &AppState, company: i32, number: &str) -> Result<Acct, ApiError> {
@@ -83,20 +83,13 @@ async fn acct_id(st: &AppState, id: i32) -> Result<Acct, ApiError> {
     })
 }
 
-async fn acct_pref(st: &AppState, company: i32, pref: i32, fallback: &str, missing: &str) -> Result<Acct, ApiError> {
-    if pref > 0 {
-        return acct_id(st, pref).await;
+
+
+async fn need_product(st: &AppState, id: i32) -> Result<Prod, ApiError> {
+    match product(st, id).await? {
+        Some(p) => Ok(p),
+        None => Err(api_err(StatusCode::UNPROCESSABLE_ENTITY, "ред без артикул")),
     }
-    if let Ok(a) = acct_number(st, company, fallback).await {
-        return Ok(a);
-    }
-    // В плана на НАП няма сметка 602, а 60201…60212. 60212 е „други външни услуги“.
-    if fallback == "602" {
-        if let Ok(a) = acct_number(st, company, "60212").await {
-            return Ok(a);
-        }
-    }
-    Err(api_err(StatusCode::UNPROCESSABLE_ENTITY, missing))
 }
 
 async fn product(st: &AppState, id: i32) -> Result<Option<Prod>, ApiError> {
@@ -106,7 +99,7 @@ async fn product(st: &AppState, id: i32) -> Result<Option<Prod>, ApiError> {
     let rows = invoice_read::qry(
         &st.db,
         &format!(
-            "SELECT revenue_account_id, inventory_account_id, is_inventory FROM products WHERE id = {id}"
+            "SELECT name, revenue_account_id, inventory_account_id FROM products WHERE id = {id}"
         ),
     )
     .await?;
@@ -114,9 +107,9 @@ async fn product(st: &AppState, id: i32) -> Result<Option<Prod>, ApiError> {
         return Ok(None);
     };
     Ok(Some(Prod {
-        revenue_account_id: cell_i32_at(&row, 0),
-        inventory_account_id: cell_i32_at(&row, 1),
-        is_inventory: cell_i32_at(&row, 2),
+        name: cell_str(&row, 0),
+        revenue_account_id: cell_i32_at(&row, 1),
+        inventory_account_id: cell_i32_at(&row, 2),
     }))
 }
 
@@ -143,24 +136,28 @@ async fn plan_for(st: &AppState, inv: &Inv) -> Result<Vec<Jl>, ApiError> {
         push(&mut plan, a411, "debit", total, "0");
         for line in &lines {
             let net = amount_for_doc(&inv.document_type, &line.net_amount);
-            let prod = product(st, line.product_id).await?;
-            let pref = prod.as_ref().map(|p| p.revenue_account_id).unwrap_or(0);
-            let acct = acct_pref(st, company, pref, "702", "липсва приходна сметка (702)").await?;
+            let prod = need_product(st, line.product_id).await?;
+            if prod.revenue_account_id <= 0 {
+                return Err(api_err(
+                    StatusCode::UNPROCESSABLE_ENTITY,
+                    format!("артикулът {} няма приходна сметка", prod.name),
+                ));
+            }
+            let acct = acct_id(st, prod.revenue_account_id).await?;
             push(&mut plan, acct, "credit", net, "0");
         }
         push(&mut plan, a4532, "credit", vat.clone(), &vat);
     } else {
         for line in &lines {
             let net = amount_for_doc(&inv.document_type, &line.net_amount);
-            let prod = product(st, line.product_id).await?;
-            let (pref, fallback, missing) = match prod.as_ref() {
-                Some(p) if p.is_inventory == 1 => {
-                    (p.inventory_account_id, "304", "липсва складова сметка (304)")
-                }
-                Some(p) => (p.inventory_account_id, "602", "липсва сметка 602"),
-                None => (0, "602", "липсва сметка 602"),
-            };
-            let acct = acct_pref(st, company, pref, fallback, missing).await?;
+            let prod = need_product(st, line.product_id).await?;
+            if prod.inventory_account_id <= 0 {
+                return Err(api_err(
+                    StatusCode::UNPROCESSABLE_ENTITY,
+                    format!("артикулът {} няма сметка за покупка", prod.name),
+                ));
+            }
+            let acct = acct_id(st, prod.inventory_account_id).await?;
             push(&mut plan, acct, "debit", net, "0");
         }
         push(&mut plan, a4531, "debit", vat.clone(), &vat);
@@ -280,29 +277,10 @@ pub(crate) async fn post_one(st: &AppState, company: i32, id: i32) -> Result<Val
             "direction must be 'in' or 'out'",
         ));
     }
-    let mut plan = plan_for(st, &inv).await?;
-    let (sides, snaps) = stock::apply_invoice(&st.db, &inv).await?;
-    plan.extend(sides.into_iter().map(from_side));
-    match write_journal(st, &inv, &plan).await {
-        Ok(body) => Ok(body),
-        Err(e) => {
-            let _ = stock::undo(&st.db, &snaps).await;
-            Err(e)
-        }
-    }
-}
-
-fn from_side(side: crate::posting::Side) -> Jl {
-    Jl {
-        account: Acct {
-            id: side.account.id,
-            number: side.account.number,
-            name: side.account.name,
-        },
-        direction: side.direction,
-        amount: side.amount,
-        vat_amount: "0".into(),
-    }
+    let plan = plan_for(st, &inv).await?;
+    let body = write_journal(st, &inv, &plan).await?;
+    stock_replay::rebuild(&st.db, company, "9999-12-31").await?;
+    Ok(body)
 }
 
 pub(crate) async fn unpost_one(st: &AppState, company: i32, id: i32) -> Result<(), ApiError> {
@@ -311,12 +289,13 @@ pub(crate) async fn unpost_one(st: &AppState, company: i32, id: i32) -> Result<(
     if inv.status != "posted" {
         return Err(api_err(StatusCode::UNPROCESSABLE_ENTITY, "не е осчетоводена"));
     }
-    stock::restore_posted(&st.db, &inv).await?;
     let ids = invoice_read::journal_ids(&st.db, &inv).await?;
     for entry_id in ids {
         invoice_read::wipe_journal(&st.db, entry_id).await?;
     }
-    invoice_read::set_status(&st.db, id, "draft", 0).await
+    invoice_read::set_status(&st.db, id, "draft", 0).await?;
+    stock_replay::rebuild(&st.db, company, "9999-12-31").await?;
+    Ok(())
 }
 
 pub async fn post(

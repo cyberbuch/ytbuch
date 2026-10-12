@@ -119,6 +119,19 @@ export const api = {
   del: <T>(path: string) => request<T>(path, "DELETE"),
 };
 
+export async function fetchAll<T>(path: string): Promise<T[]> {
+  const all: T[] = [];
+  let offset = 0;
+  for (let i = 0; i < 40; i++) {
+    const data = await api.get<ListResponse<T>>(path, { limit: 500, offset });
+    const items = data.items ?? [];
+    all.push(...items);
+    if (!data.has_more || items.length === 0) break;
+    offset += items.length;
+  }
+  return all;
+}
+
 export async function downloadFile(path: string, filename: string): Promise<void> {
   const headers: Record<string, string> = {};
   const token = getToken();

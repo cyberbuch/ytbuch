@@ -257,12 +257,6 @@ async fn product_load(st: &AppState, id: i32) -> Result<Product, ApiError> {
         .ok_or_else(|| api_err(StatusCode::NOT_FOUND, "стоката не е намерена"))
 }
 
-fn money_mul(qty: &str, cost: &str) -> String {
-    let q: f64 = qty.trim().parse().unwrap_or(0.0);
-    let c: f64 = cost.trim().parse().unwrap_or(0.0);
-    format!("{:.2}", (q * c * 100.0).round() / 100.0)
-}
-
 fn finish_product(p: &mut Product) {
     if p.unit.trim().is_empty() {
         p.unit = "C62".into();
@@ -282,12 +276,9 @@ fn finish_product(p: &mut Product) {
     if p.is_service != 0 {
         p.is_service = 1;
         p.is_inventory = 0;
+        p.stock_quantity = "0".into();
+        p.stock_value = "0".into();
     }
-    p.stock_value = if p.is_inventory == 0 {
-        "0".into()
-    } else {
-        money_mul(&p.stock_quantity, &p.cost_price)
-    };
 }
 
 fn apply_product(p: &mut Product, obj: &serde_json::Map<String, Value>) -> Result<(), ApiError> {
@@ -326,9 +317,6 @@ fn apply_product(p: &mut Product, obj: &serde_json::Map<String, Value>) -> Resul
     }
     if let Some(v) = form::i32_field(obj, "revenue_account_id")? {
         p.revenue_account_id = v;
-    }
-    if let Some(v) = form::str_field(obj, "stock_quantity")? {
-        p.stock_quantity = v;
     }
     if let Some(v) = form::flag_field(obj, "is_active")? {
         p.is_active = v;
@@ -403,6 +391,8 @@ pub async fn product_create(
         return Err(api_err(StatusCode::UNPROCESSABLE_ENTITY, "name е задължително"));
     }
     finish_product(&mut p);
+    p.stock_quantity = "0".into();
+    p.stock_value = "0".into();
     p.id = st.db.next_id("products").await.map_err(db_err)?;
     st.db
         .exec(&format!(
@@ -441,8 +431,12 @@ pub async fn product_update(
     auth_sub(&st, &headers)?;
     let obj = form::object(&body)?;
     let mut p = product_load(&st, id).await?;
+    let qty = p.stock_quantity.clone();
+    let val = p.stock_value.clone();
     apply_product(&mut p, obj)?;
     finish_product(&mut p);
+    p.stock_quantity = qty;
+    p.stock_value = val;
     product_save(&st, &p).await?;
     Ok(Json(product_json(&product_load(&st, id).await?)))
 }

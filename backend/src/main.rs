@@ -37,6 +37,7 @@ mod journal_manual;
 mod lists;
 mod mfg;
 mod mail;
+mod mat_issue;
 mod master;
 mod opening;
 mod pagination;
@@ -76,6 +77,11 @@ mod smap;
 mod smap_def;
 mod settings;
 mod stock;
+mod stock_journal;
+mod stock_replay;
+mod stock_report;
+mod stock_rules;
+mod stock_writeoff;
 mod totp;
 mod ubl_in;
 mod ubl_xml;
@@ -90,6 +96,7 @@ mod vat_line;
 mod fiscal_check;
 
 use std::env;
+use std::net::SocketAddr;
 use std::sync::Arc;
 
 use axum::extract::State;
@@ -329,6 +336,18 @@ async fn main() {
         .route("/v1/fixed-assets/{id}/dispose", post(asset_ops::dispose))
         .route("/v1/fixed-assets/{id}/events", get(asset_ops::events))
         .route("/v1/inventory/at-location", get(stock::at_location))
+        .route("/v1/stock/rules", get(stock_rules::index).post(stock_rules::create))
+        .route("/v1/stock/rules/{id}", delete(stock_rules::delete))
+        .route("/v1/stock/rebuild", post(stock_writeoff::rebuild))
+        .route("/v1/stock/writeoff", post(stock_writeoff::post))
+        .route("/v1/stock/report", get(stock_report::report))
+        .route("/v1/material-issues", get(mat_issue::index).post(mat_issue::create))
+        .route(
+            "/v1/material-issues/{id}",
+            get(mat_issue::show).patch(mat_issue::update).delete(mat_issue::delete),
+        )
+        .route("/v1/material-issues/{id}/confirm", post(mat_issue::confirm))
+        .route("/v1/material-issues/{id}/unpost", post(mat_issue::unpost))
         .route("/v1/internal-docs/next-number", get(idocs::next_number))
         .route("/v1/internal-docs", get(idocs::index).post(idocs::create))
         .route(
@@ -402,9 +421,14 @@ async fn main() {
         .await
         .unwrap_or_else(|e| panic!("bind {addr}: {e}"));
     tracing::info!("ytbuch API on http://{addr}");
-    axum::serve(listener, app)
-        .await
-        .unwrap_or_else(|e| panic!("serve: {e}"));
+    // tower_governor чете peer IP от ConnectInfo. axum 0.8 го слага само
+    // ако сървисът е с into_make_service_with_connect_info.
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<SocketAddr>(),
+    )
+    .await
+    .unwrap_or_else(|e| panic!("serve: {e}"));
 }
 
 async fn health() -> Json<Value> {

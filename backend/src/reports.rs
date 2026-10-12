@@ -22,6 +22,7 @@ pub struct Rq {
     to: Option<String>,
     account: Option<String>,
     counterpart_id: Option<String>,
+    location_id: Option<String>,
     format: Option<String>,
     bg: Option<String>,
 }
@@ -97,6 +98,10 @@ async fn prepare(st: &AppState, headers: &HeaderMap, q: &Rq) -> Result<Built, Ap
         return Err(api_err(StatusCode::BAD_REQUEST, "counterpart_id е задължителен"));
     }
     let filter_cp = if wants_cp { cpid } else { 0 };
+    if kind == "stock" {
+        let loc = q.location_id.as_deref().unwrap_or("").trim().parse::<i32>().unwrap_or(0);
+        return crate::stock_report::sheet(&st.db, company, from, to, loc).await;
+    }
     let books = reports_data::load(&st.db, company, from, to, account, filter_cp).await?;
     let mut built = dispatch(st, kind, &books).await?;
     let line = firm_line(&books.firm_name, &books.firm_eik);
