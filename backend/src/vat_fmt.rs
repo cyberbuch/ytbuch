@@ -95,6 +95,22 @@ pub fn with_bg(v: &str) -> String {
     format!("BG{t}")
 }
 
+/// ИН по ДДС на контрагент: български номер (само цифри) получава префикс BG,
+/// номер на друга държава членка (с код на държавата) остава непроменен.
+pub fn cp_vat(v: &str) -> String {
+    let t = v.trim().to_ascii_uppercase();
+    if t.is_empty() {
+        return String::new();
+    }
+    if t.starts_with("BG") {
+        return t;
+    }
+    if t.bytes().all(|b| b.is_ascii_digit()) {
+        return format!("BG{t}");
+    }
+    t
+}
+
 pub fn cp1251(s: &str) -> Vec<u8> {
     let mut out = Vec::with_capacity(s.len());
     for ch in s.chars() {

@@ -108,8 +108,99 @@ pub fn deklar(vat: &str, name: &str, period: &str, submitter: &str, c: &Cells) -
     b
 }
 
-fn crc32(data: &[u8]) -> u32 {
-    let mut crc = 0xFFFF_FFFFu32;
+pub struct ViesHead {
+    pub vat: String,
+    pub name: String,
+    pub street: String,
+    pub decl_egn: String,
+    pub decl_name: String,
+    pub decl_city: String,
+    pub decl_post: String,
+    pub decl_street: String,
+    pub quality: String,
+}
+
+pub struct ViesParty {
+    pub vin: String,
+    pub k3: i64,
+    pub k4: i64,
+    pub k5: i64,
+}
+
+/// Деклараторът: счетоводител/пълномощник (A) или представляващ (R).
+pub fn declarant(
+    accountant_egn: &str,
+    accountant_name: &str,
+    auth_egn: &str,
+    auth_name: &str,
+    manager_egn: &str,
+    manager_name: &str,
+) -> (String, String, String) {
+    if !accountant_egn.trim().is_empty() || !accountant_name.trim().is_empty() {
+        return (
+            accountant_egn.trim().to_string(),
+            accountant_name.trim().to_string(),
+            "A".into(),
+        );
+    }
+    if !auth_egn.trim().is_empty() || !auth_name.trim().is_empty() {
+        return (
+            auth_egn.trim().to_string(),
+            auth_name.trim().to_string(),
+            "A".into(),
+        );
+    }
+    (
+        manager_egn.trim().to_string(),
+        manager_name.trim().to_string(),
+        "R".into(),
+    )
+}
+
+fn amt12(c: i64) -> Vec<u8> {
+    vat_fmt::num_str(&crate::invoice_money::money(c), 12)
+}
+
+/// VIES.TXT: VHR + VDR + VTR + TTR + VIR редове, Windows-1251, CRLF.
+pub fn vies_txt(head: &ViesHead, period_mm_yyyy: &str, parties: &[ViesParty]) -> Vec<u8> {
+    let mut b = Vec::new();
+    b.extend(b"VHR");
+    b.extend(sym(period_mm_yyyy, 7));
+    b.extend(vat_fmt::num_str(&parties.len().to_string(), 5));
+    b.extend(crlf());
+    b.extend(b"VDR");
+    b.extend(sym(&head.decl_egn, 15));
+    b.extend(sym(&head.decl_name, 150));
+    b.extend(sym(&head.decl_city, 50));
+    b.extend(sym(&head.decl_post, 4));
+    b.extend(sym(&head.decl_street, 150));
+    b.extend(sym(&head.quality, 1));
+    b.extend(crlf());
+    b.extend(b"VTR");
+    b.extend(sym(&vat_fmt::with_bg(&head.vat), 15));
+    b.extend(sym(&head.name, 150));
+    b.extend(sym(&head.street, 200));
+    b.extend(crlf());
+    let total: i64 = parties.iter().map(|p| p.k3 + p.k4 + p.k5).sum();
+    let vod: i64 = parties.iter().map(|p| p.k3).sum();
+    b.extend(b"TTR");
+    b.extend(amt12(total));
+    b.extend(amt12(vod));
+    b.extend(crlf());
+    for (i, p) in parties.iter().enumerate() {
+        b.extend(b"VIR");
+        b.extend(vat_fmt::num_str(&(i + 1).to_string(), 5));
+        b.extend(sym(&p.vin, 15));
+        b.extend(amt12(p.k3));
+        b.extend(amt12(p.k4));
+        b.extend(amt12(p.k5));
+        b.extend(sym("", 7));
+        b.extend(crlf());
+    }
+    b
+}
+
+fn crc32(data: &[u8]) -> u32 {    let mut crc = 0xFFFF_FFFFu32;
     for &byte in data {
         crc ^= u32::from(byte);
         for _ in 0..8 {

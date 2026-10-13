@@ -48,6 +48,14 @@ interface VatPack {
   cells: Record<string, string>;
   due: string;
   refund: string;
+  vies: {
+    vat_number: string;
+    country: string;
+    base_vod: string;
+    base_tri: string;
+    base_services: string;
+    total: string;
+  }[];
 }
 
 function prevPeriod(): { year: string; month: string } {
@@ -61,11 +69,6 @@ function money(raw: string | undefined): string {
   const n = Number(String(raw ?? "").replace(",", "."));
   if (!Number.isFinite(n)) return raw || "0,00";
   return n.toLocaleString("bg-BG", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
-
-function isZero(raw: string | undefined): boolean {
-  const n = Number(String(raw ?? "").replace(",", "."));
-  return !Number.isFinite(n) || n === 0;
 }
 
 const SECTION_A: string[] = [
@@ -106,7 +109,7 @@ function CellTable({
   );
 }
 
-function sumField(rows: VatRow[], field: keyof VatRow): number {
+function sumField<T>(rows: T[], field: keyof T): number {
   return rows.reduce((acc, r) => {
     const n = Number(String(r[field] ?? "").replace(",", "."));
     return acc + (Number.isFinite(n) ? n : 0);
@@ -192,7 +195,7 @@ function VatInner() {
     }
   };
 
-  const viesRows = (data?.sales ?? []).filter((r) => !isZero(r.base_vod));
+  const viesRows = data?.vies ?? [];
   const dueN = Number(data?.due ?? "0");
   const refundN = Number(data?.refund ?? "0");
 
@@ -246,6 +249,9 @@ function VatInner() {
               </button>
               <button className="btn" onClick={() => void download("prodagbi", "PRODAGBI.TXT")}>
                 {t("vat.download_prodagbi")}
+              </button>
+              <button className="btn" onClick={() => void download("vies", `VIES_${data.period_nap}.TXT`)}>
+                {t("vat.download_vies")}
               </button>
             </>
           )}
@@ -503,27 +509,43 @@ function VatInner() {
                   <table className="table">
                     <thead>
                       <tr>
-                        <th>{t("vat.document")}</th>
-                        <th>{t("vat.date")}</th>
+                        <th>{t("vat.country")}</th>
                         <th>{t("vat.vat_number")}</th>
-                        <th>{t("vat.counterpart")}</th>
                         <th className="num">{t("vat.col_vod")}</th>
+                        <th className="num">{t("vat.col_tri")}</th>
+                        <th className="num">{t("vat.col_services")}</th>
+                        <th className="num">{t("vat.total")}</th>
                       </tr>
                     </thead>
                     <tbody>
                       {viesRows.map((r) => (
-                        <tr key={r.id}>
-                          <td>{r.document_number}</td>
-                          <td>{formatBgDate(r.document_date)}</td>
-                          <td>{r.counterpart_vat_number}</td>
-                          <td>{r.counterpart_name}</td>
+                        <tr key={r.vat_number}>
+                          <td>{r.country}</td>
+                          <td>{r.vat_number}</td>
                           <td className="num">{money(r.base_vod)}</td>
+                          <td className="num">{money(r.base_tri)}</td>
+                          <td className="num">{money(r.base_services)}</td>
+                          <td className="num">{money(r.total)}</td>
                         </tr>
                       ))}
                     </tbody>
+                    <tfoot>
+                      <tr>
+                        <td colSpan={2}>{t("vat.total")}</td>
+                        <td className="num">{money(String(sumField(viesRows, "base_vod")))}</td>
+                        <td className="num">{money(String(sumField(viesRows, "base_tri")))}</td>
+                        <td className="num">{money(String(sumField(viesRows, "base_services")))}</td>
+                        <td className="num">{money(String(sumField(viesRows, "total")))}</td>
+                      </tr>
+                    </tfoot>
                   </table>
                 </div>
               )}
+              <div className="toolbar" style={{ marginTop: 12 }}>
+                <button className="btn btn-primary" onClick={() => void download("vies", `VIES_${data?.period_nap ?? "period"}.TXT`)}>
+                  {t("vat.download_vies")}
+                </button>
+              </div>
             </div>
           )}
         </>

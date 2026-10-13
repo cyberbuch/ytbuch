@@ -30,6 +30,12 @@ struct Co {
     vat: String,
     submitter: String,
     branch: String,
+    street: String,
+    city: String,
+    post: String,
+    decl_egn: String,
+    decl_name: String,
+    quality: String,
 }
 
 pub(crate) struct Pack {
@@ -37,6 +43,7 @@ pub(crate) struct Pack {
     pub(crate) pok: Vec<u8>,
     pub(crate) pro: Vec<u8>,
     pub(crate) dek: Vec<u8>,
+    pub(crate) vies: Vec<u8>,
     pub(crate) period_nap: String,
 }
 
@@ -52,7 +59,9 @@ async fn company(st: &AppState, id: i32) -> Result<Co, ApiError> {
     let rows = invoice_read::qry(
         &st.db,
         &format!(
-            "SELECT name, vat_number, accountant_name, accountant_egn, authorized_person_name, authorized_person_egn, manager_name, manager_egn, vat_branch_number FROM companies WHERE id = {id}"
+            "SELECT name, vat_number, accountant_name, accountant_egn, authorized_person_name, authorized_person_egn, manager_name, manager_egn, vat_branch_number, \
+             city, post_code, street_name, building_number, address_building, additional_address_detail \
+             FROM companies WHERE id = {id}"
         ),
     )
     .await?;
@@ -60,6 +69,15 @@ async fn company(st: &AppState, id: i32) -> Result<Co, ApiError> {
         return Err(api_err(StatusCode::INTERNAL_SERVER_ERROR, "няма фирма за ДДС"));
     };
     let vat = vat_fmt::with_bg(&cell_str(row, 1));
+    let (decl_egn, decl_name, quality) = vat_files::declarant(
+        &cell_str(row, 3),
+        &cell_str(row, 2),
+        &cell_str(row, 5),
+        &cell_str(row, 4),
+        &cell_str(row, 7),
+        &cell_str(row, 6),
+    );
+    let street = street_of(&cell_str(row, 11), &cell_str(row, 12), &cell_str(row, 14));
     Ok(Co {
         name: cell_str(row, 0),
         submitter: vat_files::submitter(
@@ -71,8 +89,48 @@ async fn company(st: &AppState, id: i32) -> Result<Co, ApiError> {
             &cell_str(row, 6),
         ),
         branch: cell_str(row, 8),
+        street,
+        city: cell_str(row, 9),
+        post: cell_str(row, 10),
+        decl_egn,
+        decl_name,
+        quality,
         vat,
     })
+}
+
+fn street_of(street: &str, number: &str, extra: &str) -> String {
+    let mut out = street.trim().to_string();
+    let n = number.trim();
+    if !n.is_empty() {
+        if !out.is_empty() {
+            out.push_str(" № ");
+        }
+        out.push_str(n);
+    }
+    let e = extra.trim();
+    if !e.is_empty() {
+        if !out.is_empty() {
+            out.push_str(", ");
+        }
+        out.push_str(e);
+    }
+    out
+}
+
+fn vies_vin(raw: &str) -> Option<String> {
+    let v = raw.trim().to_ascii_uppercase();
+    let b = v.as_bytes();
+    if b.len() < 3 || b.len() > 15 {
+        return None;
+    }
+    if !b[..2].iter().all(|c| c.is_ascii_alphabetic()) {
+        return None;
+    }
+    if v.starts_with("BG") {
+        return None;
+    }
+    Some(v)
 }
 
 fn sums(rows: &[Row]) -> (i64, i64) {
@@ -160,7 +218,7 @@ async fn one_line(st: &AppState, company: i32, row: &Row, kind: &str) -> Result<
         )
         .await?;
         if let Some(c) = cps.first() {
-            ln.cp_vat = vat_fmt::with_bg(&cell_str(c, 0));
+            ln.cp_vat = vat_fmt::cp_vat(&cell_str(c, 0));
         }
     }
     let doc_id = cell_i32_at(row, 4);
@@ -310,6 +368,7 @@ async fn collect(st: &AppState, company_id: i32, period: &vat_fmt::Period) -> Re
     let mut sales = Vec::new();
     let mut pok = Vec::new();
     let mut pro = Vec::new();
+    let mut vies_map: std::collections::HashMap<String, (i64, i64, i64)> = std::collections::HashMap::new();
     for row in &rows {
         let vt = cell_str(row, 7);
         if vt != "purchase" && vt != "sales" {
@@ -328,6 +387,12 @@ async fn collect(st: &AppState, company_id: i32, period: &vat_fmt::Period) -> Re
             pok.extend(pok_line(&co.vat, &period.nap, &co.branch, n, &ln));
         } else {
             let n = cells.sales_n + 1;
+            if let Some(vin) = vies_vin(&ln.cp_vat) {
+                let e = vies_map.entry(vin).or_insert((0, 0, 0));
+                e.0 += ln.s_vod;
+                e.1 += ln.s_tri;
+                e.2 += ln.s_svc;
+            }
             cells.add(&ln);
             sales.push(ln.to_json(id, n as i32));
             pro.extend(pro_line(&co.vat, &period.nap, &co.branch, n, &ln));
@@ -335,8 +400,44 @@ async fn collect(st: &AppState, company_id: i32, period: &vat_fmt::Period) -> Re
     }
     cells.finish();
     load_manual(st, company_id, &period.iso, &mut cells).await?;
+    let mut vies_parties: Vec<vat_files::ViesParty> = vies_map
+        .into_iter()
+        .filter(|(_, (k3, k4, k5))| *k3 != 0 || *k4 != 0 || *k5 != 0)
+        .map(|(vin, (k3, k4, k5))| vat_files::ViesParty { vin, k3, k4, k5 })
+        .collect();
+    vies_parties.sort_by(|a, b| a.vin.cmp(&b.vin));
+    let mm = &period.nap[4..6];
+    let yyyy = &period.nap[..4];
+    let vies = vat_files::vies_txt(
+        &vat_files::ViesHead {
+            vat: co.vat.clone(),
+            name: co.name.clone(),
+            street: co.street.clone(),
+            decl_egn: co.decl_egn.clone(),
+            decl_name: co.decl_name.clone(),
+            decl_city: co.city.clone(),
+            decl_post: co.post.clone(),
+            decl_street: co.street.clone(),
+            quality: co.quality.clone(),
+        },
+        &format!("{mm}/{yyyy}"),
+        &vies_parties,
+    );
+    let vies_rows: Vec<Value> = vies_parties
+        .iter()
+        .map(|p| {
+            serde_json::json!({
+                "vat_number": p.vin,
+                "country": &p.vin[..2],
+                "base_vod": crate::invoice_money::money(p.k3),
+                "base_tri": crate::invoice_money::money(p.k4),
+                "base_services": crate::invoice_money::money(p.k5),
+                "total": crate::invoice_money::money(p.k3 + p.k4 + p.k5),
+            })
+        })
+        .collect();
     let dek = deklar(&co.vat, &co.name, &period.nap, &co.submitter, &cells);
-    let body = vat_line::pack_json(
+    let mut body = vat_line::pack_json(
         &period.iso,
         &period.nap,
         &co.name,
@@ -346,11 +447,15 @@ async fn collect(st: &AppState, company_id: i32, period: &vat_fmt::Period) -> Re
         sales,
         &cells,
     );
+    if let Some(map) = body.as_object_mut() {
+        map.insert("vies".into(), serde_json::json!(vies_rows));
+    }
     Ok(Pack {
         body,
         pok,
         pro,
         dek,
+        vies,
         period_nap: period.nap.clone(),
     })
 }
@@ -397,6 +502,11 @@ pub async fn export(
         "prodagbi" | "prodajbi" => {
             file_resp(packed.pro, "text/plain; charset=windows-1251", "PRODAGBI.TXT".into())
         }
+        "vies" => file_resp(
+            packed.vies,
+            "text/plain; charset=windows-1251",
+            format!("VIES_{}.TXT", packed.period_nap),
+        ),
         "zip" => file_resp(
             vat_files::zip3(&packed.dek, &packed.pok, &packed.pro),
             "application/zip",
