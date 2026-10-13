@@ -16,88 +16,56 @@ interface Role {
 
 const GROUPS: { titleKey: string; items: { id: string; labelKey: string }[] }[] = [
   {
-    titleKey: "roles.g.admin",
+    titleKey: "roles.g.invoices",
     items: [
-      { id: "admin:read", labelKey: "roles.p.read" },
-      { id: "admin:create", labelKey: "roles.p.create" },
-      { id: "admin:update", labelKey: "roles.p.update" },
-      { id: "admin:delete", labelKey: "roles.p.delete" },
+      { id: "invoices", labelKey: "roles.p.invoices" },
+      { id: "counterparts", labelKey: "roles.p.counterparts" },
+      { id: "products", labelKey: "roles.p.products" },
+      { id: "scans", labelKey: "roles.p.scans" },
     ],
   },
   {
     titleKey: "roles.g.accounting",
     items: [
-      { id: "accounting:read", labelKey: "roles.p.read" },
-      { id: "accounting:write", labelKey: "roles.p.write" },
-      { id: "accounting:post", labelKey: "roles.p.post" },
-    ],
-  },
-  {
-    titleKey: "roles.g.invoices",
-    items: [
-      { id: "invoice:read", labelKey: "roles.p.read" },
-      { id: "invoice:create", labelKey: "roles.p.create" },
-      { id: "invoice:update", labelKey: "roles.p.update" },
-      { id: "invoice:delete", labelKey: "roles.p.delete" },
-    ],
-  },
-  {
-    titleKey: "roles.g.documents",
-    items: [
-      { id: "document:read", labelKey: "roles.p.read" },
-      { id: "document:upload", labelKey: "roles.p.upload" },
+      { id: "accounts", labelKey: "roles.p.accounts" },
+      { id: "journal", labelKey: "roles.p.journal" },
+      { id: "periods", labelKey: "roles.p.periods" },
+      { id: "vat", labelKey: "roles.p.vat" },
     ],
   },
   {
     titleKey: "roles.g.reports",
     items: [
-      { id: "report:read", labelKey: "roles.p.read" },
-      { id: "report:export", labelKey: "roles.p.export" },
+      { id: "reports", labelKey: "roles.p.reports" },
+      { id: "saft", labelKey: "roles.p.saft" },
     ],
   },
   {
-    titleKey: "roles.g.vat",
+    titleKey: "roles.g.ops",
     items: [
-      { id: "vat:read", labelKey: "roles.p.read" },
-      { id: "vat:create", labelKey: "roles.p.create" },
-      { id: "vat:submit", labelKey: "roles.p.submit" },
+      { id: "stock", labelKey: "roles.p.stock" },
+      { id: "production", labelKey: "roles.p.production" },
+      { id: "assets", labelKey: "roles.p.assets" },
+      { id: "banking", labelKey: "roles.p.banking" },
+      { id: "dividends", labelKey: "roles.p.dividends" },
     ],
   },
   {
-    titleKey: "roles.g.settings",
+    titleKey: "roles.g.admin",
     items: [
-      { id: "settings:read", labelKey: "roles.p.read" },
-      { id: "settings:update", labelKey: "roles.p.update" },
-    ],
-  },
-  {
-    titleKey: "roles.g.users",
-    items: [
-      { id: "user:read", labelKey: "roles.p.read" },
-      { id: "user:create", labelKey: "roles.p.create" },
-      { id: "user:update", labelKey: "roles.p.update" },
-      { id: "user:delete", labelKey: "roles.p.delete" },
-    ],
-  },
-  {
-    titleKey: "roles.g.companies",
-    items: [
-      { id: "company:read", labelKey: "roles.p.read" },
-      { id: "company:create", labelKey: "roles.p.create" },
-      { id: "company:update", labelKey: "roles.p.update" },
-      { id: "company:delete", labelKey: "roles.p.delete" },
-    ],
-  },
-  {
-    titleKey: "roles.g.roles",
-    items: [
-      { id: "role:read", labelKey: "roles.p.read" },
-      { id: "role:create", labelKey: "roles.p.create" },
-      { id: "role:update", labelKey: "roles.p.update" },
-      { id: "role:delete", labelKey: "roles.p.delete" },
+      { id: "companies", labelKey: "roles.p.companies" },
+      { id: "users", labelKey: "roles.p.users" },
+      { id: "settings", labelKey: "roles.p.settings" },
+      { id: "rates", labelKey: "roles.p.rates" },
     ],
   },
 ];
+
+const ALL_PERM = "*";
+
+const KNOWN_PERMS = new Map<string, string>(
+  GROUPS.flatMap((g) => g.items.map((it) => [it.id, it.labelKey] as [string, string]))
+);
 
 function asPerms(v: unknown): string[] {
   if (Array.isArray(v)) return v.map(String);
@@ -163,9 +131,29 @@ function RolesInner() {
   };
 
   const toggle = (id: string) => {
-    setPerms((prev) =>
-      prev.includes(id) ? prev.filter((p) => p !== id) : [...prev, id]
-    );
+    setPerms((prev) => {
+      if (id === ALL_PERM) {
+        return prev.includes(ALL_PERM)
+          ? prev.filter((p) => p !== ALL_PERM)
+          : [ALL_PERM];
+      }
+      return prev
+        .filter((p) => p !== ALL_PERM)
+        .includes(id)
+        ? prev.filter((p) => p !== id && p !== ALL_PERM)
+        : [...prev.filter((p) => p !== ALL_PERM), id];
+    });
+  };
+
+  const labelOf = (id: string) => {
+    const key = KNOWN_PERMS.get(id);
+    return key ? t(key) : id;
+  };
+
+  const permsOf = (r: Role) => {
+    const list = asPerms(r.permissions);
+    if (list.includes(ALL_PERM)) return t("roles.p.all");
+    return list.map(labelOf).join(", ");
   };
 
   const save = async (e: FormEvent) => {
@@ -224,7 +212,7 @@ function RolesInner() {
                 <tr key={r.id}>
                   <td>{r.name}</td>
                   <td>{r.description}</td>
-                  <td>{asPerms(r.permissions).length}</td>
+                  <td>{permsOf(r) || <span className="muted">—</span>}</td>
                   <td>
                     <div className="icon-actions">
                       <IconButton icon="edit" title={t("common.edit")} onClick={() => openEdit(r)} />
@@ -272,23 +260,57 @@ function RolesInner() {
                   />
                 </div>
               </div>
-              {GROUPS.map((g) => (
-                <div key={g.titleKey} style={{ marginTop: 12 }}>
-                  <div className="section-title">{t(g.titleKey)}</div>
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
-                    {g.items.map((it) => (
-                      <label key={it.id} className="label" style={{ display: "flex", gap: 6 }}>
-                        <input
-                          type="checkbox"
-                          checked={perms.includes(it.id)}
-                          onChange={() => toggle(it.id)}
-                        />
-                        {t(it.labelKey)}
-                      </label>
-                    ))}
-                  </div>
-                </div>
-              ))}
+              <div style={{ marginTop: 12 }}>
+                <div className="section-title">{t("roles.perms")}</div>
+                <label className="label" style={{ display: "flex", gap: 6 }}>
+                  <input
+                    type="checkbox"
+                    checked={perms.includes(ALL_PERM)}
+                    onChange={() => toggle(ALL_PERM)}
+                  />
+                  {t("roles.p.all")}
+                </label>
+              </div>
+              {!perms.includes(ALL_PERM) && (
+                <>
+                  {GROUPS.map((g) => (
+                    <div key={g.titleKey} style={{ marginTop: 12 }}>
+                      <div className="section-title">{t(g.titleKey)}</div>
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
+                        {g.items.map((it) => (
+                          <label key={it.id} className="label" style={{ display: "flex", gap: 6 }}>
+                            <input
+                              type="checkbox"
+                              checked={perms.includes(it.id)}
+                              onChange={() => toggle(it.id)}
+                            />
+                            {t(it.labelKey)}
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                  {perms.some((p) => !KNOWN_PERMS.has(p)) && (
+                    <div style={{ marginTop: 12 }}>
+                      <div className="section-title">{t("roles.p.other")}</div>
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
+                        {perms
+                          .filter((p) => !KNOWN_PERMS.has(p))
+                          .map((p) => (
+                            <label key={p} className="label" style={{ display: "flex", gap: 6 }}>
+                              <input
+                                type="checkbox"
+                                checked
+                                onChange={() => toggle(p)}
+                              />
+                              {p}
+                            </label>
+                          ))}
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
               {formError && <div className="error-text">{formError}</div>}
               <div className="form-actions">
                 <button type="button" className="btn" onClick={() => setModal(false)}>
