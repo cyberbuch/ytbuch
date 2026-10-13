@@ -42,6 +42,8 @@ pub async fn create(
     let balance = norm_balance(opt(obj, "balance", "0")?)?;
     let gl = form::i32_field(obj, "gl_account_id")?.unwrap_or(0);
     let buf = form::i32_field(obj, "buffer_account_id")?.unwrap_or(0);
+    form::ensure_ref(&st.db, "accounts", gl, company, "сметката").await?;
+    form::ensure_ref(&st.db, "accounts", buf, company, "сметката").await?;
     let dup = invoice_read::qry(
         &st.db,
         &format!("SELECT id FROM bank_accounts WHERE company_id = {company} AND iban = {}", lit(&iban)),
@@ -93,6 +95,8 @@ pub async fn update(
     };
     let gl = form::i32_field(obj, "gl_account_id")?.unwrap_or(cur["gl_account_id"].as_i64().unwrap_or(0) as i32);
     let buf = form::i32_field(obj, "buffer_account_id")?.unwrap_or(cur["buffer_account_id"].as_i64().unwrap_or(0) as i32);
+    form::ensure_ref(&st.db, "accounts", gl, company, "сметката").await?;
+    form::ensure_ref(&st.db, "accounts", buf, company, "сметката").await?;
     let bic = form::str_field(obj, "bic")?.unwrap_or_else(|| cur["bic"].as_str().unwrap_or("").into());
     let bank_name = form::str_field(obj, "bank_name")?.unwrap_or_else(|| cur["bank_name"].as_str().unwrap_or("").into());
     let currency = form::str_field(obj, "currency")?.unwrap_or_else(|| cur["currency"].as_str().unwrap_or("BGN").into());
@@ -138,6 +142,7 @@ async fn load(st: &AppState, id: i32, company: i32) -> Result<Value, ApiError> {
 async fn one(st: &AppState, row: &crate::db::Row) -> Result<Value, ApiError> {
     let gl = cell_i32_at(row, 7);
     let buf = cell_i32_at(row, 8);
+    let owner = cell_i32_at(row, 10);
     let mut o = json!({
         "id": cell_i32_at(row, 0),
         "iban": cell_str(row, 1),
@@ -149,22 +154,26 @@ async fn one(st: &AppState, row: &crate::db::Row) -> Result<Value, ApiError> {
         "gl_account_id": gl,
         "buffer_account_id": buf,
         "balance": cell_str(row, 9),
-        "company_id": cell_i32_at(row, 10),
+        "company_id": owner,
     });
-    if let Some(code) = code(st, gl).await? {
+    if let Some(code) = code(st, gl, owner).await? {
         o["gl_account_code"] = json!(code);
     }
-    if let Some(code) = code(st, buf).await? {
+    if let Some(code) = code(st, buf, owner).await? {
         o["buffer_account_code"] = json!(code);
     }
     Ok(o)
 }
 
-async fn code(st: &AppState, id: i32) -> Result<Option<String>, ApiError> {
+async fn code(st: &AppState, id: i32, company: i32) -> Result<Option<String>, ApiError> {
     if id <= 0 {
         return Ok(None);
     }
-    let rows = invoice_read::qry(&st.db, &format!("SELECT number FROM accounts WHERE id = {id}")).await?;
+    let rows = invoice_read::qry(
+        &st.db,
+        &format!("SELECT number FROM accounts WHERE id = {id} AND company_id = {company}"),
+    )
+    .await?;
     Ok(rows.first().map(|r| cell_str(r, 0)).filter(|s| !s.is_empty()))
 }
 

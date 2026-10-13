@@ -22,10 +22,14 @@ pub async fn accounts(
     headers: HeaderMap,
     Query(q): Query<PageQuery>,
 ) -> Result<Json<Value>, ApiError> {
+    let sub = auth::subject(&st.jwt_secret, &headers)?;
+    let company = crate::form::active_or_one(&st, &sub).await?;
     let rows = rows(
         &st,
         &headers,
-        "SELECT id, number, name, saft_account_type, analytic_type FROM accounts ORDER BY number",
+        &format!(
+            "SELECT id, number, name, saft_account_type, analytic_type FROM accounts WHERE company_id = {company} ORDER BY number"
+        ),
     )
     .await?;
     let items: Vec<Value> = rows
@@ -48,10 +52,14 @@ pub async fn products(
     headers: HeaderMap,
     Query(q): Query<PageQuery>,
 ) -> Result<Json<Value>, ApiError> {
+    let sub = auth::subject(&st.jwt_secret, &headers)?;
+    let company = crate::form::active_or_one(&st, &sub).await?;
     let rows = rows(
         &st,
         &headers,
-        "SELECT id, name, code, description, unit, price, cost_price, vat_rate, is_service, is_inventory, inventory_account_id, revenue_account_id, stock_quantity, stock_value, is_active FROM products ORDER BY id",
+        &format!(
+            "SELECT id, name, code, description, unit, price, cost_price, vat_rate, is_service, is_inventory, inventory_account_id, revenue_account_id, stock_quantity, stock_value, is_active FROM products WHERE company_id = {company} ORDER BY id"
+        ),
     )
     .await?;
     let items: Vec<Value> = rows
@@ -100,10 +108,14 @@ pub async fn journal(
     headers: HeaderMap,
     Query(q): Query<PageQuery>,
 ) -> Result<Json<Value>, ApiError> {
+    let sub = auth::subject(&st.jwt_secret, &headers)?;
+    let company = crate::form::active_or_one(&st, &sub).await?;
     let rows = rows(
         &st,
         &headers,
-        "SELECT id, entry_date, document_type, document_id, document_number, description, vat_type, counterpart_id, counterpart_name, document_date, vat_period FROM journal_entries ORDER BY id",
+        &format!(
+            "SELECT id, entry_date, document_type, document_id, document_number, description, vat_type, counterpart_id, counterpart_name, document_date, vat_period FROM journal_entries WHERE company_id = {company} ORDER BY id"
+        ),
     )
     .await?;
     let items: Vec<Value> = rows.iter().map(entry_json).collect();
@@ -115,11 +127,13 @@ pub async fn journal_show(
     headers: HeaderMap,
     Path(id): Path<i32>,
 ) -> Result<Json<Value>, ApiError> {
+    let sub = auth::subject(&st.jwt_secret, &headers)?;
+    let company = crate::form::active_or_one(&st, &sub).await?;
     let mut rows = rows(
         &st,
         &headers,
         &format!(
-            "SELECT id, entry_date, document_type, document_id, document_number, description, vat_type, counterpart_id, counterpart_name, document_date, vat_period FROM journal_entries WHERE id = {id}"
+            "SELECT id, entry_date, document_type, document_id, document_number, description, vat_type, counterpart_id, counterpart_name, document_date, vat_period FROM journal_entries WHERE id = {id} AND company_id = {company}"
         ),
     )
     .await?;
@@ -154,7 +168,11 @@ pub async fn company_settings(
     headers: HeaderMap,
     Path(id): Path<i32>,
 ) -> Result<Json<Value>, ApiError> {
-    auth::subject(&st.jwt_secret, &headers)?;
+    let sub = auth::subject(&st.jwt_secret, &headers)?;
+    let company = crate::form::active_or_one(&st, &sub).await?;
+    if id != company {
+        return Err(api_err(StatusCode::NOT_FOUND, "фирмата не е намерена"));
+    }
     let Some(company) = companies::json_by_id(&st.db, id).await? else {
         return Err(api_err(StatusCode::NOT_FOUND, "фирмата не е намерена"));
     };

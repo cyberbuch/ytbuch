@@ -36,7 +36,7 @@ fn parts(key: &str) -> (i32, i32) {
 }
 
 /// Невалидна дата минава. Затворен месец е 422.
-pub async fn assert_open(db: &crate::db::Db, date_or_month: &str) -> Result<(), ApiError> {
+pub async fn assert_open(db: &crate::db::Db, company: i32, date_or_month: &str) -> Result<(), ApiError> {
     let key = key_of(date_or_month);
     let (year, month) = parts(key);
     if year < 1 || !(1..=12).contains(&month) {
@@ -44,7 +44,7 @@ pub async fn assert_open(db: &crate::db::Db, date_or_month: &str) -> Result<(), 
     }
     let rows = invoice_read::qry(
         db,
-        &format!("SELECT month, status FROM accounting_periods WHERE year = {year}"),
+        &format!("SELECT month, status FROM accounting_periods WHERE year = {year} AND company_id = {company}"),
     )
     .await?;
     for row in rows {
@@ -73,11 +73,11 @@ fn req_i32(obj: &Map<String, Value>, key: &str) -> Result<i32, ApiError> {
     }
 }
 
-async fn rows_for(db: &crate::db::Db, year: i32) -> Result<Vec<crate::db::Row>, ApiError> {
+async fn rows_for(db: &crate::db::Db, company: i32, year: i32) -> Result<Vec<crate::db::Row>, ApiError> {
     invoice_read::qry(
         db,
         &format!(
-            "SELECT id, month, status, closed_at, notes FROM accounting_periods WHERE year = {year} ORDER BY id"
+            "SELECT id, month, status, closed_at, notes FROM accounting_periods WHERE year = {year} AND company_id = {company} ORDER BY id"
         ),
     )
     .await
@@ -117,8 +117,8 @@ fn list_json(rows: &[crate::db::Row], year: i32) -> Value {
     json!({ "items": items, "year": year })
 }
 
-async fn year_list(db: &crate::db::Db, year: i32) -> Result<Value, ApiError> {
-    let rows = rows_for(db, year).await?;
+async fn year_list(db: &crate::db::Db, company: i32, year: i32) -> Result<Value, ApiError> {
+    let rows = rows_for(db, company, year).await?;
     Ok(list_json(&rows, year))
 }
 
@@ -127,8 +127,9 @@ pub async fn index(
     headers: HeaderMap,
     Query(q): Query<YearQ>,
 ) -> Result<Json<Value>, ApiError> {
-    auth_sub(&st, &headers)?;
-    Ok(Json(year_list(&st.db, year_of(q.year.as_deref())).await?))
+    let sub = auth_sub(&st, &headers)?;
+    let company = form::active_or_one(&st, &sub).await?;
+    Ok(Json(year_list(&st.db, company, year_of(q.year.as_deref())).await?))
 }
 
 fn body_year_month(body: &Value) -> Result<(i32, i32, &Map<String, Value>), ApiError> {
@@ -141,7 +142,8 @@ pub async fn close(
     headers: HeaderMap,
     Json(body): Json<Value>,
 ) -> Result<Json<Value>, ApiError> {
-    auth_sub(&st, &headers)?;
+    let sub = auth_sub(&st, &headers)?;
+    let company = form::active_or_one(&st, &sub).await?;
     let (year, month, obj) = body_year_month(&body)?;
     if !(1..=12).contains(&month) {
         return Err(api_err(
@@ -151,7 +153,7 @@ pub async fn close(
     }
     let notes = form::str_field(obj, "notes")?.unwrap_or_default();
     let closed_at = form::str_field(obj, "closed_at")?.unwrap_or_default();
-    let rows = rows_for(&st.db, year).await?;
+    let rows = rows_for(&st.db, company, year).await?;
     let mut id = 0;
     for row in &rows {
         if cell_i32_at(row, 1) == month {
@@ -162,7 +164,7 @@ pub async fn close(
         invoice_read::exe(
             &st.db,
             &format!(
-                "UPDATE accounting_periods SET status = 'closed', closed_at = {}, notes = {} WHERE id = {id}",
+                "UPDATE accounting_periods SET status = 'closed', closed_at = {}, notes = {} WHERE id = {id} AND company_id = {company}",
                 lit(&closed_at),
                 lit(&notes)
             ),
@@ -173,14 +175,14 @@ pub async fn close(
         invoice_read::exe(
             &st.db,
             &format!(
-                "INSERT INTO accounting_periods (id, year, month, status, closed_at, notes) VALUES ({nid}, {year}, {month}, 'closed', {}, {})",
+                "INSERT INTO accounting_periods (id, company_id, year, month, status, closed_at, notes) VALUES ({nid}, {company}, {year}, {month}, 'closed', {}, {})",
                 lit(&closed_at),
                 lit(&notes)
             ),
         )
         .await?;
     }
-    Ok(Json(year_list(&st.db, year).await?))
+    Ok(Json(year_list(&st.db, company, year).await?))
 }
 
 pub async fn reopen(
@@ -188,9 +190,10 @@ pub async fn reopen(
     headers: HeaderMap,
     Json(body): Json<Value>,
 ) -> Result<Json<Value>, ApiError> {
-    auth_sub(&st, &headers)?;
+    let sub = auth_sub(&st, &headers)?;
+    let company = form::active_or_one(&st, &sub).await?;
     let (year, month, _) = body_year_month(&body)?;
-    let rows = rows_for(&st.db, year).await?;
+    let rows = rows_for(&st.db, company, year).await?;
     let mut id = 0;
     for row in &rows {
         if cell_i32_at(row, 1) == month {
@@ -201,10 +204,10 @@ pub async fn reopen(
         invoice_read::exe(
             &st.db,
             &format!(
-                "UPDATE accounting_periods SET status = 'open', closed_at = '', notes = '' WHERE id = {id}"
+                "UPDATE accounting_periods SET status = 'open', closed_at = '', notes = '' WHERE id = {id} AND company_id = {company}"
             ),
         )
         .await?;
     }
-    Ok(Json(year_list(&st.db, year).await?))
+    Ok(Json(year_list(&st.db, company, year).await?))
 }

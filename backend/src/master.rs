@@ -42,10 +42,10 @@ fn account_from(r: &Row) -> Account {
 const ACC_SEL: &str =
     "SELECT id, company_id, number, name, saft_account_type, analytic_type FROM accounts";
 
-async fn account_load(st: &AppState, id: i32) -> Result<Account, ApiError> {
+async fn account_load(st: &AppState, id: i32, company: i32) -> Result<Account, ApiError> {
     let rows = st
         .db
-        .query(&format!("{ACC_SEL} WHERE id = {id}"))
+        .query(&format!("{ACC_SEL} WHERE id = {id} AND company_id = {company}"))
         .await
         .map_err(db_err)?;
     rows.into_iter()
@@ -75,8 +75,9 @@ pub async fn account_show(
     headers: HeaderMap,
     Path(id): Path<i32>,
 ) -> Result<Json<Value>, ApiError> {
-    auth_sub(&st, &headers)?;
-    Ok(Json(account_json(&account_load(&st, id).await?)))
+    let sub = auth_sub(&st, &headers)?;
+    let company = active_or_one(&st, &sub).await?;
+    Ok(Json(account_json(&account_load(&st, id, company).await?)))
 }
 
 pub async fn account_create(
@@ -113,7 +114,7 @@ pub async fn account_create(
         ))
         .await
         .map_err(db_err)?;
-    Ok((StatusCode::CREATED, Json(account_json(&account_load(&st, id).await?))))
+    Ok((StatusCode::CREATED, Json(account_json(&account_load(&st, id, company_id).await?))))
 }
 
 pub async fn account_update(
@@ -122,9 +123,10 @@ pub async fn account_update(
     Path(id): Path<i32>,
     Json(body): Json<Value>,
 ) -> Result<Json<Value>, ApiError> {
-    auth_sub(&st, &headers)?;
+    let sub = auth_sub(&st, &headers)?;
+    let company = active_or_one(&st, &sub).await?;
     let obj = form::object(&body)?;
-    let mut a = account_load(&st, id).await?;
+    let mut a = account_load(&st, id, company).await?;
     if let Some(v) = form::str_field(obj, "number")? {
         let number = v.trim().to_string();
         if number.is_empty() {
@@ -155,16 +157,17 @@ pub async fn account_update(
     }
     st.db
         .exec(&format!(
-            "UPDATE accounts SET number = {}, name = {}, saft_account_type = {}, analytic_type = {} WHERE id = {}",
+            "UPDATE accounts SET number = {}, name = {}, saft_account_type = {}, analytic_type = {} WHERE id = {} AND company_id = {}",
             lit(a.number.trim()),
             lit(a.name.trim()),
             lit(a.saft_account_type.trim()),
             lit(a.analytic_type.trim()),
-            a.id
+            a.id,
+            a.company_id
         ))
         .await
         .map_err(db_err)?;
-    Ok(Json(account_json(&account_load(&st, id).await?)))
+    Ok(Json(account_json(&account_load(&st, id, company).await?)))
 }
 
 pub async fn account_delete(
@@ -172,10 +175,11 @@ pub async fn account_delete(
     headers: HeaderMap,
     Path(id): Path<i32>,
 ) -> Result<StatusCode, ApiError> {
-    auth_sub(&st, &headers)?;
-    account_load(&st, id).await?;
+    let sub = auth_sub(&st, &headers)?;
+    let company = active_or_one(&st, &sub).await?;
+    let a = account_load(&st, id, company).await?;
     st.db
-        .exec(&format!("DELETE FROM accounts WHERE id = {id}"))
+        .exec(&format!("DELETE FROM accounts WHERE id = {} AND company_id = {}", a.id, a.company_id))
         .await
         .map_err(db_err)?;
     Ok(StatusCode::NO_CONTENT)
@@ -245,10 +249,10 @@ const PROD_SEL: &str = "SELECT id, company_id, name, code, description, unit, pr
 vat_rate, is_service, is_inventory, inventory_account_id, revenue_account_id, stock_quantity, \
 stock_value, is_active FROM products";
 
-async fn product_load(st: &AppState, id: i32) -> Result<Product, ApiError> {
+async fn product_load(st: &AppState, id: i32, company: i32) -> Result<Product, ApiError> {
     let rows = st
         .db
-        .query(&format!("{PROD_SEL} WHERE id = {id}"))
+        .query(&format!("{PROD_SEL} WHERE id = {id} AND company_id = {company}"))
         .await
         .map_err(db_err)?;
     rows.into_iter()
@@ -330,7 +334,7 @@ async fn product_save(st: &AppState, p: &Product) -> Result<(), ApiError> {
             "UPDATE products SET name = {}, code = {}, description = {}, unit = {}, price = {}, \
              cost_price = {}, vat_rate = {}, is_service = {}, is_inventory = {}, \
              inventory_account_id = {}, revenue_account_id = {}, stock_quantity = {}, \
-             stock_value = {}, is_active = {} WHERE id = {}",
+             stock_value = {}, is_active = {} WHERE id = {} AND company_id = {}",
             lit(p.name.trim()),
             lit(p.code.trim()),
             lit(&p.description),
@@ -345,7 +349,8 @@ async fn product_save(st: &AppState, p: &Product) -> Result<(), ApiError> {
             lit(p.stock_quantity.trim()),
             lit(&p.stock_value),
             p.is_active,
-            p.id
+            p.id,
+            p.company_id
         ))
         .await
         .map_err(db_err)?;
@@ -357,8 +362,9 @@ pub async fn product_show(
     headers: HeaderMap,
     Path(id): Path<i32>,
 ) -> Result<Json<Value>, ApiError> {
-    auth_sub(&st, &headers)?;
-    Ok(Json(product_json(&product_load(&st, id).await?)))
+    let sub = auth_sub(&st, &headers)?;
+    let company = active_or_one(&st, &sub).await?;
+    Ok(Json(product_json(&product_load(&st, id, company).await?)))
 }
 
 pub async fn product_create(
@@ -390,6 +396,8 @@ pub async fn product_create(
     if p.name.trim().is_empty() {
         return Err(api_err(StatusCode::UNPROCESSABLE_ENTITY, "name е задължително"));
     }
+    form::ensure_ref(&st.db, "accounts", p.inventory_account_id, p.company_id, "сметката").await?;
+    form::ensure_ref(&st.db, "accounts", p.revenue_account_id, p.company_id, "сметката").await?;
     finish_product(&mut p);
     p.stock_quantity = "0".into();
     p.stock_value = "0".into();
@@ -419,7 +427,7 @@ pub async fn product_create(
         ))
         .await
         .map_err(db_err)?;
-    Ok((StatusCode::CREATED, Json(product_json(&product_load(&st, p.id).await?))))
+    Ok((StatusCode::CREATED, Json(product_json(&product_load(&st, p.id, p.company_id).await?))))
 }
 
 pub async fn product_update(
@@ -428,17 +436,20 @@ pub async fn product_update(
     Path(id): Path<i32>,
     Json(body): Json<Value>,
 ) -> Result<Json<Value>, ApiError> {
-    auth_sub(&st, &headers)?;
+    let sub = auth_sub(&st, &headers)?;
+    let company = active_or_one(&st, &sub).await?;
     let obj = form::object(&body)?;
-    let mut p = product_load(&st, id).await?;
+    let mut p = product_load(&st, id, company).await?;
     let qty = p.stock_quantity.clone();
     let val = p.stock_value.clone();
     apply_product(&mut p, obj)?;
+    form::ensure_ref(&st.db, "accounts", p.inventory_account_id, p.company_id, "сметката").await?;
+    form::ensure_ref(&st.db, "accounts", p.revenue_account_id, p.company_id, "сметката").await?;
     finish_product(&mut p);
     p.stock_quantity = qty;
     p.stock_value = val;
     product_save(&st, &p).await?;
-    Ok(Json(product_json(&product_load(&st, id).await?)))
+    Ok(Json(product_json(&product_load(&st, id, company).await?)))
 }
 
 pub async fn product_delete(
@@ -446,10 +457,14 @@ pub async fn product_delete(
     headers: HeaderMap,
     Path(id): Path<i32>,
 ) -> Result<StatusCode, ApiError> {
-    auth_sub(&st, &headers)?;
-    product_load(&st, id).await?;
+    let sub = auth_sub(&st, &headers)?;
+    let company = active_or_one(&st, &sub).await?;
+    let p = product_load(&st, id, company).await?;
     st.db
-        .exec(&format!("DELETE FROM products WHERE id = {id}"))
+        .exec(&format!(
+            "DELETE FROM products WHERE id = {} AND company_id = {}",
+            p.id, p.company_id
+        ))
         .await
         .map_err(db_err)?;
     Ok(StatusCode::NO_CONTENT)

@@ -43,6 +43,10 @@ pub async fn create(
     let obj = form::object(&body)?;
     let fields = fields_of(obj, None)?;
     let lines = lines_of(obj, true)?;
+    form::ensure_ref(&st.db, "products", fields.output_id, company, "артикулът").await?;
+    for line in &lines {
+        form::ensure_ref(&st.db, "products", line.product_id, company, "артикулът").await?;
+    }
     let id = invoice_read::nid(&st.db, "recipes").await?;
     invoice_read::exe(&st.db, &insert_sql(id, company, &fields)).await?;
     if let Err(e) = write_lines(&st, id, &lines).await {
@@ -62,6 +66,17 @@ pub async fn update(
     let cur = load(&st, id, company).await?;
     let obj = form::object(&body)?;
     let fields = fields_of(obj, Some(&cur))?;
+    let new_lines = if obj.contains_key("lines") {
+        Some(lines_of(obj, true)?)
+    } else {
+        None
+    };
+    form::ensure_ref(&st.db, "products", fields.output_id, company, "артикулът").await?;
+    if let Some(lines) = &new_lines {
+        for line in lines {
+            form::ensure_ref(&st.db, "products", line.product_id, company, "артикулът").await?;
+        }
+    }
     invoice_read::exe(
         &st.db,
         &format!(
@@ -70,8 +85,7 @@ pub async fn update(
         ),
     )
     .await?;
-    if obj.contains_key("lines") {
-        let lines = lines_of(obj, true)?;
+    if let Some(lines) = new_lines {
         invoice_read::exe(&st.db, &format!("DELETE FROM recipe_lines WHERE recipe_id = {id}")).await?;
         write_lines(&st, id, &lines).await?;
     }

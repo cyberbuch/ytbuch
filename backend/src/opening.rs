@@ -101,14 +101,15 @@ fn opt_text(obj: &Map<String, Value>, key: &str, default: &str) -> Result<String
     Ok(form::str_field(obj, key)?.unwrap_or_else(|| default.to_string()))
 }
 
-async fn load_row(db: &crate::db::Db, id: i32) -> Result<Row, ApiError> {
+async fn load_row(db: &crate::db::Db, id: i32, company: i32) -> Result<Row, ApiError> {
     if id <= 0 {
         return Err(api_err(StatusCode::BAD_REQUEST, "invalid id"));
     }
+    form::ensure_row(db, "opening_balances", id, company, "записът").await?;
     let rows = invoice_read::qry(
         db,
         &format!(
-            "SELECT id, fiscal_year, account_id, debit, credit, counterpart_id, product_id, quantity, description FROM opening_balances WHERE id = {id}"
+            "SELECT id, fiscal_year, account_id, debit, credit, counterpart_id, product_id, quantity, description FROM opening_balances WHERE id = {id} AND company_id = {company}"
         ),
     )
     .await?;
@@ -149,9 +150,9 @@ fn row_json(row: &Row, acc: Option<&Acc>, cp_name: &str, pr_name: &str, pr_code:
     o
 }
 
-async fn maps(db: &crate::db::Db) -> Result<(HashMap<i32, Acc>, HashMap<i32, String>, HashMap<i32, (String, String)>), ApiError> {
+async fn maps(db: &crate::db::Db, company: i32) -> Result<(HashMap<i32, Acc>, HashMap<i32, String>, HashMap<i32, (String, String)>), ApiError> {
     let mut accounts = HashMap::new();
-    for row in invoice_read::qry(db, "SELECT id, number, name, analytic_type FROM accounts").await? {
+    for row in invoice_read::qry(db, &format!("SELECT id, number, name, analytic_type FROM accounts WHERE company_id = {company}")).await? {
         accounts.insert(
             cell_i32_at(&row, 0),
             Acc {
@@ -162,11 +163,11 @@ async fn maps(db: &crate::db::Db) -> Result<(HashMap<i32, Acc>, HashMap<i32, Str
         );
     }
     let mut cps = HashMap::new();
-    for row in invoice_read::qry(db, "SELECT id, name FROM counterparts").await? {
+    for row in invoice_read::qry(db, &format!("SELECT id, name FROM counterparts WHERE company_id = {company}")).await? {
         cps.insert(cell_i32_at(&row, 0), cell_str(&row, 1));
     }
     let mut prs = HashMap::new();
-    for row in invoice_read::qry(db, "SELECT id, name, code FROM products").await? {
+    for row in invoice_read::qry(db, &format!("SELECT id, name, code FROM products WHERE company_id = {company}")).await? {
         prs.insert(cell_i32_at(&row, 0), (cell_str(&row, 1), cell_str(&row, 2)));
     }
     Ok((accounts, cps, prs))
@@ -177,16 +178,17 @@ pub async fn index(
     headers: HeaderMap,
     Query(q): Query<YearQ>,
 ) -> Result<Json<Value>, ApiError> {
-    auth_sub(&st, &headers)?;
+    let sub = auth_sub(&st, &headers)?;
+    let company = form::active_or_one(&st, &sub).await?;
     let year = year_of(q.year.as_deref());
     let rows = invoice_read::qry(
         &st.db,
         &format!(
-            "SELECT id, fiscal_year, account_id, debit, credit, counterpart_id, product_id, quantity, description FROM opening_balances WHERE fiscal_year = {year} ORDER BY id"
+            "SELECT id, fiscal_year, account_id, debit, credit, counterpart_id, product_id, quantity, description FROM opening_balances WHERE company_id = {company} AND fiscal_year = {year} ORDER BY id"
         ),
     )
     .await?;
-    let (accounts, cps, prs) = maps(&st.db).await?;
+    let (accounts, cps, prs) = maps(&st.db, company).await?;
     let mut items = Vec::new();
     let mut td: i64 = 0;
     let mut tc: i64 = 0;
@@ -224,7 +226,8 @@ pub async fn create(
     headers: HeaderMap,
     Json(body): Json<Value>,
 ) -> Result<(StatusCode, Json<Value>), ApiError> {
-    auth_sub(&st, &headers)?;
+    let sub = auth_sub(&st, &headers)?;
+    let company = form::active_or_one(&st, &sub).await?;
     let obj = form::object(&body)?;
     let year = req_i32(obj, "fiscal_year")?;
     let account_id = req_i32(obj, "account_id")?;
@@ -243,10 +246,13 @@ pub async fn create(
             "салдото е или дебит, или кредит — не и двете",
         ));
     }
-    periods::assert_open(&st.db, &format!("{year}-01")).await?;
+    periods::assert_open(&st.db, company, &format!("{year}-01")).await?;
+    form::ensure_ref(&st.db, "accounts", account_id, company, "записът").await?;
+    form::ensure_ref(&st.db, "counterparts", counterpart_id, company, "контрагентът").await?;
+    form::ensure_ref(&st.db, "products", product_id, company, "артикулът").await?;
     let acc = invoice_read::qry(
         &st.db,
-        &format!("SELECT number, analytic_type FROM accounts WHERE id = {account_id}"),
+        &format!("SELECT number, analytic_type FROM accounts WHERE id = {account_id} AND company_id = {company}"),
     )
     .await?;
     let Some(acc) = acc.first() else {
@@ -283,7 +289,7 @@ pub async fn create(
     invoice_read::exe(
         &st.db,
         &format!(
-            "INSERT INTO opening_balances (id, fiscal_year, account_id, debit, credit, counterpart_id, product_id, quantity, description) VALUES ({id}, {year}, {account_id}, {}, {}, {counterpart_id}, {product_id}, {}, {})",
+            "INSERT INTO opening_balances (id, company_id, fiscal_year, account_id, debit, credit, counterpart_id, product_id, quantity, description) VALUES ({id}, {company}, {year}, {account_id}, {}, {}, {counterpart_id}, {product_id}, {}, {})",
             lit(&debit),
             lit(&credit),
             lit(&quantity),
@@ -307,11 +313,12 @@ pub async fn update(
     Path(id): Path<i32>,
     Json(body): Json<Value>,
 ) -> Result<Json<Value>, ApiError> {
-    auth_sub(&st, &headers)?;
+    let sub = auth_sub(&st, &headers)?;
+    let company = form::active_or_one(&st, &sub).await?;
     let obj = form::object(&body)?;
-    let row = load_row(&st.db, id).await?;
+    let row = load_row(&st.db, id, company).await?;
     let year = cell_i32_at(&row, 1);
-    periods::assert_open(&st.db, &format!("{year}-01")).await?;
+    periods::assert_open(&st.db, company, &format!("{year}-01")).await?;
     let mut sets = Vec::new();
     if let Some(v) = form::str_field(obj, "debit")? {
         sets.push(format!("debit = {}", lit(&v)));
@@ -326,20 +333,22 @@ pub async fn update(
         sets.push(format!("quantity = {}", lit(&v)));
     }
     if let Some(v) = form::i32_field(obj, "counterpart_id")? {
+        form::ensure_ref(&st.db, "counterparts", v, company, "контрагентът").await?;
         sets.push(format!("counterpart_id = {v}"));
     }
     if let Some(v) = form::i32_field(obj, "product_id")? {
+        form::ensure_ref(&st.db, "products", v, company, "артикулът").await?;
         sets.push(format!("product_id = {v}"));
     }
     if !sets.is_empty() {
         invoice_read::exe(
             &st.db,
-            &format!("UPDATE opening_balances SET {} WHERE id = {id}", sets.join(", ")),
+            &format!("UPDATE opening_balances SET {} WHERE id = {id} AND company_id = {company}", sets.join(", ")),
         )
         .await?;
     }
-    let row = load_row(&st.db, id).await?;
-    let (accounts, cps, prs) = maps(&st.db).await?;
+    let row = load_row(&st.db, id, company).await?;
+    let (accounts, cps, prs) = maps(&st.db, company).await?;
     let aid = cell_i32_at(&row, 2);
     let cid = cell_i32_at(&row, 5);
     let pid = cell_i32_at(&row, 6);
@@ -358,10 +367,11 @@ pub async fn delete(
     headers: HeaderMap,
     Path(id): Path<i32>,
 ) -> Result<StatusCode, ApiError> {
-    auth_sub(&st, &headers)?;
-    let row = load_row(&st.db, id).await?;
+    let sub = auth_sub(&st, &headers)?;
+    let company = form::active_or_one(&st, &sub).await?;
+    let row = load_row(&st.db, id, company).await?;
     let year = cell_i32_at(&row, 1);
-    periods::assert_open(&st.db, &format!("{year}-01")).await?;
-    invoice_read::exe(&st.db, &format!("DELETE FROM opening_balances WHERE id = {id}")).await?;
+    periods::assert_open(&st.db, company, &format!("{year}-01")).await?;
+    invoice_read::exe(&st.db, &format!("DELETE FROM opening_balances WHERE id = {id} AND company_id = {company}")).await?;
     Ok(StatusCode::NO_CONTENT)
 }

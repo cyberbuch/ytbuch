@@ -55,6 +55,7 @@ pub async fn create(
     let number = format!("МИ-{id}");
     let date = form::str_field(obj, "doc_date")?.unwrap_or_default();
     let loc = form::i32_field(obj, "location_id")?.unwrap_or(0);
+    form::ensure_ref(&st.db, "company_locations", loc, company, "обектът").await?;
     let notes = form::str_field(obj, "notes")?.unwrap_or_default();
     invoice_read::exe(
         &st.db,
@@ -86,6 +87,7 @@ pub async fn update(
     let obj = form::object(&body)?;
     let date = form::str_field(obj, "doc_date")?.unwrap_or_else(|| text(&cur, "doc_date"));
     let loc = form::i32_field(obj, "location_id")?.unwrap_or(int_of(&cur, "location_id"));
+    form::ensure_ref(&st.db, "company_locations", loc, company, "обектът").await?;
     let notes = form::str_field(obj, "notes")?.unwrap_or_else(|| text(&cur, "notes"));
     invoice_read::exe(
         &st.db,
@@ -121,7 +123,7 @@ pub async fn confirm(State(st): State<AppState>, headers: HeaderMap, Path(id): P
         return Err(api_err(StatusCode::UNPROCESSABLE_ENTITY, "нужен е складов обект"));
     }
     let date = text(&cur, "doc_date");
-    periods::assert_open(&st.db, &date).await?;
+    periods::assert_open(&st.db, company, &date).await?;
     let lines = cur.get("lines").and_then(|v| v.as_array()).cloned().unwrap_or_default();
     if lines.is_empty() {
         return Err(api_err(StatusCode::UNPROCESSABLE_ENTITY, "документът няма редове"));
@@ -153,7 +155,7 @@ pub async fn unpost(State(st): State<AppState>, headers: HeaderMap, Path(id): Pa
     if text(&cur, "status") != "confirmed" {
         return Err(api_err(StatusCode::UNPROCESSABLE_ENTITY, "документът не е потвърден"));
     }
-    periods::assert_open(&st.db, &text(&cur, "doc_date")).await?;
+    periods::assert_open(&st.db, company, &text(&cur, "doc_date")).await?;
     let entry = int_of(&cur, "journal_entry_id");
     invoice_read::wipe_journal(&st.db, entry).await?;
     invoice_read::exe(
@@ -183,6 +185,9 @@ async fn parse_lines(st: &AppState, company: i32, obj: &serde_json::Map<String, 
         }
         let account_id = form::i32_field(map, "account_id")?.unwrap_or(0);
         let inventory_account_id = form::i32_field(map, "inventory_account_id")?.unwrap_or(0);
+        form::ensure_ref(&st.db, "products", product_id, company, "артикулът").await?;
+        form::ensure_ref(&st.db, "accounts", account_id, company, "записът").await?;
+        form::ensure_ref(&st.db, "accounts", inventory_account_id, company, "записът").await?;
         if !rule_ok(&rules, inventory_account_id, account_id) {
             return Err(api_err(StatusCode::UNPROCESSABLE_ENTITY, "сметката не е в правилата за материали"));
         }

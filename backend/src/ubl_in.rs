@@ -119,7 +119,7 @@ pub async fn import(
     for line in &doc.lines {
         let mut pid = 0;
         if let Some(cp) = &hit {
-            pid = pnmap::product_for(&st.db, cp.id, &line.name, &line.seller).await?;
+            pid = pnmap::product_for(&st.db, company, cp.id, &line.name, &line.seller).await?;
         }
         if pid == 0 {
             pid = pnmap::product_by_code(&st.db, company, &line.seller).await?;

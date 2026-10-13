@@ -337,7 +337,7 @@ async fn insert_company(db: &Db, c: &Company) -> Result<(), ApiError> {
     Ok(())
 }
 
-/// Фирма от публична регистрация. Не сее сметкоплан: seed пише само company_id 1.
+/// Фирма от публична регистрация. Сее сметкоплан за новата фирма.
 pub(crate) async fn create_for_register(
     db: &Db,
     name: &str,
@@ -370,6 +370,9 @@ pub(crate) async fn create_for_register(
         .map_err(|e| api_err(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     c.created_at = db::now_stamp();
     insert_company(db, &c).await?;
+    crate::saft::fill_chart(db, c.id)
+        .await
+        .map_err(|e| api_err(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     Ok(c.id)
 }
 
@@ -392,9 +395,12 @@ pub async fn create(
         .map_err(|e| api_err(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     c.created_at = db::now_stamp();
     insert_company(&st.db, &c).await?;
+    let (seeded, _) = crate::saft::fill_chart(&st.db, c.id)
+        .await
+        .map_err(|e| api_err(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     let mut o = to_json(&c);
     if let Some(map) = o.as_object_mut() {
-        map.insert("saft_accounts_seeded".into(), json!(0));
+        map.insert("saft_accounts_seeded".into(), json!(seeded));
     }
     Ok((StatusCode::CREATED, Json(o)))
 }
@@ -549,10 +555,28 @@ pub async fn dashboard(
         .map(|r| cell_str(r, 0).parse::<i64>().unwrap_or(0))
         .unwrap_or(0);
     let year = chrono::Utc::now().format("%Y").to_string().parse::<i32>().unwrap_or(2026);
+    if company_id <= 0 {
+        return Ok(Json(json!({
+            "company_id": 0,
+            "year": year,
+            "invoices_draft": 0,
+            "invoices_posted": 0,
+            "receivables": "0.00",
+            "payables": "0.00",
+            "vat_output": "0.00",
+            "vat_input": "0.00",
+            "revenue_ytd": "0.00",
+            "expense_ytd": "0.00",
+            "bank_total": "0.00",
+            "recent": []
+        })));
+    }
     let invoices = st
         .db
         .query(
-            "SELECT id, number, issue_date, counterpart_id, counterpart_name, currency, net_amount, vat_amount, total_amount, status, direction FROM invoices ORDER BY id DESC",
+            &format!(
+                "SELECT id, number, issue_date, counterpart_id, counterpart_name, currency, net_amount, vat_amount, total_amount, status, direction FROM invoices WHERE company_id = {company_id} ORDER BY id DESC"
+            ),
         )
         .await
         .map_err(|e| api_err(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;

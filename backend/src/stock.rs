@@ -33,11 +33,19 @@ pub async fn at_location(
         ),
     )
     .await?;
-    let lots = invoice_read::qry(
-        &st.db,
-        "SELECT product_id, location_id, quantity_remaining FROM inventory_lots ORDER BY id",
-    )
-    .await?;
+    let lots = if products.is_empty() {
+        Vec::new()
+    } else {
+        let ids: Vec<String> = products.iter().map(|p| cell_i32_at(p, 0).to_string()).collect();
+        invoice_read::qry(
+            &st.db,
+            &format!(
+                "SELECT product_id, location_id, quantity_remaining FROM inventory_lots WHERE product_id IN ({}) ORDER BY id",
+                ids.join(", ")
+            ),
+        )
+        .await?
+    };
     let mut items = Vec::new();
     for p in &products {
         let pid = cell_i32_at(p, 0);

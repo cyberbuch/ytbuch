@@ -98,17 +98,25 @@ pub async fn counterparts(
     headers: HeaderMap,
     Query(q): Query<PageQuery>,
 ) -> Result<Json<Value>, ApiError> {
-    auth_sub(&st, &headers)?;
-    let items: Vec<Value> = cp_rows(&st, &format!("{CP_SEL} ORDER BY c.id"))
-        .await?
-        .iter()
-        .map(cp_json)
-        .collect();
+    let sub = auth_sub(&st, &headers)?;
+    let company = active_or_one(&st, &sub).await?;
+    let items: Vec<Value> = cp_rows(
+        &st,
+        &format!("{CP_SEL} WHERE c.company_id = {company} ORDER BY c.id"),
+    )
+    .await?
+    .iter()
+    .map(cp_json)
+    .collect();
     Ok(paginate(items, &q))
 }
 
-async fn cp_load(st: &AppState, id: i32) -> Result<Counterpart, ApiError> {
-    let mut rows = cp_rows(st, &format!("{CP_SEL} WHERE c.id = {id}")).await?;
+async fn cp_load(st: &AppState, id: i32, company: i32) -> Result<Counterpart, ApiError> {
+    let mut rows = cp_rows(
+        st,
+        &format!("{CP_SEL} WHERE c.id = {id} AND c.company_id = {company}"),
+    )
+    .await?;
     rows.pop()
         .ok_or_else(|| api_err(StatusCode::NOT_FOUND, "контрагентът не е намерен"))
 }
@@ -315,12 +323,18 @@ async fn cp_save(st: &AppState, c: &Counterpart, insert: bool) -> Result<(), Api
     Ok(())
 }
 
-pub(crate) async fn json_by_id(db: &crate::db::Db, id: i32) -> Result<Option<Value>, ApiError> {
+pub(crate) async fn json_by_id(
+    db: &crate::db::Db,
+    id: i32,
+    company: i32,
+) -> Result<Option<Value>, ApiError> {
     if id <= 0 {
         return Ok(None);
     }
     let rows = db
-        .query(&format!("{CP_SEL} WHERE c.id = {id}"))
+        .query(&format!(
+            "{CP_SEL} WHERE c.id = {id} AND c.company_id = {company}"
+        ))
         .await
         .map_err(db_err)?;
     Ok(rows.first().map(cp_from).map(|c| cp_json(&c)))
@@ -331,8 +345,9 @@ pub async fn counterpart_show(
     headers: HeaderMap,
     Path(id): Path<i32>,
 ) -> Result<Json<Value>, ApiError> {
-    auth_sub(&st, &headers)?;
-    Ok(Json(cp_json(&cp_load(&st, id).await?)))
+    let sub = auth_sub(&st, &headers)?;
+    let company = active_or_one(&st, &sub).await?;
+    Ok(Json(cp_json(&cp_load(&st, id, company).await?)))
 }
 
 pub async fn counterpart_create(
@@ -367,7 +382,7 @@ pub async fn counterpart_create(
     apply_cp(&mut c, obj, true)?;
     c.id = st.db.next_id("counterparts").await.map_err(db_err)?;
     cp_save(&st, &c, true).await?;
-    Ok((StatusCode::CREATED, Json(cp_json(&cp_load(&st, c.id).await?))))
+    Ok((StatusCode::CREATED, Json(cp_json(&cp_load(&st, c.id, c.company_id).await?))))
 }
 
 pub async fn counterpart_update(
@@ -376,12 +391,13 @@ pub async fn counterpart_update(
     Path(id): Path<i32>,
     Json(body): Json<Value>,
 ) -> Result<Json<Value>, ApiError> {
-    auth_sub(&st, &headers)?;
+    let sub = auth_sub(&st, &headers)?;
+    let company = active_or_one(&st, &sub).await?;
     let obj = form::object(&body)?;
-    let mut c = cp_load(&st, id).await?;
+    let mut c = cp_load(&st, id, company).await?;
     apply_cp(&mut c, obj, false)?;
     cp_save(&st, &c, false).await?;
-    Ok(Json(cp_json(&cp_load(&st, id).await?)))
+    Ok(Json(cp_json(&cp_load(&st, id, company).await?)))
 }
 
 pub(crate) async fn create_mapped(
@@ -414,7 +430,7 @@ pub(crate) async fn create_mapped(
     apply_cp(&mut c, obj, true)?;
     c.id = st.db.next_id("counterparts").await.map_err(db_err)?;
     cp_save(st, &c, true).await?;
-    Ok(cp_json(&cp_load(st, c.id).await?))
+    Ok(cp_json(&cp_load(st, c.id, company_id).await?))
 }
 
 pub async fn counterpart_delete(
@@ -422,8 +438,9 @@ pub async fn counterpart_delete(
     headers: HeaderMap,
     Path(id): Path<i32>,
 ) -> Result<StatusCode, ApiError> {
-    auth_sub(&st, &headers)?;
-    cp_load(&st, id).await?;
+    let sub = auth_sub(&st, &headers)?;
+    let company = active_or_one(&st, &sub).await?;
+    cp_load(&st, id, company).await?;
     st.db
         .exec(&format!("DELETE FROM counterpart_extra WHERE id = {id}"))
         .await

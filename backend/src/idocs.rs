@@ -52,11 +52,15 @@ pub async fn create(
 ) -> Result<(StatusCode, Json<Value>), ApiError> {
     let company = company(&st, &headers).await?;
     let obj = form::object(&body)?;
-    let lines = parse_lines(obj)?;
+    let lines = parse_lines(&st, company, obj).await?;
     let mut number = form::str_field(obj, "number")?.unwrap_or_default();
     if number.trim().is_empty() {
         number = next_of(&st, company).await?;
     }
+    let from_id = form::i32_field(obj, "from_location_id")?.unwrap_or(0);
+    let to_id = form::i32_field(obj, "to_location_id")?.unwrap_or(0);
+    form::ensure_ref(&st.db, "company_locations", from_id, company, "обектът").await?;
+    form::ensure_ref(&st.db, "company_locations", to_id, company, "обектът").await?;
     let id = invoice_read::nid(&st.db, "internal_docs").await?;
     invoice_read::exe(&st.db, &insert_doc(id, company, &number, obj, "draft")?).await?;
     if let Err(e) = insert_lines(&st, id, &lines).await {
@@ -83,6 +87,8 @@ pub async fn update(
     let doc_date = form::str_field(obj, "doc_date")?.unwrap_or_else(|| text(&cur, "doc_date"));
     let from_id = form::i32_field(obj, "from_location_id")?.unwrap_or(int_of(&cur, "from_location_id"));
     let to_id = form::i32_field(obj, "to_location_id")?.unwrap_or(int_of(&cur, "to_location_id"));
+    form::ensure_ref(&st.db, "company_locations", from_id, company, "обектът").await?;
+    form::ensure_ref(&st.db, "company_locations", to_id, company, "обектът").await?;
     let notes = form::str_field(obj, "notes")?.unwrap_or_else(|| text(&cur, "notes"));
     let handed = form::str_field(obj, "handed_by")?.unwrap_or_else(|| text(&cur, "handed_by"));
     let received = form::str_field(obj, "received_by")?.unwrap_or_else(|| text(&cur, "received_by"));
@@ -95,7 +101,7 @@ pub async fn update(
     )
     .await?;
     if obj.contains_key("lines") {
-        let lines = parse_lines(obj)?;
+        let lines = parse_lines(&st, company, obj).await?;
         invoice_read::exe(&st.db, &format!("DELETE FROM internal_doc_lines WHERE doc_id = {id}")).await?;
         insert_lines(&st, id, &lines).await?;
     }
@@ -129,7 +135,7 @@ pub async fn confirm(
         return Err(api_err(StatusCode::CONFLICT, "протоколът е вече потвърден"));
     }
     let doc_date = text(&cur, "doc_date");
-    periods::assert_open(&st.db, &doc_date).await?;
+    periods::assert_open(&st.db, company, &doc_date).await?;
     let from_id = int_of(&cur, "from_location_id");
     let to_id = int_of(&cur, "to_location_id");
     if from_id <= 0 || to_id <= 0 || from_id == to_id {
@@ -229,7 +235,7 @@ struct LineIn {
     description: String,
 }
 
-fn parse_lines(obj: &Map<String, Value>) -> Result<Vec<LineIn>, ApiError> {
+async fn parse_lines(st: &AppState, company: i32, obj: &Map<String, Value>) -> Result<Vec<LineIn>, ApiError> {
     let Some(raw) = obj.get("lines") else {
         return Err(api_err(StatusCode::UNPROCESSABLE_ENTITY, "lines е задължителен масив"));
     };
@@ -256,6 +262,7 @@ fn parse_lines(obj: &Map<String, Value>) -> Result<Vec<LineIn>, ApiError> {
         if kind == "fixed_asset" && asset_id <= 0 {
             return Err(api_err(StatusCode::UNPROCESSABLE_ENTITY, "редът за ДМА изисква asset_id"));
         }
+        form::ensure_ref(&st.db, "products", product_id, company, "артикулът").await?;
         let quantity = qty_of(&form::str_field(line, "quantity")?.unwrap_or_else(|| "0".into()))?;
         let unit_cost = money_of(&form::str_field(line, "unit_cost")?.unwrap_or_else(|| "0".into()))?;
         let amount = match form::str_field(line, "amount")? {

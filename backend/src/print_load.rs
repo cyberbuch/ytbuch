@@ -46,7 +46,7 @@ pub async fn load(st: &AppState, headers: &HeaderMap, id: i32) -> Result<Loaded,
     let firm_id = if inv.company_id > 0 { inv.company_id } else { company_id };
     let company = companies::json_by_id(&st.db, firm_id).await?.unwrap_or(Value::Null);
     let counterpart = if inv.counterpart_id > 0 {
-        counterparts::json_by_id(&st.db, inv.counterpart_id).await?.unwrap_or(Value::Null)
+        counterparts::json_by_id(&st.db, inv.counterpart_id, firm_id).await?.unwrap_or(Value::Null)
     } else {
         Value::Null
     };

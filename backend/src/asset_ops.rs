@@ -46,7 +46,7 @@ pub async fn post_dep(
     let company = assets::company(&st, &headers).await?;
     let obj = form::object(&body)?;
     let period = form::required(form::str_field(obj, "period")?, "period")?;
-    periods::assert_open(&st.db, &period).await?;
+    periods::assert_open(&st.db, company, &period).await?;
     let exp = posting::by_number(&st.db, company, "603")
         .await?
         .ok_or_else(|| api_err(StatusCode::UNPROCESSABLE_ENTITY, "липсва сметка 603 (разход за амортизации)"))?;
@@ -126,10 +126,12 @@ pub async fn move_asset(
 ) -> Result<Json<Value>, ApiError> {
     let company = assets::company(&st, &headers).await?;
     assets::need(id)?;
-    let _ = assets::load(&st, id, company).await?;
+    let asset = assets::load(&st, id, company).await?;
+    let asset_company = asset.get("company_id").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
     let obj = form::object(&body)?;
     let location_id = form::i32_field(obj, "location_id")?.unwrap_or(0);
-    let place = location_name(&st, location_id).await?;
+    form::ensure_ref(&st.db, "company_locations", location_id, asset_company, "обектът").await?;
+    let place = location_name(&st, location_id, asset_company).await?;
     invoice_read::exe(&st.db, &format!("UPDATE fixed_assets SET location_id = {location_id} WHERE id = {id}")).await?;
     add_event(&st, id, "movement", &date_of(obj)?, "0.00", "", &place, &reason(obj)?).await?;
     assets::load(&st, id, company).await.map(Json)
@@ -288,11 +290,11 @@ async fn add_event(
     .await
 }
 
-async fn location_name(st: &AppState, id: i32) -> Result<String, ApiError> {
+async fn location_name(st: &AppState, id: i32, company: i32) -> Result<String, ApiError> {
     if id <= 0 {
         return Ok(String::new());
     }
-    let rows = invoice_read::qry(&st.db, &format!("SELECT name FROM company_locations WHERE id = {id}")).await?;
+    let rows = invoice_read::qry(&st.db, &format!("SELECT name FROM company_locations WHERE id = {id} AND company_id = {company}")).await?;
     Ok(rows.first().map(|r| cell_str(r, 0)).filter(|s| !s.is_empty()).unwrap_or_else(|| id.to_string()))
 }
 

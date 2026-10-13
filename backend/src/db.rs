@@ -391,6 +391,7 @@ pub async fn migrate(db: &Client) -> DbResult<()> {
         );
         CREATE TABLE IF NOT EXISTS accounting_periods (
             id INTEGER PRIMARY KEY,
+            company_id INTEGER,
             year INTEGER,
             month INTEGER,
             status VARCHAR,
@@ -399,6 +400,7 @@ pub async fn migrate(db: &Client) -> DbResult<()> {
         );
         CREATE TABLE IF NOT EXISTS opening_balances (
             id INTEGER PRIMARY KEY,
+            company_id INTEGER,
             fiscal_year INTEGER,
             account_id INTEGER,
             debit VARCHAR,

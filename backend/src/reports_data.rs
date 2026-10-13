@@ -381,7 +381,7 @@ pub async fn load(db: &Db, company_id: i32, from: &str, to: &str, account: &str,
     let open_rows = crate::invoice_read::qry(
         db,
         &format!(
-            "SELECT account_id, debit, credit, counterpart_id FROM opening_balances WHERE fiscal_year = {year} ORDER BY id"
+            "SELECT account_id, debit, credit, counterpart_id FROM opening_balances WHERE company_id = {company_id} AND fiscal_year = {year} ORDER BY id"
         ),
     )
     .await?;

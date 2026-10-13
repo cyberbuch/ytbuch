@@ -49,14 +49,16 @@ pub async fn index(
     headers: HeaderMap,
     Query(q): Query<ListQuery>,
 ) -> Result<Json<Value>, ApiError> {
-    auth_sub(&st, &headers)?;
+    let sub = auth_sub(&st, &headers)?;
+    let company = form::active_or_one(&st, &sub).await?;
     let id = q.counterpart_id.unwrap_or(0);
+    form::ensure_ref(&st.db, "counterparts", id, company, "контрагентът").await?;
     let sql = if id > 0 {
         format!(
-            "SELECT id, counterpart_id, scanned_name, product_id FROM product_name_mappings WHERE counterpart_id = {id}"
+            "SELECT id, counterpart_id, scanned_name, product_id FROM product_name_mappings WHERE company_id = {company} AND counterpart_id = {id}"
         )
     } else {
-        "SELECT id, counterpart_id, scanned_name, product_id FROM product_name_mappings".into()
+        format!("SELECT id, counterpart_id, scanned_name, product_id FROM product_name_mappings WHERE company_id = {company}")
     };
     let rows = st.db.query(&sql).await.map_err(db_err)?;
     let items: Vec<Value> = rows.iter().map(row_json).collect();
@@ -68,7 +70,8 @@ pub async fn save(
     headers: HeaderMap,
     Json(body): Json<Value>,
 ) -> Result<Json<Value>, ApiError> {
-    auth_sub(&st, &headers)?;
+    let sub = auth_sub(&st, &headers)?;
+    let company = form::active_or_one(&st, &sub).await?;
     let obj = form::object(&body)?;
     let counterpart = form::i32_field(obj, "counterpart_id")?.unwrap_or(0);
     if counterpart <= 0 {
@@ -77,11 +80,12 @@ pub async fn save(
             "counterpart_id е задължителен",
         ));
     }
+    form::ensure_row(&st.db, "counterparts", counterpart, company, "контрагентът").await?;
     let items = obj.get("items").and_then(|v| v.as_array()).cloned().unwrap_or_default();
     let existing = st
         .db
         .query(&format!(
-            "SELECT id, scanned_name FROM product_name_mappings WHERE counterpart_id = {counterpart}"
+            "SELECT id, scanned_name FROM product_name_mappings WHERE counterpart_id = {counterpart} AND company_id = {company}"
         ))
         .await
         .map_err(db_err)?;
@@ -97,10 +101,11 @@ pub async fn save(
         if name.is_empty() || product <= 0 {
             continue;
         }
+        form::ensure_ref(&st.db, "products", product, company, "артикулът").await?;
         if let Some(id) = by_name.get(&name) {
             st.db
                 .exec(&format!(
-                    "UPDATE product_name_mappings SET product_id = {product} WHERE id = {id}"
+                    "UPDATE product_name_mappings SET product_id = {product} WHERE id = {id} AND company_id = {company}"
                 ))
                 .await
                 .map_err(db_err)?;
@@ -109,8 +114,8 @@ pub async fn save(
         let id = st.db.next_id("product_name_mappings").await.map_err(db_err)?;
         st.db
             .exec(&format!(
-                "INSERT INTO product_name_mappings (id, counterpart_id, scanned_name, product_id, created_at) \
-                 VALUES ({id}, {counterpart}, {}, {product}, {})",
+                "INSERT INTO product_name_mappings (id, company_id, counterpart_id, scanned_name, product_id, created_at) \
+                 VALUES ({id}, {company}, {counterpart}, {}, {product}, {})",
                 lit(&name),
                 lit(&stamp)
             ))
@@ -121,7 +126,7 @@ pub async fn save(
     let rows = st
         .db
         .query(&format!(
-            "SELECT id, counterpart_id, scanned_name, product_id FROM product_name_mappings WHERE counterpart_id = {counterpart}"
+            "SELECT id, counterpart_id, scanned_name, product_id FROM product_name_mappings WHERE counterpart_id = {counterpart} AND company_id = {company}"
         ))
         .await
         .map_err(db_err)?;
@@ -206,13 +211,13 @@ pub async fn invoice_by_number(db: &Db, company: i32, number: &str) -> Result<i3
     Ok(0)
 }
 
-pub async fn product_for(db: &Db, counterpart_id: i32, name: &str, seller: &str) -> Result<i32, ApiError> {
+pub async fn product_for(db: &Db, company: i32, counterpart_id: i32, name: &str, seller: &str) -> Result<i32, ApiError> {
     if counterpart_id <= 0 {
         return Ok(0);
     }
     let rows = db
         .query(&format!(
-            "SELECT scanned_name, product_id FROM product_name_mappings WHERE counterpart_id = {counterpart_id}"
+            "SELECT scanned_name, product_id FROM product_name_mappings WHERE counterpart_id = {counterpart_id} AND company_id = {company}"
         ))
         .await
         .map_err(db_err)?;

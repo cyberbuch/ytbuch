@@ -6,7 +6,7 @@ use axum::Json;
 use serde_json::{json, Map, Value};
 
 use crate::db::{cell_i32_at, cell_str, lit, Row};
-use crate::form::{self, auth_sub, db_err, ensure_company};
+use crate::form::{self, active_or_one, auth_sub, db_err, ensure_company};
 use crate::{api_err, AppState, ApiError};
 
 fn loc_type_ok(value: &str) -> bool {
@@ -31,10 +31,10 @@ fn loc_json(r: &Row) -> Value {
 const LOC_SEL: &str = "SELECT id, name, location_type, street_name, building_number, city, \
 post_code, region, country, is_main, company_id FROM company_locations";
 
-async fn loc_load(st: &AppState, id: i32) -> Result<Value, ApiError> {
+async fn loc_load(st: &AppState, id: i32, company: i32) -> Result<Value, ApiError> {
     let rows = st
         .db
-        .query(&format!("{LOC_SEL} WHERE id = {id}"))
+        .query(&format!("{LOC_SEL} WHERE id = {id} AND company_id = {company}"))
         .await
         .map_err(db_err)?;
     let Some(r) = rows.first() else {
@@ -58,7 +58,11 @@ pub async fn location_create(
     Path(company_id): Path<i32>,
     Json(body): Json<Value>,
 ) -> Result<(StatusCode, Json<Value>), ApiError> {
-    auth_sub(&st, &headers)?;
+    let sub = auth_sub(&st, &headers)?;
+    let company = active_or_one(&st, &sub).await?;
+    if company_id != company {
+        return Err(api_err(StatusCode::NOT_FOUND, "фирмата не е намерена"));
+    }
     ensure_company(&st.db, company_id).await?;
     let obj = form::object(&body)?;
     let name = form::required(form::str_field(obj, "name")?, "name")?;
@@ -99,7 +103,7 @@ pub async fn location_create(
         ))
         .await
         .map_err(db_err)?;
-    Ok((StatusCode::CREATED, Json(loc_load(&st, id).await?)))
+    Ok((StatusCode::CREATED, Json(loc_load(&st, id, company).await?)))
 }
 
 pub async fn location_update(
@@ -108,8 +112,9 @@ pub async fn location_update(
     Path(id): Path<i32>,
     Json(body): Json<Value>,
 ) -> Result<Json<Value>, ApiError> {
-    auth_sub(&st, &headers)?;
-    let current = loc_load(&st, id).await?;
+    let sub = auth_sub(&st, &headers)?;
+    let company = active_or_one(&st, &sub).await?;
+    let current = loc_load(&st, id, company).await?;
     let obj = form::object(&body)?;
     let mut name = current["name"].as_str().unwrap_or("").to_string();
     let mut location_type = current["location_type"].as_str().unwrap_or("").to_string();
@@ -158,7 +163,7 @@ pub async fn location_update(
         ))
         .await
         .map_err(db_err)?;
-    Ok(Json(loc_load(&st, id).await?))
+    Ok(Json(loc_load(&st, id, company).await?))
 }
 
 pub async fn location_delete(
@@ -166,8 +171,9 @@ pub async fn location_delete(
     headers: HeaderMap,
     Path(id): Path<i32>,
 ) -> Result<StatusCode, ApiError> {
-    auth_sub(&st, &headers)?;
-    loc_load(&st, id).await?;
+    let sub = auth_sub(&st, &headers)?;
+    let company = active_or_one(&st, &sub).await?;
+    loc_load(&st, id, company).await?;
     st.db
         .exec(&format!("DELETE FROM company_locations WHERE id = {id}"))
         .await
@@ -191,10 +197,10 @@ fn owner_json(r: &Row) -> Value {
 const OWN_SEL: &str = "SELECT id, first_name_bg, last_name_bg, egn, first_name_latin, \
 last_name_latin, country, ownership_percentage FROM beneficial_owners";
 
-async fn owner_load(st: &AppState, id: i32) -> Result<Value, ApiError> {
+async fn owner_load(st: &AppState, id: i32, company: i32) -> Result<Value, ApiError> {
     let rows = st
         .db
-        .query(&format!("{OWN_SEL} WHERE id = {id}"))
+        .query(&format!("{OWN_SEL} WHERE id = {id} AND company_id = {company}"))
         .await
         .map_err(db_err)?;
     rows.first()
@@ -208,7 +214,11 @@ pub async fn owner_create(
     Path(company_id): Path<i32>,
     Json(body): Json<Value>,
 ) -> Result<(StatusCode, Json<Value>), ApiError> {
-    auth_sub(&st, &headers)?;
+    let sub = auth_sub(&st, &headers)?;
+    let company = active_or_one(&st, &sub).await?;
+    if company_id != company {
+        return Err(api_err(StatusCode::NOT_FOUND, "фирмата не е намерена"));
+    }
     ensure_company(&st.db, company_id).await?;
     let obj = form::object(&body)?;
     let first = form::required(form::str_field(obj, "first_name_bg")?, "first_name_bg")?;
@@ -237,7 +247,7 @@ pub async fn owner_create(
         ))
         .await
         .map_err(db_err)?;
-    Ok((StatusCode::CREATED, Json(owner_load(&st, id).await?)))
+    Ok((StatusCode::CREATED, Json(owner_load(&st, id, company).await?)))
 }
 
 pub async fn owner_update(
@@ -246,8 +256,9 @@ pub async fn owner_update(
     Path(id): Path<i32>,
     Json(body): Json<Value>,
 ) -> Result<Json<Value>, ApiError> {
-    auth_sub(&st, &headers)?;
-    let current = owner_load(&st, id).await?;
+    let sub = auth_sub(&st, &headers)?;
+    let company = active_or_one(&st, &sub).await?;
+    let current = owner_load(&st, id, company).await?;
     let obj = form::object(&body)?;
     let mut first = current["first_name_bg"].as_str().unwrap_or("").to_string();
     let mut last = current["last_name_bg"].as_str().unwrap_or("").to_string();
@@ -284,7 +295,7 @@ pub async fn owner_update(
         ))
         .await
         .map_err(db_err)?;
-    Ok(Json(owner_load(&st, id).await?))
+    Ok(Json(owner_load(&st, id, company).await?))
 }
 
 pub async fn owner_delete(
@@ -292,8 +303,9 @@ pub async fn owner_delete(
     headers: HeaderMap,
     Path(id): Path<i32>,
 ) -> Result<StatusCode, ApiError> {
-    auth_sub(&st, &headers)?;
-    owner_load(&st, id).await?;
+    let sub = auth_sub(&st, &headers)?;
+    let company = active_or_one(&st, &sub).await?;
+    owner_load(&st, id, company).await?;
     st.db
         .exec(&format!("DELETE FROM beneficial_owners WHERE id = {id}"))
         .await
@@ -313,10 +325,10 @@ fn parent_json(r: &Row) -> Value {
 
 const PAR_SEL: &str = "SELECT id, name_bg, uic, name_latin, country FROM ultimate_parents";
 
-async fn parent_load(st: &AppState, id: i32) -> Result<Value, ApiError> {
+async fn parent_load(st: &AppState, id: i32, company: i32) -> Result<Value, ApiError> {
     let rows = st
         .db
-        .query(&format!("{PAR_SEL} WHERE id = {id}"))
+        .query(&format!("{PAR_SEL} WHERE id = {id} AND company_id = {company}"))
         .await
         .map_err(db_err)?;
     rows.first()
@@ -330,7 +342,11 @@ pub async fn parent_create(
     Path(company_id): Path<i32>,
     Json(body): Json<Value>,
 ) -> Result<(StatusCode, Json<Value>), ApiError> {
-    auth_sub(&st, &headers)?;
+    let sub = auth_sub(&st, &headers)?;
+    let company = active_or_one(&st, &sub).await?;
+    if company_id != company {
+        return Err(api_err(StatusCode::NOT_FOUND, "фирмата не е намерена"));
+    }
     ensure_company(&st.db, company_id).await?;
     let obj = form::object(&body)?;
     let name = form::required(form::str_field(obj, "name_bg")?, "name_bg")?;
@@ -352,7 +368,7 @@ pub async fn parent_create(
         ))
         .await
         .map_err(db_err)?;
-    Ok((StatusCode::CREATED, Json(parent_load(&st, id).await?)))
+    Ok((StatusCode::CREATED, Json(parent_load(&st, id, company).await?)))
 }
 
 pub async fn parent_update(
@@ -361,8 +377,9 @@ pub async fn parent_update(
     Path(id): Path<i32>,
     Json(body): Json<Value>,
 ) -> Result<Json<Value>, ApiError> {
-    auth_sub(&st, &headers)?;
-    let current = parent_load(&st, id).await?;
+    let sub = auth_sub(&st, &headers)?;
+    let company = active_or_one(&st, &sub).await?;
+    let current = parent_load(&st, id, company).await?;
     let obj = form::object(&body)?;
     let mut name = current["name_bg"].as_str().unwrap_or("").to_string();
     let mut uic = current["uic"].as_str().unwrap_or("").to_string();
@@ -385,7 +402,7 @@ pub async fn parent_update(
         ))
         .await
         .map_err(db_err)?;
-    Ok(Json(parent_load(&st, id).await?))
+    Ok(Json(parent_load(&st, id, company).await?))
 }
 
 pub async fn parent_delete(
@@ -393,8 +410,9 @@ pub async fn parent_delete(
     headers: HeaderMap,
     Path(id): Path<i32>,
 ) -> Result<StatusCode, ApiError> {
-    auth_sub(&st, &headers)?;
-    parent_load(&st, id).await?;
+    let sub = auth_sub(&st, &headers)?;
+    let company = active_or_one(&st, &sub).await?;
+    parent_load(&st, id, company).await?;
     st.db
         .exec(&format!("DELETE FROM ultimate_parents WHERE id = {id}"))
         .await
@@ -416,10 +434,10 @@ fn series_json(r: &Row) -> Value {
 const SER_SEL: &str =
     "SELECT id, name, document_types, pad_width, start_number, next_number, company_id FROM document_series";
 
-async fn series_load(st: &AppState, id: i32) -> Result<(Value, i32), ApiError> {
+async fn series_load(st: &AppState, id: i32, company: i32) -> Result<(Value, i32), ApiError> {
     let rows = st
         .db
-        .query(&format!("{SER_SEL} WHERE id = {id}"))
+        .query(&format!("{SER_SEL} WHERE id = {id} AND company_id = {company}"))
         .await
         .map_err(db_err)?;
     let Some(r) = rows.first() else {
@@ -527,7 +545,11 @@ pub async fn series_create(
     Path(company_id): Path<i32>,
     Json(body): Json<Value>,
 ) -> Result<(StatusCode, Json<Value>), ApiError> {
-    auth_sub(&st, &headers)?;
+    let sub = auth_sub(&st, &headers)?;
+    let company = active_or_one(&st, &sub).await?;
+    if company_id != company {
+        return Err(api_err(StatusCode::NOT_FOUND, "фирмата не е намерена"));
+    }
     ensure_company(&st.db, company_id).await?;
     let obj = form::object(&body)?;
     let name = form::required(form::str_field(obj, "name")?, "name")?;
@@ -547,7 +569,7 @@ pub async fn series_create(
         .await
         .map_err(db_err)?;
     steal_types(&st, company_id, id, &types).await?;
-    let (value, _) = series_load(&st, id).await?;
+    let (value, _) = series_load(&st, id, company).await?;
     Ok((StatusCode::CREATED, Json(value)))
 }
 
@@ -557,8 +579,9 @@ pub async fn series_update(
     Path(id): Path<i32>,
     Json(body): Json<Value>,
 ) -> Result<Json<Value>, ApiError> {
-    auth_sub(&st, &headers)?;
-    let (current, company_id) = series_load(&st, id).await?;
+    let sub = auth_sub(&st, &headers)?;
+    let company = active_or_one(&st, &sub).await?;
+    let (current, company_id) = series_load(&st, id, company).await?;
     let obj = form::object(&body)?;
     let mut name = current["name"].as_str().unwrap_or("").to_string();
     let mut types = current["document_types"].as_str().unwrap_or("").to_string();
@@ -597,7 +620,7 @@ pub async fn series_update(
     if types_changed {
         steal_types(&st, company_id, id, &types).await?;
     }
-    let (value, _) = series_load(&st, id).await?;
+    let (value, _) = series_load(&st, id, company).await?;
     Ok(Json(value))
 }
 
@@ -606,8 +629,9 @@ pub async fn series_delete(
     headers: HeaderMap,
     Path(id): Path<i32>,
 ) -> Result<StatusCode, ApiError> {
-    auth_sub(&st, &headers)?;
-    series_load(&st, id).await?;
+    let sub = auth_sub(&st, &headers)?;
+    let company = active_or_one(&st, &sub).await?;
+    series_load(&st, id, company).await?;
     st.db
         .exec(&format!("DELETE FROM document_series WHERE id = {id}"))
         .await

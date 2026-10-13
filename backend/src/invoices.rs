@@ -319,10 +319,10 @@ fn extra_of(head: &Head, journal_id: i32) -> Extra {
     }
 }
 
-async fn counterpart_name(st: &AppState, id: i32) -> Result<String, ApiError> {
+async fn counterpart_name(st: &AppState, id: i32, company_id: i32) -> Result<String, ApiError> {
     let rows = invoice_read::qry(
         &st.db,
-        &format!("SELECT name FROM counterparts WHERE id = {id}"),
+        &format!("SELECT name FROM counterparts WHERE id = {id} AND company_id = {company_id}"),
     )
     .await?;
     let Some(row) = rows.first() else {
@@ -334,13 +334,13 @@ async fn counterpart_name(st: &AppState, id: i32) -> Result<String, ApiError> {
     Ok(cell_str(row, 0))
 }
 
-async fn product_code(st: &AppState, id: i32) -> Result<String, ApiError> {
+async fn product_code(st: &AppState, id: i32, company_id: i32) -> Result<String, ApiError> {
     if id <= 0 {
         return Ok(String::new());
     }
     let rows = invoice_read::qry(
         &st.db,
-        &format!("SELECT code FROM products WHERE id = {id}"),
+        &format!("SELECT code FROM products WHERE id = {id} AND company_id = {company_id}"),
     )
     .await?;
     let Some(row) = rows.first() else {
@@ -458,9 +458,9 @@ pub(crate) async fn next_out(st: &AppState, company_id: i32, doc_type: &str) -> 
     Ok(pad_num(base.saturating_add(1), pad))
 }
 
-async fn insert_line(st: &AppState, invoice_id: i32, line: &NewLine) -> Result<i32, ApiError> {
+async fn insert_line(st: &AppState, invoice_id: i32, company_id: i32, line: &NewLine) -> Result<i32, ApiError> {
     let mut code = line.code.clone();
-    let looked = product_code(st, line.product_id).await?;
+    let looked = product_code(st, line.product_id, company_id).await?;
     if code.trim().is_empty() {
         code = looked;
     }
@@ -508,7 +508,12 @@ async fn drop_line(st: &AppState, line_id: i32) -> Result<(), ApiError> {
     .await
 }
 
-async fn replace_lines(st: &AppState, invoice_id: i32, lines: &[NewLine]) -> Result<(), ApiError> {
+async fn replace_lines(
+    st: &AppState,
+    invoice_id: i32,
+    company_id: i32,
+    lines: &[NewLine],
+) -> Result<(), ApiError> {
     let old = invoice_read::qry(
         &st.db,
         &format!("SELECT id FROM invoice_lines WHERE invoice_id = {invoice_id}"),
@@ -517,7 +522,7 @@ async fn replace_lines(st: &AppState, invoice_id: i32, lines: &[NewLine]) -> Res
     let old_ids: Vec<i32> = old.iter().map(|r| cell_i32_at(r, 0)).collect();
     let mut made = Vec::new();
     for line in lines {
-        match insert_line(st, invoice_id, line).await {
+        match insert_line(st, invoice_id, company_id, line).await {
             Ok(id) => made.push(id),
             Err(e) => {
                 for id in made {
@@ -588,7 +593,7 @@ async fn insert_header(
         return Err(e);
     }
     for line in lines {
-        if let Err(e) = insert_line(st, id, line).await {
+        if let Err(e) = insert_line(st, id, company_id, line).await {
             let _ = invoice_read::wipe_invoice(&st.db, id).await;
             return Err(e);
         }
@@ -599,7 +604,7 @@ async fn insert_header(
 async fn prepare(st: &AppState, company_id: i32, head: &Head, self_id: i32) -> Result<String, ApiError> {
     ensure_location(st, company_id, head.location_id).await?;
     ensure_original(st, company_id, head.original_invoice_id, self_id).await?;
-    counterpart_name(st, head.counterpart_id).await
+    counterpart_name(st, head.counterpart_id, company_id).await
 }
 
 pub async fn create(
@@ -663,7 +668,7 @@ pub async fn update(
     .await?;
     invoice_read::save_extra(&st.db, id, &extra_of(&head, inv.journal_entry_id)).await?;
     if let Some(lines) = lines {
-        replace_lines(&st, id, &lines).await?;
+        replace_lines(&st, id, company, &lines).await?;
         write_totals(&st, id, &lines).await?;
     }
     Ok(Json(invoice_read::detail(&st, &sub, id).await?))

@@ -41,7 +41,7 @@ pub async fn run(db: &crate::db::Db, company: i32, month: Option<&str>, until: O
     }
     let months = months(db, company, month, until).await?;
     for m in &months {
-        periods::assert_open(db, &format!("{m}-01")).await?;
+        periods::assert_open(db, company, &format!("{m}-01")).await?;
     }
     let built = stock_replay::rebuild(db, company, "9999-12-31").await?;
     let mut warnings = built.warnings;

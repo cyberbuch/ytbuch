@@ -72,7 +72,9 @@ const config: CrudConfig = {
     labelKey: "companies.activate",
     onClick: (rec) => {
       const id = Number(rec.id);
-      if (id > 0) void setActiveCompany(id);
+      if (id > 0) {
+        void setActiveCompany(id).then(() => window.location.reload());
+      }
     },
   },
 };

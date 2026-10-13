@@ -18,8 +18,8 @@ fn is_manual(row_type: &str) -> bool {
     row_type == MANUAL_TYPE
 }
 
-async fn entry_type(db: &crate::db::Db, id: i32) -> Result<String, ApiError> {
-    let rows = invoice_read::qry(db, &format!("SELECT document_type FROM journal_entries WHERE id = {id}")).await?;
+async fn entry_type(db: &crate::db::Db, id: i32, company: i32) -> Result<String, ApiError> {
+    let rows = invoice_read::qry(db, &format!("SELECT document_type FROM journal_entries WHERE id = {id} AND company_id = {company}")).await?;
     Ok(cell_str(rows.first().ok_or_else(|| {
         api_err(StatusCode::NOT_FOUND, "записът не е намерен")
     })?, 0))
@@ -86,11 +86,12 @@ fn check_balanced(lines: &[Line]) -> Result<(), ApiError> {
     Ok(())
 }
 
-async fn write_lines(db: &crate::db::Db, entry_id: i32, lines: &[Line]) -> Result<(), ApiError> {
+async fn write_lines(db: &crate::db::Db, entry_id: i32, lines: &[Line], company: i32) -> Result<(), ApiError> {
     for l in lines {
+        form::ensure_row(db, "accounts", l.account_id, company, "сметката").await?;
         let acct = invoice_read::qry(
             db,
-            &format!("SELECT id, number, name FROM accounts WHERE id = {}", l.account_id),
+            &format!("SELECT id, number, name FROM accounts WHERE id = {} AND company_id = {company}", l.account_id),
         ).await?;
         let Some(row) = acct.first() else {
             return Err(api_err(StatusCode::UNPROCESSABLE_ENTITY, format!("липсва сметка с id {}", l.account_id)));
@@ -112,10 +113,10 @@ async fn write_lines(db: &crate::db::Db, entry_id: i32, lines: &[Line]) -> Resul
     Ok(())
 }
 
-async fn entry_json_full(st: &AppState, id: i32) -> Result<Value, ApiError> {
+async fn entry_json_full(st: &AppState, id: i32, company: i32) -> Result<Value, ApiError> {
     let rows = invoice_read::qry(
         &st.db,
-        &format!("SELECT id, company_id, entry_date, document_type, document_id, document_number, description, vat_type, counterpart_id, counterpart_name, document_date, vat_period FROM journal_entries WHERE id = {id}"),
+        &format!("SELECT id, company_id, entry_date, document_type, document_id, document_number, description, vat_type, counterpart_id, counterpart_name, document_date, vat_period FROM journal_entries WHERE id = {id} AND company_id = {company}"),
     ).await?;
     let Some(row) = rows.first() else {
         return Err(api_err(StatusCode::NOT_FOUND, "записът не е намерен"));
@@ -162,6 +163,7 @@ pub async fn create(
     let entry_date = form::required(form::str_field(obj, "entry_date")?, "entry_date")?;
     let description = form::str_field(obj, "description")?.unwrap_or_default();
     let counterpart_id = form::i32_field(obj, "counterpart_id")?.unwrap_or(0);
+    form::ensure_ref(&st.db, "counterparts", counterpart_id, company, "контрагентът").await?;
     let counterpart_name = form::str_field(obj, "counterpart_name")?.unwrap_or_default();
     let document_date = form::str_field(obj, "document_date")?.unwrap_or_else(|| entry_date.clone());
     let vat_period = form::str_field(obj, "vat_period")?.unwrap_or_else(|| {
@@ -171,7 +173,7 @@ pub async fn create(
     let lines = parse_lines(obj)?;
     check_balanced(&lines)?;
 
-    periods::assert_open(&st.db, &entry_date).await?;
+    periods::assert_open(&st.db, company, &entry_date).await?;
 
     let entry_id = invoice_read::nid(&st.db, "journal_entries").await?;
     if let Err(e) = invoice_read::exe(
@@ -192,12 +194,12 @@ pub async fn create(
         return Err(e);
     }
 
-    if let Err(e) = write_lines(&st.db, entry_id, &lines).await {
+    if let Err(e) = write_lines(&st.db, entry_id, &lines, company).await {
         let _ = invoice_read::wipe_journal(&st.db, entry_id).await;
         return Err(e);
     }
 
-    let value = entry_json_full(&st, entry_id).await?;
+    let value = entry_json_full(&st, entry_id, company).await?;
     Ok((StatusCode::CREATED, Json(value)))
 }
 
@@ -208,19 +210,20 @@ pub async fn update(
     Json(body): Json<Value>,
 ) -> Result<Json<Value>, ApiError> {
     let sub = auth_sub(&st, &headers)?;
-    let _company = active_or_one(&st, &sub).await?;
+    let company = active_or_one(&st, &sub).await?;
     let obj = form::object(&body)?;
 
-    let doc_type = entry_type(&st.db, id).await?;
+    let doc_type = entry_type(&st.db, id, company).await?;
     if !is_manual(&doc_type) {
         return Err(api_err(StatusCode::FORBIDDEN, "само ръчни записи могат да се редактират"));
     }
 
     let entry_date = form::required(form::str_field(obj, "entry_date")?, "entry_date")?;
-    periods::assert_open(&st.db, &entry_date).await?;
+    periods::assert_open(&st.db, company, &entry_date).await?;
 
     let description = form::str_field(obj, "description")?.unwrap_or_default();
     let counterpart_id = form::i32_field(obj, "counterpart_id")?.unwrap_or(0);
+    form::ensure_ref(&st.db, "counterparts", counterpart_id, company, "контрагентът").await?;
     let counterpart_name = form::str_field(obj, "counterpart_name")?.unwrap_or_default();
     let document_date = form::str_field(obj, "document_date")?.unwrap_or_else(|| entry_date.clone());
     let vat_period = form::str_field(obj, "vat_period")?.unwrap_or_else(|| {
@@ -230,7 +233,7 @@ pub async fn update(
     invoice_read::exe(
         &st.db,
         &format!(
-            "UPDATE journal_entries SET entry_date = {}, description = {}, counterpart_id = {counterpart_id}, counterpart_name = {}, document_date = {}, vat_period = {} WHERE id = {id}",
+            "UPDATE journal_entries SET entry_date = {}, description = {}, counterpart_id = {counterpart_id}, counterpart_name = {}, document_date = {}, vat_period = {} WHERE id = {id} AND company_id = {company}",
             lit(&entry_date),
             lit(&description),
             lit(&counterpart_name),
@@ -243,9 +246,9 @@ pub async fn update(
 
     let lines = parse_lines(obj)?;
     check_balanced(&lines)?;
-    write_lines(&st.db, id, &lines).await?;
+    write_lines(&st.db, id, &lines, company).await?;
 
-    let value = entry_json_full(&st, id).await?;
+    let value = entry_json_full(&st, id, company).await?;
     Ok(Json(value))
 }
 
@@ -255,18 +258,18 @@ pub async fn delete(
     Path(id): Path<i32>,
 ) -> Result<StatusCode, ApiError> {
     let sub = auth_sub(&st, &headers)?;
-    let _company = active_or_one(&st, &sub).await?;
+    let company = active_or_one(&st, &sub).await?;
 
-    let doc_type = entry_type(&st.db, id).await?;
+    let doc_type = entry_type(&st.db, id, company).await?;
     if !is_manual(&doc_type) {
         return Err(api_err(StatusCode::FORBIDDEN, "само ръчни записи могат да се изтриват"));
     }
 
-    let rows = invoice_read::qry(&st.db, &format!("SELECT entry_date FROM journal_entries WHERE id = {id}")).await?;
+    let rows = invoice_read::qry(&st.db, &format!("SELECT entry_date FROM journal_entries WHERE id = {id} AND company_id = {company}")).await?;
     let entry_date = cell_str(rows.first().ok_or_else(|| {
         api_err(StatusCode::NOT_FOUND, "записът не е намерен")
     })?, 0);
-    periods::assert_open(&st.db, &entry_date).await?;
+    periods::assert_open(&st.db, company, &entry_date).await?;
 
     let _ = invoice_read::wipe_journal(&st.db, id).await;
     Ok(StatusCode::NO_CONTENT)

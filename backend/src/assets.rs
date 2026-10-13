@@ -19,8 +19,8 @@ pub async fn categories(
     headers: HeaderMap,
     Query(q): Query<PageQuery>,
 ) -> Result<Json<Value>, ApiError> {
-    let _ = company(&st, &headers).await?;
-    let rows = invoice_read::qry(&st.db, "SELECT id, name, cita_category, min_depreciation_rate, max_depreciation_rate, default_method FROM fixed_asset_categories ORDER BY id").await?;
+    let company = company(&st, &headers).await?;
+    let rows = invoice_read::qry(&st.db, &format!("SELECT id, name, cita_category, min_depreciation_rate, max_depreciation_rate, default_method FROM fixed_asset_categories WHERE company_id = {company} ORDER BY id")).await?;
     let items: Vec<Value> = rows.iter().map(|r| json!({
         "id": cell_i32_at(r, 0),
         "name": cell_str(r, 1),
@@ -37,7 +37,7 @@ pub async fn category_create(
     headers: HeaderMap,
     Json(body): Json<Value>,
 ) -> Result<(StatusCode, Json<Value>), ApiError> {
-    let _ = company(&st, &headers).await?;
+    let company = company(&st, &headers).await?;
     let obj = form::object(&body)?;
     let name = form::required(form::str_field(obj, "name")?, "name")?;
     let id = invoice_read::nid(&st.db, "fixed_asset_categories").await?;
@@ -48,8 +48,8 @@ pub async fn category_create(
     invoice_read::exe(
         &st.db,
         &format!(
-            "INSERT INTO fixed_asset_categories (id, name, cita_category, min_depreciation_rate, max_depreciation_rate, default_method, asset_account_id, depreciation_account_id, expense_account_id) \
-             VALUES ({id}, {}, {}, {}, {}, {}, 0, 0, 0)",
+            "INSERT INTO fixed_asset_categories (id, company_id, name, cita_category, min_depreciation_rate, max_depreciation_rate, default_method, asset_account_id, depreciation_account_id, expense_account_id) \
+             VALUES ({id}, {company}, {}, {}, {}, {}, {}, 0, 0, 0)",
             lit(&name), lit(&cita), lit(&min), lit(&max), lit(&method)
         ),
     )
@@ -66,9 +66,10 @@ pub async fn category_update(
     Path(id): Path<i32>,
     Json(body): Json<Value>,
 ) -> Result<Json<Value>, ApiError> {
-    let _ = company(&st, &headers).await?;
+    let company = company(&st, &headers).await?;
     need(id)?;
-    let rows = invoice_read::qry(&st.db, &format!("SELECT name, cita_category, min_depreciation_rate, max_depreciation_rate, default_method FROM fixed_asset_categories WHERE id = {id}")).await?;
+    form::ensure_row(&st.db, "fixed_asset_categories", id, company, "записът").await?;
+    let rows = invoice_read::qry(&st.db, &format!("SELECT name, cita_category, min_depreciation_rate, max_depreciation_rate, default_method FROM fixed_asset_categories WHERE id = {id} AND company_id = {company}")).await?;
     let Some(cur) = rows.first() else {
         return Err(api_err(StatusCode::NOT_FOUND, "Категорията не е намерена"));
     };
@@ -84,7 +85,7 @@ pub async fn category_update(
     invoice_read::exe(
         &st.db,
         &format!(
-            "UPDATE fixed_asset_categories SET name = {}, cita_category = {}, min_depreciation_rate = {}, max_depreciation_rate = {}, default_method = {} WHERE id = {id}",
+            "UPDATE fixed_asset_categories SET name = {}, cita_category = {}, min_depreciation_rate = {}, max_depreciation_rate = {}, default_method = {} WHERE id = {id} AND company_id = {company}",
             lit(&name), lit(&cita), lit(&min), lit(&max), lit(&method)
         ),
     )
@@ -100,9 +101,10 @@ pub async fn category_delete(
     headers: HeaderMap,
     Path(id): Path<i32>,
 ) -> Result<StatusCode, ApiError> {
-    let _ = company(&st, &headers).await?;
+    let company = company(&st, &headers).await?;
     need(id)?;
-    invoice_read::exe(&st.db, &format!("DELETE FROM fixed_asset_categories WHERE id = {id}")).await?;
+    form::ensure_row(&st.db, "fixed_asset_categories", id, company, "записът").await?;
+    invoice_read::exe(&st.db, &format!("DELETE FROM fixed_asset_categories WHERE id = {id} AND company_id = {company}")).await?;
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -125,6 +127,8 @@ pub async fn create(
     let company = company(&st, &headers).await?;
     let obj = form::object(&body)?;
     let f = fields(obj, None)?;
+    form::ensure_ref(&st.db, "fixed_asset_categories", f.category_id, company, "записът").await?;
+    form::ensure_ref(&st.db, "company_locations", f.location_id, company, "обектът").await?;
     let id = invoice_read::nid(&st.db, "fixed_assets").await?;
     invoice_read::exe(&st.db, &insert_sql(id, company, &f)).await?;
     Ok((StatusCode::CREATED, Json(load(&st, id, company).await?)))
@@ -141,6 +145,8 @@ pub async fn update(
     let cur = load(&st, id, company).await?;
     let obj = form::object(&body)?;
     let f = fields(obj, Some(&cur))?;
+    form::ensure_ref(&st.db, "fixed_asset_categories", f.category_id, company, "записът").await?;
+    form::ensure_ref(&st.db, "company_locations", f.location_id, company, "обектът").await?;
     invoice_read::exe(
         &st.db,
         &format!(

@@ -29,6 +29,7 @@ CREATE TABLE IF NOT EXISTS saft_account_mappings (
 );
 CREATE TABLE IF NOT EXISTS product_name_mappings (
     id INTEGER PRIMARY KEY,
+    company_id INTEGER,
     counterpart_id INTEGER,
     scanned_name VARCHAR,
     product_id INTEGER,

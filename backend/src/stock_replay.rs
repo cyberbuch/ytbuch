@@ -130,7 +130,7 @@ async fn run(db: &Db, company: i32, until: &str, write: bool) -> Result<Out, Api
     load_issues(db, company, &products, &mut items, &mut dates).await?;
     let horizon = horizon_of(until, &dates);
     let (year, fy) = fy_start(&horizon, start_month);
-    load_opening(db, year, &fy, &products, &mut items).await?;
+    load_opening(db, company, year, &fy, &products, &mut items).await?;
     items.retain(|it| it.date.as_str() >= fy.as_str() && it.date.as_str() <= horizon.as_str());
     items.sort_by(|a, b| (&a.date, a.rank, a.seq).cmp(&(&b.date, b.rank, b.seq)));
     let (mut warnings, sales, flows, states, books) = apply(&items, &products, &method);
@@ -522,10 +522,12 @@ fn push_item(items: &mut Vec<Item>, dates: &mut Vec<String>, date: &str, rank: u
     items.push(Item { date: date.to_string(), rank, seq, mv });
 }
 
-async fn load_opening(db: &Db, year: i32, fy: &str, products: &HashMap<i32, Meta>, items: &mut Vec<Item>) -> Result<(), ApiError> {
+async fn load_opening(db: &Db, company: i32, year: i32, fy: &str, products: &HashMap<i32, Meta>, items: &mut Vec<Item>) -> Result<(), ApiError> {
     let rows = invoice_read::qry(
         db,
-        &format!("SELECT product_id, quantity, debit FROM opening_balances WHERE fiscal_year = {year} AND product_id > 0"),
+        &format!(
+            "SELECT product_id, quantity, debit FROM opening_balances WHERE company_id = {company} AND fiscal_year = {year} AND product_id > 0"
+        ),
     )
     .await?;
     for (i, r) in rows.iter().enumerate() {

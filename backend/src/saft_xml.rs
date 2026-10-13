@@ -85,7 +85,7 @@ pub fn pref(nra: &str, p: &str) -> bool {
 }
 
 pub fn same_co(row: i32, cid: i32) -> bool {
-    cid <= 0 || row == 0 || row == cid
+    cid <= 0 || row == cid
 }
 
 pub fn country(raw: &str) -> String {

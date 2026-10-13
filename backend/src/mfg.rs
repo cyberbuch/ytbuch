@@ -60,6 +60,11 @@ pub async fn create(
         return Err(api_err(StatusCode::UNPROCESSABLE_ENTITY, "количеството трябва да е по-голямо от 0"));
     }
     let location_id = form::i32_field(obj, "location_id")?.unwrap_or(0);
+    form::ensure_ref(&st.db, "company_locations", location_id, company, "обектът").await?;
+    form::ensure_ref(&st.db, "products", recipe.output_id, company, "артикулът").await?;
+    for line in &recipe.lines {
+        form::ensure_ref(&st.db, "products", line.product_id, company, "артикулът").await?;
+    }
     let order_date = form::str_field(obj, "order_date")?.unwrap_or_default();
     let notes = form::str_field(obj, "notes")?.unwrap_or_default();
     let id = invoice_read::nid(&st.db, "production_orders").await?;
@@ -73,7 +78,7 @@ pub async fn create(
         ),
     )
     .await?;
-    if let Err(e) = copy_lines(&st, id, &recipe, &quantity).await {
+    if let Err(e) = copy_lines(&st, id, company, &recipe, &quantity).await {
         let _ = wipe(&st, id).await;
         return Err(e);
     }
@@ -117,7 +122,7 @@ pub async fn confirm(
         return Err(api_err(StatusCode::UNPROCESSABLE_ENTITY, "поръчката няма материали"));
     }
     let order_date = text(&cur, "order_date");
-    periods::assert_open(&st.db, &order_date).await?;
+    periods::assert_open(&st.db, company, &order_date).await?;
     stock_rules::check_production(&st.db, company, output_id, &lines).await?;
     invoice_read::exe(
         &st.db,
@@ -131,18 +136,22 @@ pub async fn confirm(
     Ok(Json(load(&st, id, company).await?))
 }
 
-async fn product_name(st: &AppState, id: i32) -> Result<String, ApiError> {
-    let rows = invoice_read::qry(&st.db, &format!("SELECT name FROM products WHERE id = {id}")).await?;
+async fn product_name(st: &AppState, id: i32, company: i32) -> Result<String, ApiError> {
+    let rows = invoice_read::qry(
+        &st.db,
+        &format!("SELECT name FROM products WHERE id = {id} AND company_id = {company}"),
+    )
+    .await?;
     let Some(row) = rows.first() else {
         return Err(api_err(StatusCode::UNPROCESSABLE_ENTITY, "артикулът не е намерен"));
     };
     Ok(cell_str(row, 0))
 }
 
-async fn copy_lines(st: &AppState, order_id: i32, recipe: &recipes::Recipe, order_qty: &str) -> Result<(), ApiError> {
+async fn copy_lines(st: &AppState, order_id: i32, company: i32, recipe: &recipes::Recipe, order_qty: &str) -> Result<(), ApiError> {
     for line in &recipe.lines {
         let need = scale(&line.quantity, order_qty, &recipe.output_qty, &line.wastage);
-        let name = product_name(st, line.product_id).await.unwrap_or_default();
+        let name = product_name(st, line.product_id, company).await.unwrap_or_default();
         let id = invoice_read::nid(&st.db, "production_order_lines").await?;
         invoice_read::exe(
             &st.db,

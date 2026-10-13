@@ -64,10 +64,12 @@ async fn acct_number(st: &AppState, company: i32, number: &str) -> Result<Acct, 
     })
 }
 
-async fn acct_id(st: &AppState, id: i32) -> Result<Acct, ApiError> {
+async fn acct_id(st: &AppState, id: i32, company: i32) -> Result<Acct, ApiError> {
     let rows = invoice_read::qry(
         &st.db,
-        &format!("SELECT id, number, name FROM accounts WHERE id = {id}"),
+        &format!(
+            "SELECT id, number, name FROM accounts WHERE id = {id} AND company_id = {company}"
+        ),
     )
     .await?;
     let Some(row) = rows.into_iter().next() else {
@@ -85,21 +87,21 @@ async fn acct_id(st: &AppState, id: i32) -> Result<Acct, ApiError> {
 
 
 
-async fn need_product(st: &AppState, id: i32) -> Result<Prod, ApiError> {
-    match product(st, id).await? {
+async fn need_product(st: &AppState, id: i32, company: i32) -> Result<Prod, ApiError> {
+    match product(st, id, company).await? {
         Some(p) => Ok(p),
         None => Err(api_err(StatusCode::UNPROCESSABLE_ENTITY, "ред без артикул")),
     }
 }
 
-async fn product(st: &AppState, id: i32) -> Result<Option<Prod>, ApiError> {
+async fn product(st: &AppState, id: i32, company: i32) -> Result<Option<Prod>, ApiError> {
     if id <= 0 {
         return Ok(None);
     }
     let rows = invoice_read::qry(
         &st.db,
         &format!(
-            "SELECT name, revenue_account_id, inventory_account_id FROM products WHERE id = {id}"
+            "SELECT name, revenue_account_id, inventory_account_id FROM products WHERE id = {id} AND company_id = {company}"
         ),
     )
     .await?;
@@ -136,28 +138,28 @@ async fn plan_for(st: &AppState, inv: &Inv) -> Result<Vec<Jl>, ApiError> {
         push(&mut plan, a411, "debit", total, "0");
         for line in &lines {
             let net = amount_for_doc(&inv.document_type, &line.net_amount);
-            let prod = need_product(st, line.product_id).await?;
+            let prod = need_product(st, line.product_id, company).await?;
             if prod.revenue_account_id <= 0 {
                 return Err(api_err(
                     StatusCode::UNPROCESSABLE_ENTITY,
                     format!("артикулът {} няма приходна сметка", prod.name),
                 ));
             }
-            let acct = acct_id(st, prod.revenue_account_id).await?;
+            let acct = acct_id(st, prod.revenue_account_id, company).await?;
             push(&mut plan, acct, "credit", net, "0");
         }
         push(&mut plan, a4532, "credit", vat.clone(), &vat);
     } else {
         for line in &lines {
             let net = amount_for_doc(&inv.document_type, &line.net_amount);
-            let prod = need_product(st, line.product_id).await?;
+            let prod = need_product(st, line.product_id, company).await?;
             if prod.inventory_account_id <= 0 {
                 return Err(api_err(
                     StatusCode::UNPROCESSABLE_ENTITY,
                     format!("артикулът {} няма сметка за покупка", prod.name),
                 ));
             }
-            let acct = acct_id(st, prod.inventory_account_id).await?;
+            let acct = acct_id(st, prod.inventory_account_id, company).await?;
             push(&mut plan, acct, "debit", net, "0");
         }
         push(&mut plan, a4531, "debit", vat.clone(), &vat);
@@ -261,7 +263,7 @@ async fn write_journal(st: &AppState, inv: &Inv, plan: &[Jl]) -> Result<Value, A
 pub(crate) async fn post_one(st: &AppState, company: i32, id: i32) -> Result<Value, ApiError> {
     let inv = invoice_read::load(&st.db, id).await?;
     invoice_read::belongs(&inv, company)?;
-    periods::assert_open(&st.db, &inv.accounting_month).await?;
+    periods::assert_open(&st.db, company, &inv.accounting_month).await?;
     if inv.status == "posted" {
         return Err(api_err(StatusCode::CONFLICT, "фактурата е вече постната"));
     }

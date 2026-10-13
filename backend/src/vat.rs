@@ -87,10 +87,10 @@ fn sums(rows: &[Row]) -> (i64, i64) {
     (total, vat)
 }
 
-async fn overlay(st: &AppState, ln: &mut Line, inv_id: i32) -> Result<(), ApiError> {
+async fn overlay(st: &AppState, company: i32, ln: &mut Line, inv_id: i32) -> Result<(), ApiError> {
     let head = invoice_read::qry(
         &st.db,
-        &format!("SELECT issue_date FROM invoices WHERE id = {inv_id}"),
+        &format!("SELECT issue_date FROM invoices WHERE id = {inv_id} AND company_id = {company}"),
     )
     .await?;
     let Some(head) = head.first() else {
@@ -134,7 +134,7 @@ async fn overlay(st: &AppState, ln: &mut Line, inv_id: i32) -> Result<(), ApiErr
     Ok(())
 }
 
-async fn one_line(st: &AppState, row: &Row, kind: &str) -> Result<Line, ApiError> {
+async fn one_line(st: &AppState, company: i32, row: &Row, kind: &str) -> Result<Line, ApiError> {
     let id = cell_i32_at(row, 0);
     let jl = invoice_read::qry(
         &st.db,
@@ -156,7 +156,7 @@ async fn one_line(st: &AppState, row: &Row, kind: &str) -> Result<Line, ApiError
     if cp > 0 {
         let cps = invoice_read::qry(
             &st.db,
-            &format!("SELECT vat_number FROM counterparts WHERE id = {cp}"),
+            &format!("SELECT vat_number FROM counterparts WHERE id = {cp} AND company_id = {company}"),
         )
         .await?;
         if let Some(c) = cps.first() {
@@ -165,7 +165,7 @@ async fn one_line(st: &AppState, row: &Row, kind: &str) -> Result<Line, ApiError
     }
     let doc_id = cell_i32_at(row, 4);
     if doc_id > 0 {
-        overlay(st, &mut ln, doc_id).await?;
+        overlay(st, company, &mut ln, doc_id).await?;
     }
     ln.apply_credit();
     Ok(ln)
@@ -176,8 +176,9 @@ async fn collect(st: &AppState, company_id: i32, period: &vat_fmt::Period) -> Re
     let mut rows = invoice_read::qry(
         &st.db,
         &format!(
-            "SELECT id, company_id, entry_date, document_type, document_id, document_number, description, vat_type, counterpart_id, counterpart_name, document_date, vat_period FROM journal_entries WHERE vat_period = {}",
-            lit(&period.iso)
+            "SELECT id, company_id, entry_date, document_type, document_id, document_number, description, vat_type, counterpart_id, counterpart_name, document_date, vat_period FROM journal_entries WHERE vat_period = {} AND company_id = {}",
+            lit(&period.iso),
+            company_id
         ),
     )
     .await?;
@@ -200,7 +201,7 @@ async fn collect(st: &AppState, company_id: i32, period: &vat_fmt::Period) -> Re
         if owner != 0 && owner != company_id {
             continue;
         }
-        let ln = one_line(st, row, &vt).await?;
+        let ln = one_line(st, company_id, row, &vt).await?;
         let id = cell_i32_at(row, 0);
         if vt == "purchase" {
             let n = cells.purch_n + 1;

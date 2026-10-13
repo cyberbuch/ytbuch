@@ -102,6 +102,7 @@ export function AppShell({ children }: { children: ReactNode }) {
     try {
       await setActiveCompany(id);
       setActiveId(id);
+      window.location.reload();
     } catch {
       /* запази текущата */
     }

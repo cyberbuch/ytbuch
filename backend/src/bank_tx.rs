@@ -63,11 +63,12 @@ pub async fn preview(
     headers: HeaderMap,
     Json(body): Json<Value>,
 ) -> Result<Json<Value>, ApiError> {
-    let _company = company(&st, &headers).await?;
+    let company = company(&st, &headers).await?;
     let obj = form::object(&body)?;
     let ba_id = req_i32(obj, "bank_account_id")?;
     let content = form::required(form::str_field(obj, "file_content")?, "file_content")?;
     let mut parsed = bank_csv::detect(&content).ok_or_else(|| api_err(StatusCode::UNPROCESSABLE_ENTITY, UNKNOWN))?;
+    bank(&st, ba_id, company).await?;
     let refs = refs_of(&st, ba_id).await?;
     let mut dup = 0;
     for tx in &mut parsed.txs {
@@ -102,7 +103,7 @@ pub async fn import(
         let Some(amount) = dec::parse(&tx.amount) else { continue };
         let tx_type = if amount < 0 { "WITHDRAWAL" } else { "DEPOSIT" };
         if auto {
-            if let Err(e) = periods::assert_open(&st.db, &tx.date).await {
+            if let Err(e) = periods::assert_open(&st.db, company, &tx.date).await {
                 let _ = rollback(&st, &made).await;
                 return Err(e);
             }
@@ -159,6 +160,8 @@ pub async fn book(
     let obj = form::object(&body)?;
     let cp = form::i32_field(obj, "counterpart_id")?.unwrap_or(0);
     let contra = form::i32_field(obj, "contra_account_id")?.unwrap_or(0);
+    form::ensure_ref(&st.db, "counterparts", cp, company, "контрагентът").await?;
+    form::ensure_ref(&st.db, "accounts", contra, company, "сметката").await?;
     let row = tx_row(&st, id, company).await?;
     if cell_i32_at(&row, 10) != 0 {
         return Err(api_err(StatusCode::CONFLICT, "транзакцията вече е осчетоводена"));
@@ -178,12 +181,14 @@ pub async fn book(
         if d <= 0 || c <= 0 {
             return Err(api_err(StatusCode::UNPROCESSABLE_ENTITY, "debit_account_id е задължително"));
         }
+        form::ensure_ref(&st.db, "accounts", d, company, "сметката").await?;
+        form::ensure_ref(&st.db, "accounts", c, company, "сметката").await?;
         (d, c)
     };
-    let (cp_name, _) = counterpart(&st, cp).await?;
+    let (cp_name, _) = counterpart(&st, cp, company).await?;
     let tx_contra = cell_str(&row, 5);
     let shown = if cp > 0 { cp_name.clone() } else { tx_contra.clone() };
-    periods::assert_open(&st.db, &cell_str(&row, 2)).await?;
+    periods::assert_open(&st.db, company, &cell_str(&row, 2)).await?;
     let mut desc = if cell_str(&row, 7).is_empty() { "Ръчно осчетоводяване".into() } else { cell_str(&row, 7) };
     if !tx_contra.is_empty() {
         desc = format!("{desc} - {tx_contra}");
@@ -224,6 +229,8 @@ pub async fn reallocate(
     let obj = form::object(&body)?;
     let new_acc = req_i32(obj, "account_id")?;
     let cp = form::i32_field(obj, "counterpart_id")?.unwrap_or(0);
+    form::ensure_ref(&st.db, "accounts", new_acc, company, "сметката").await?;
+    form::ensure_ref(&st.db, "counterparts", cp, company, "контрагентът").await?;
     let row = tx_row(&st, id, company).await?;
     let entry = cell_i32_at(&row, 12);
     if entry <= 0 {
@@ -233,7 +240,7 @@ pub async fn reallocate(
     if ba.buf <= 0 {
         return Err(api_err(StatusCode::UNPROCESSABLE_ENTITY, "Няма буферна сметка"));
     }
-    let (cp_name, _) = counterpart(&st, cp).await?;
+    let (cp_name, _) = counterpart(&st, cp, company).await?;
     let acct = posting::by_id(&st.db, new_acc).await?;
     let lines = invoice_read::qry(&st.db, &format!("SELECT id, account_id FROM journal_lines WHERE entry_id = {entry}")).await?;
     let mut replaced = 0;
@@ -401,11 +408,17 @@ async fn tx_row(st: &AppState, id: i32, company: i32) -> Result<crate::db::Row, 
     Ok(row)
 }
 
-async fn counterpart(st: &AppState, id: i32) -> Result<(String, String), ApiError> {
+async fn counterpart(st: &AppState, id: i32, company: i32) -> Result<(String, String), ApiError> {
     if id <= 0 {
         return Ok((String::new(), String::new()));
     }
-    let rows = invoice_read::qry(&st.db, &format!("SELECT name, vat_number FROM counterparts WHERE id = {id}")).await?;
+    let rows = invoice_read::qry(
+        &st.db,
+        &format!(
+            "SELECT name, vat_number FROM counterparts WHERE id = {id} AND company_id = {company}"
+        ),
+    )
+    .await?;
     let Some(row) = rows.first() else {
         return Err(api_err(StatusCode::NOT_FOUND, "Контрагентът не е намерен"));
     };

@@ -61,6 +61,7 @@ pub struct Account {
 }
 
 pub struct Opening {
+    pub company_id: i32,
     pub year: i32,
     pub account_id: i32,
     pub debit: i128,
@@ -289,16 +290,21 @@ pub async fn load(db: &Db, company_id: i32) -> Result<Snap, ApiError> {
     }
     let openings = map_rows(
         db,
-        "SELECT fiscal_year, account_id, debit, credit, counterpart_id FROM opening_balances ORDER BY id",
+        "SELECT company_id, fiscal_year, account_id, debit, credit, counterpart_id FROM opening_balances ORDER BY id",
         |r| Opening {
-            year: cell_i32_at(r, 0),
-            account_id: cell_i32_at(r, 1),
-            debit: money_of(&cell_str(r, 2)),
-            credit: money_of(&cell_str(r, 3)),
-            counterpart_id: cell_i32_at(r, 4),
+            company_id: cell_i32_at(r, 0),
+            year: cell_i32_at(r, 1),
+            account_id: cell_i32_at(r, 2),
+            debit: money_of(&cell_str(r, 3)),
+            credit: money_of(&cell_str(r, 4)),
+            counterpart_id: cell_i32_at(r, 5),
         },
     )
     .await?;
+    let openings: Vec<Opening> = openings
+        .into_iter()
+        .filter(|o| same_co(o.company_id, company_id))
+        .collect();
     let entries = map_rows(
         db,
         "SELECT id, company_id, entry_date, description, counterpart_id FROM journal_entries ORDER BY id",
@@ -419,7 +425,9 @@ pub async fn load(db: &Db, company_id: i32) -> Result<Snap, ApiError> {
         inv_lines.entry(cell_i32_at(r, 0)).or_default().push(line);
     }
     let bank_acc = db
-        .query("SELECT b.id, a.number FROM bank_accounts b LEFT JOIN accounts a ON b.gl_account_id = a.id")
+        .query(&format!(
+            "SELECT b.id, a.number FROM bank_accounts b LEFT JOIN accounts a ON b.gl_account_id = a.id WHERE b.company_id = {company_id}"
+        ))
         .await
         .map_err(db_err)?;
     let mut gl_of: HashMap<i32, String> = HashMap::new();

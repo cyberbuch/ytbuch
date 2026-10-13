@@ -40,11 +40,15 @@ pub async fn jwt_secret(db: &Db) -> Result<String, ApiError> {
     Ok(secret)
 }
 
+fn is_private(key: &str) -> bool {
+    key == "auth.jwt_secret" || key.starts_with("активна_фирма:")
+}
+
 fn items_json(map: &HashMap<String, String>) -> Vec<Value> {
     let mut keys: Vec<&String> = map.keys().collect();
     keys.sort();
     keys.into_iter()
-        .filter(|k| *k != "auth.jwt_secret")
+        .filter(|k| !is_private(k))
         .map(|k| json!({ "key": k, "value": map.get(k).cloned().unwrap_or_default() }))
         .collect()
 }
@@ -72,7 +76,7 @@ pub async fn update(
         .ok_or_else(|| api_err(StatusCode::BAD_REQUEST, "items е задължителен масив"))?;
     for item in items {
         let key = item.get("key").and_then(Value::as_str).unwrap_or("").trim();
-        if key.is_empty() || key == "auth.jwt_secret" {
+        if key.is_empty() || is_private(key) {
             continue;
         }
         let value = match item.get("value") {

@@ -147,3 +147,85 @@ pub async fn ensure_company(db: &Db, id: i32) -> Result<(), ApiError> {
     }
     Ok(())
 }
+
+/// Редът от `table` трябва да принадлежи на фирма `company`.
+/// Чужд ред се отчита като липсващ (404), за да не се издава съществуването му.
+/// `table` е вътрешна константа, не идва от заявката.
+pub async fn ensure_row(
+    db: &Db,
+    table: &str,
+    id: i32,
+    company: i32,
+    what: &str,
+) -> Result<(), ApiError> {
+    if id <= 0 {
+        return Err(api_err(StatusCode::NOT_FOUND, format!("{what} не е намерен")));
+    }
+    let rows = db
+        .query(&format!(
+            "SELECT id FROM {table} WHERE id = {id} AND company_id = {company}"
+        ))
+        .await
+        .map_err(db_err)?;
+    if rows.is_empty() {
+        return Err(api_err(StatusCode::NOT_FOUND, format!("{what} не е намерен")));
+    }
+    Ok(())
+}
+
+/// Като `ensure_row`, но за незадължителни препратки: 0/отрицателно е "няма".
+pub async fn ensure_ref(
+    db: &Db,
+    table: &str,
+    id: i32,
+    company: i32,
+    what: &str,
+) -> Result<(), ApiError> {
+    if id <= 0 {
+        return Ok(());
+    }
+    ensure_row(db, table, id, company, what).await
+}
+
+/// Редът със собственик `owner_col`; за таблици без company_id (напр. journal_entries).
+pub async fn ensure_owner(
+    db: &Db,
+    table: &str,
+    id: i32,
+    owner_col: &str,
+    company: i32,
+    what: &str,
+) -> Result<(), ApiError> {
+    if id <= 0 {
+        return Err(api_err(StatusCode::NOT_FOUND, format!("{what} не е намерен")));
+    }
+    let rows = db
+        .query(&format!(
+            "SELECT id FROM {table} WHERE id = {id} AND {owner_col} = {company}"
+        ))
+        .await
+        .map_err(db_err)?;
+    if rows.is_empty() {
+        return Err(api_err(StatusCode::NOT_FOUND, format!("{what} не е намерен")));
+    }
+    Ok(())
+}
+
+/// Идентификаторът на реда от `table`, ако принадлежи на фирма `company`.
+pub async fn owned_id(
+    db: &Db,
+    table: &str,
+    id: i32,
+    company: i32,
+) -> Result<Option<i32>, ApiError> {
+    if id <= 0 {
+        return Ok(None);
+    }
+    let rows = db
+        .query(&format!(
+            "SELECT id FROM {table} WHERE id = {id} AND company_id = {company}"
+        ))
+        .await
+        .map_err(db_err)?;
+    Ok(rows.first().map(|_| id))
+}

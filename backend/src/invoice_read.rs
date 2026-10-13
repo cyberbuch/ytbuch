@@ -165,7 +165,7 @@ pub(crate) async fn load(db: &Db, id: i32) -> Result<Inv, ApiError> {
 }
 
 pub(crate) fn belongs(inv: &Inv, company_id: i32) -> Result<(), ApiError> {
-    if inv.company_id != 0 && inv.company_id != company_id {
+    if inv.company_id != company_id {
         return Err(api_err(StatusCode::NOT_FOUND, "фактурата не е намерена"));
     }
     Ok(())
@@ -266,7 +266,7 @@ pub(crate) async fn detail(st: &AppState, sub: &str, id: i32) -> Result<Value, A
     belongs(&inv, company)?;
     let cp_id = inv.counterpart_id;
     let mut v = invoice_value(&st.db, inv, true).await?;
-    if let Some(cp) = counterparts::json_by_id(&st.db, cp_id).await? {
+    if let Some(cp) = counterparts::json_by_id(&st.db, cp_id, company).await? {
         v["counterpart"] = cp;
     }
     if let Some(co) = companies::json_by_id(&st.db, company).await? {

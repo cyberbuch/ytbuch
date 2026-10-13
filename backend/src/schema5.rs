@@ -32,6 +32,7 @@ CREATE TABLE IF NOT EXISTS bank_transactions (
 );
 CREATE TABLE IF NOT EXISTS fixed_asset_categories (
     id INTEGER PRIMARY KEY,
+    company_id INTEGER,
     name VARCHAR,
     cita_category VARCHAR,
     min_depreciation_rate VARCHAR,

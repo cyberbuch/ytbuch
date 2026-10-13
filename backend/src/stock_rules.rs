@@ -9,7 +9,6 @@ use serde_json::{json, Value};
 use crate::db::{cell_i32_at, cell_str, lit, Db};
 use crate::form::{self, active_or_one, auth_sub};
 use crate::invoice_read;
-use crate::posting;
 use crate::{api_err, AppState, ApiError};
 
 #[derive(Clone)]
@@ -54,10 +53,10 @@ struct Named {
     revenue: i32,
 }
 
-async fn named(db: &Db, id: i32) -> Result<Named, ApiError> {
+async fn named(db: &Db, id: i32, company: i32) -> Result<Named, ApiError> {
     let rows = invoice_read::qry(
         db,
-        &format!("SELECT name, inventory_account_id, revenue_account_id FROM products WHERE id = {id}"),
+        &format!("SELECT name, inventory_account_id, revenue_account_id FROM products WHERE id = {id} AND company_id = {company}"),
     )
     .await?;
     let Some(row) = rows.first() else {
@@ -73,7 +72,7 @@ async fn named(db: &Db, id: i32) -> Result<Named, ApiError> {
 /// Поръчката не тръгва, ако готовата продукция или материал нямат правило.
 pub async fn check_production(db: &Db, company: i32, output_id: i32, lines: &[Value]) -> Result<(), ApiError> {
     let rules = load(db, company).await?;
-    let out = named(db, output_id).await?;
+    let out = named(db, output_id, company).await?;
     match pair(&rules, "production", out.inventory, out.revenue) {
         Some(r) if r.clearing_account_id > 0 => {}
         _ => {
@@ -88,7 +87,7 @@ pub async fn check_production(db: &Db, company: i32, output_id: i32, lines: &[Va
         if pid <= 0 {
             return Err(api_err(StatusCode::UNPROCESSABLE_ENTITY, "ред без артикул"));
         }
-        let mat = named(db, pid).await?;
+        let mat = named(db, pid, company).await?;
         if material_inventory(&rules, mat.inventory).is_none() {
             return Err(api_err(
                 StatusCode::UNPROCESSABLE_ENTITY,
@@ -113,11 +112,18 @@ fn row_json(r: &crate::db::Row) -> Value {
     })
 }
 
-async fn account_ok(db: &Db, id: i32) -> Result<(), ApiError> {
+async fn account_ok(db: &Db, id: i32, company: i32) -> Result<(), ApiError> {
     if id <= 0 {
         return Err(api_err(StatusCode::UNPROCESSABLE_ENTITY, "сметката е задължителна"));
     }
-    posting::by_id(db, id).await?;
+    let rows = invoice_read::qry(
+        db,
+        &format!("SELECT id FROM accounts WHERE id = {id} AND company_id = {company}"),
+    )
+    .await?;
+    if rows.is_empty() {
+        return Err(api_err(StatusCode::UNPROCESSABLE_ENTITY, format!("липсва сметка с id {id}")));
+    }
     Ok(())
 }
 
@@ -153,10 +159,10 @@ pub async fn create(
     let inventory = form::i32_field(obj, "inventory_account_id")?.unwrap_or(0);
     let offset = form::i32_field(obj, "offset_account_id")?.unwrap_or(0);
     let mut clearing = form::i32_field(obj, "clearing_account_id")?.unwrap_or(0);
-    account_ok(&st.db, inventory).await?;
-    account_ok(&st.db, offset).await?;
+    account_ok(&st.db, inventory, company).await?;
+    account_ok(&st.db, offset, company).await?;
     if kind == "production" {
-        account_ok(&st.db, clearing).await?;
+        account_ok(&st.db, clearing, company).await?;
     } else {
         clearing = 0;
     }

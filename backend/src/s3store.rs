@@ -30,6 +30,17 @@ fn explain(err: &(impl ProvideErrorMetadata + std::fmt::Display), bucket: &str) 
     }
 }
 
+async fn require_super_admin(st: &AppState, headers: &HeaderMap) -> Result<String, ApiError> {
+    let sub = auth_sub(st, headers)?;
+    let Some(user) = crate::identity::by_login(&st.db, &sub).await? else {
+        return Err(api_err(StatusCode::UNAUTHORIZED, "потребителят не съществува"));
+    };
+    if user.is_super_admin != 1 {
+        return Err(api_err(StatusCode::FORBIDDEN, "изисква се супер администратор"));
+    }
+    Ok(sub)
+}
+
 fn client(cfg: &S3Cfg) -> Result<Client, ApiError> {
     if cfg.bucket.is_empty() {
         return Err(api_err(StatusCode::UNPROCESSABLE_ENTITY, "S3 bucket е задължителен"));
@@ -79,7 +90,7 @@ pub async fn s3_test(State(st): State<AppState>, headers: HeaderMap) -> Result<J
 }
 
 pub async fn s3_list(State(st): State<AppState>, headers: HeaderMap) -> Result<Json<Value>, ApiError> {
-    auth_sub(&st, &headers)?;
+    require_super_admin(&st, &headers).await?;
     let cfg = settings::s3_cfg(&settings::load(&st.db).await?);
     let s3 = client(&cfg)?;
     let mut token: Option<String> = None;
@@ -139,7 +150,7 @@ pub async fn s3_delete(
     headers: HeaderMap,
     Json(body): Json<Value>,
 ) -> Result<Json<Value>, ApiError> {
-    auth_sub(&st, &headers)?;
+    require_super_admin(&st, &headers).await?;
     let key = body.get("s3_key").and_then(Value::as_str).unwrap_or("").trim();
     if key.is_empty() {
         return Err(api_err(StatusCode::UNPROCESSABLE_ENTITY, "s3_key е задължителен"));
@@ -159,7 +170,7 @@ pub async fn s3_delete(
 }
 
 pub async fn s3_backup(State(st): State<AppState>, headers: HeaderMap) -> Result<Json<Value>, ApiError> {
-    auth_sub(&st, &headers)?;
+    require_super_admin(&st, &headers).await?;
     let cfg = settings::s3_cfg(&settings::load(&st.db).await?);
     let s3 = client(&cfg)?;
     let (sql, tables) = dump::logical_sql(&st.db).await?;

@@ -11,6 +11,7 @@ use serde::Deserialize;
 use serde_json::{json, Map, Value};
 
 use crate::db::{self, lit};
+use crate::form;
 use crate::{api_err, auth, AppState, ApiError};
 
 const CATALOG_JSON: &str = include_str!("../data/saft_noms.json");
@@ -98,8 +99,10 @@ pub async fn nomenclatures(
 
 /// Липсващите кодове от NRA_Nom_Accounts влизат в сметкоплана.
 /// Съществуващите номера се пропускат.
-pub async fn fill_chart(db: &db::Db) -> Result<(i32, i32), tokio_postgres::Error> {
-    let existing = db.query("SELECT number FROM accounts").await?;
+pub async fn fill_chart(db: &db::Db, company: i32) -> Result<(i32, i32), tokio_postgres::Error> {
+    let existing = db
+        .query(&format!("SELECT number FROM accounts WHERE company_id = {company}"))
+        .await?;
     let mut have: HashSet<String> = existing.iter().map(|r| db::cell_str(r, 0)).collect();
     let mut id = db.next_id("accounts").await?;
     let mut created = 0;
@@ -117,7 +120,7 @@ pub async fn fill_chart(db: &db::Db) -> Result<(i32, i32), tokio_postgres::Error
             continue;
         }
         batch.push(format!(
-            "({id}, 1, {}, {}, {}, 'none')",
+            "({id}, {company}, {}, {}, {}, 'none')",
             lit(code),
             lit(name),
             lit(code)
@@ -145,13 +148,10 @@ pub async fn fill_chart(db: &db::Db) -> Result<(i32, i32), tokio_postgres::Error
 }
 
 pub async fn ensure_chart(db: &db::Db) -> Result<(), tokio_postgres::Error> {
-    let n = db
-        .query("SELECT id FROM schema_migrations WHERE id = 3")
-        .await?;
-    if !n.is_empty() {
-        return Ok(());
+    let companies = db.query("SELECT id FROM companies ORDER BY id").await?;
+    for row in &companies {
+        fill_chart(db, db::cell_i32(row)).await?;
     }
-    fill_chart(db).await?;
     let marked = db
         .query("SELECT id FROM schema_migrations WHERE id = 3")
         .await?;
@@ -226,8 +226,9 @@ pub async fn seed_saft(
     State(st): State<AppState>,
     headers: HeaderMap,
 ) -> Result<Json<Value>, ApiError> {
-    auth::subject(&st.jwt_secret, &headers)?;
-    let (created, skipped) = fill_chart(&st.db)
+    let sub = form::auth_sub(&st, &headers)?;
+    let company = form::active_or_one(&st, &sub).await?;
+    let (created, skipped) = fill_chart(&st.db, company)
         .await
         .map_err(|e| api_err(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     Ok(Json(json!({

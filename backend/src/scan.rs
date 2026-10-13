@@ -200,7 +200,7 @@ pub async fn extract(
         let total = if total.is_empty() { str_field(&line, "total", "0") } else { total };
         let mut pid = 0;
         if let Some(cp) = &hit {
-            pid = pnmap::product_for(&st.db, cp.id, &desc, "").await?;
+            pid = pnmap::product_for(&st.db, company, cp.id, &desc, "").await?;
         }
         let mut item = json!({
             "description": desc,
