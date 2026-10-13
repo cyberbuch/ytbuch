@@ -65,6 +65,9 @@ pub fn entries_xml(s: &Snap, year: i32, month: i32) -> String {
         body.push_str(&built);
         n += 1;
     }
+    if body.is_empty() {
+        return String::new();
+    }
     let mut xml = saft_xml::open("GeneralLedgerEntries");
     xml.push_str(&text("NumberOfEntries", &n.to_string()));
     xml.push_str(&text("TotalDebit", &money(debit)));

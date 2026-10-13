@@ -124,6 +124,9 @@ pub fn invoices_xml(s: &Snap, year: i32, month: i32) -> (String, String) {
 }
 
 fn wrap(tag: &str, n: i64, debit: i128, credit: i128, body: &str) -> String {
+    if body.is_empty() {
+        return String::new();
+    }
     let mut xml = saft_xml::open(tag);
     xml.push_str(&text("NumberOfEntries", &n.to_string()));
     xml.push_str(&text("TotalDebit", &money(debit)));

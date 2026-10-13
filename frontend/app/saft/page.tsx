@@ -10,10 +10,12 @@ import { RequireAuth } from "../../components/RequireAuth";
 
 function SaftInner() {
   const { t } = useI18n();
-  const [period, setPeriod] = useState("");
+  const [month, setMonth] = useState("");
   const [mode, setMode] = useState("monthly");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+
+  const period = month ? `${month}-01` : "";
 
   const handleDownload = async () => {
     if (!period) return;
@@ -63,9 +65,10 @@ function SaftInner() {
             <label className="label">{t("saft.period")}</label>
             <input
               className="input"
-              value={period}
-              onChange={(e) => setPeriod(e.target.value)}
-              placeholder="2026-09-01"
+              type="month"
+              value={month}
+              onChange={(e) => setMonth(e.target.value)}
+              required
             />
           </div>
           <div className="field">

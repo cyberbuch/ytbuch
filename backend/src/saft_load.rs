@@ -67,6 +67,8 @@ pub struct Opening {
     pub debit: i128,
     pub credit: i128,
     pub counterpart_id: i32,
+    pub product_id: i32,
+    pub qty: String,
 }
 
 pub struct Entry {
@@ -114,6 +116,7 @@ pub struct Product {
     pub inventory: bool,
     pub qty: String,
     pub value: i128,
+    pub inv_acc: i32,
 }
 
 pub struct Invoice {
@@ -178,6 +181,61 @@ pub struct Asset {
     pub tax_rate: String,
 }
 
+pub struct MatIssue {
+    pub id: i32,
+    pub company_id: i32,
+    pub number: String,
+    pub date: String,
+    pub location_id: i32,
+    pub status: String,
+    pub journal_id: i32,
+}
+
+pub struct MatLine {
+    pub product_id: i32,
+    pub quantity: String,
+    pub amount: i128,
+    pub account_id: i32,
+    pub inventory_account_id: i32,
+    pub line_no: i32,
+}
+
+pub struct ProdOrder {
+    pub id: i32,
+    pub company_id: i32,
+    pub number: String,
+    pub output_product_id: i32,
+    pub quantity: String,
+    pub location_id: i32,
+    pub date: String,
+    pub status: String,
+    pub journal_id: i32,
+    pub cost: i128,
+}
+
+pub struct ProdLine {
+    pub product_id: i32,
+    pub quantity: String,
+    pub unit: String,
+    pub amount: i128,
+}
+
+pub struct Idoc {
+    pub id: i32,
+    pub company_id: i32,
+    pub number: String,
+    pub date: String,
+    pub from_location_id: i32,
+    pub to_location_id: i32,
+    pub status: String,
+}
+
+pub struct IdocLine {
+    pub product_id: i32,
+    pub quantity: String,
+    pub amount: i128,
+}
+
 pub struct Snap {
     pub company_id: i32,
     pub company: Company,
@@ -194,6 +252,12 @@ pub struct Snap {
     pub inv_lines: HashMap<i32, Vec<InvLine>>,
     pub banks: Vec<BankTx>,
     pub assets: Vec<Asset>,
+    pub mat_issues: Vec<MatIssue>,
+    pub mat_lines: HashMap<i32, Vec<MatLine>>,
+    pub prod_orders: Vec<ProdOrder>,
+    pub prod_lines: HashMap<i32, Vec<ProdLine>>,
+    pub idocs: Vec<Idoc>,
+    pub idoc_lines: HashMap<i32, Vec<IdocLine>>,
 }
 
 pub async fn load(db: &Db, company_id: i32) -> Result<Snap, ApiError> {
@@ -290,7 +354,7 @@ pub async fn load(db: &Db, company_id: i32) -> Result<Snap, ApiError> {
     }
     let openings = map_rows(
         db,
-        "SELECT company_id, fiscal_year, account_id, debit, credit, counterpart_id FROM opening_balances ORDER BY id",
+        "SELECT company_id, fiscal_year, account_id, debit, credit, counterpart_id, product_id, quantity FROM opening_balances ORDER BY id",
         |r| Opening {
             company_id: cell_i32_at(r, 0),
             year: cell_i32_at(r, 1),
@@ -298,6 +362,8 @@ pub async fn load(db: &Db, company_id: i32) -> Result<Snap, ApiError> {
             debit: money_of(&cell_str(r, 3)),
             credit: money_of(&cell_str(r, 4)),
             counterpart_id: cell_i32_at(r, 5),
+            product_id: cell_i32_at(r, 6),
+            qty: cell_str(r, 7),
         },
     )
     .await?;
@@ -360,8 +426,8 @@ pub async fn load(db: &Db, company_id: i32) -> Result<Snap, ApiError> {
     .await?;
     let products = map_rows(
         db,
-        "SELECT id, company_id, name, code, unit, cost_price, is_service, is_inventory, stock_quantity, stock_value \
-         FROM products ORDER BY id",
+        "SELECT id, company_id, name, code, unit, cost_price, is_service, is_inventory, stock_quantity, stock_value, \
+         inventory_account_id FROM products ORDER BY id",
         |r| Product {
             id: cell_i32_at(r, 0),
             company_id: cell_i32_at(r, 1),
@@ -373,6 +439,7 @@ pub async fn load(db: &Db, company_id: i32) -> Result<Snap, ApiError> {
             inventory: cell_i32_at(r, 7) == 1,
             qty: cell_str(r, 8),
             value: money_of(&cell_str(r, 9)),
+            inv_acc: cell_i32_at(r, 10),
         },
     )
     .await?;
@@ -484,6 +551,99 @@ pub async fn load(db: &Db, company_id: i32) -> Result<Snap, ApiError> {
         },
     )
     .await?;
+    let mat_issues = map_rows(
+        db,
+        "SELECT id, company_id, number, doc_date, location_id, status, journal_entry_id FROM material_issues ORDER BY id",
+        |r| MatIssue {
+            id: cell_i32_at(r, 0),
+            company_id: cell_i32_at(r, 1),
+            number: cell_str(r, 2),
+            date: cell_str(r, 3),
+            location_id: cell_i32_at(r, 4),
+            status: cell_str(r, 5),
+            journal_id: cell_i32_at(r, 6),
+        },
+    )
+    .await?;
+    let mrows = db
+        .query(
+            "SELECT doc_id, product_id, quantity, amount, account_id, inventory_account_id, line_no \
+             FROM material_issue_lines ORDER BY id",
+        )
+        .await
+        .map_err(db_err)?;
+    let mut mat_lines: HashMap<i32, Vec<MatLine>> = HashMap::new();
+    for r in &mrows {
+        mat_lines.entry(cell_i32_at(r, 0)).or_default().push(MatLine {
+            product_id: cell_i32_at(r, 1),
+            quantity: cell_str(r, 2),
+            amount: money_of(&cell_str(r, 3)),
+            account_id: cell_i32_at(r, 4),
+            inventory_account_id: cell_i32_at(r, 5),
+            line_no: cell_i32_at(r, 6),
+        });
+    }
+    let prod_orders = map_rows(
+        db,
+        "SELECT id, company_id, number, output_product_id, quantity, location_id, order_date, status, journal_entry_id, \
+         material_cost FROM production_orders ORDER BY id",
+        |r| ProdOrder {
+            id: cell_i32_at(r, 0),
+            company_id: cell_i32_at(r, 1),
+            number: cell_str(r, 2),
+            output_product_id: cell_i32_at(r, 3),
+            quantity: cell_str(r, 4),
+            location_id: cell_i32_at(r, 5),
+            date: cell_str(r, 6),
+            status: cell_str(r, 7),
+            journal_id: cell_i32_at(r, 8),
+            cost: money_of(&cell_str(r, 9)),
+        },
+    )
+    .await?;
+    let prows = db
+        .query(
+            "SELECT order_id, product_id, quantity, unit, amount FROM production_order_lines ORDER BY id",
+        )
+        .await
+        .map_err(db_err)?;
+    let mut prod_lines: HashMap<i32, Vec<ProdLine>> = HashMap::new();
+    for r in &prows {
+        prod_lines.entry(cell_i32_at(r, 0)).or_default().push(ProdLine {
+            product_id: cell_i32_at(r, 1),
+            quantity: cell_str(r, 2),
+            unit: cell_str(r, 3),
+            amount: money_of(&cell_str(r, 4)),
+        });
+    }
+    let idocs = map_rows(
+        db,
+        "SELECT id, company_id, number, doc_date, from_location_id, to_location_id, status FROM internal_docs ORDER BY id",
+        |r| Idoc {
+            id: cell_i32_at(r, 0),
+            company_id: cell_i32_at(r, 1),
+            number: cell_str(r, 2),
+            date: cell_str(r, 3),
+            from_location_id: cell_i32_at(r, 4),
+            to_location_id: cell_i32_at(r, 5),
+            status: cell_str(r, 6),
+        },
+    )
+    .await?;
+    let irows = db
+        .query(
+            "SELECT doc_id, product_id, quantity, amount FROM internal_doc_lines WHERE line_kind = 'product' ORDER BY id",
+        )
+        .await
+        .map_err(db_err)?;
+    let mut idoc_lines: HashMap<i32, Vec<IdocLine>> = HashMap::new();
+    for r in &irows {
+        idoc_lines.entry(cell_i32_at(r, 0)).or_default().push(IdocLine {
+            product_id: cell_i32_at(r, 1),
+            quantity: cell_str(r, 2),
+            amount: money_of(&cell_str(r, 3)),
+        });
+    }
     Ok(Snap {
         company_id,
         company,
@@ -500,6 +660,12 @@ pub async fn load(db: &Db, company_id: i32) -> Result<Snap, ApiError> {
         inv_lines,
         banks,
         assets,
+        mat_issues,
+        mat_lines,
+        prod_orders,
+        prod_lines,
+        idocs,
+        idoc_lines,
     })
 }
 

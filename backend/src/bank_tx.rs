@@ -23,8 +23,10 @@ const UNKNOWN: &str = "Непознат формат на файла. Поддъ
 pub(crate) struct TxQ {
     bank_account_id: Option<String>,
     status: Option<String>,
-    #[serde(flatten)]
-    page: PageQuery,
+    #[serde(default)]
+    limit: Option<u32>,
+    #[serde(default)]
+    offset: Option<u32>,
 }
 
 pub async fn index(
@@ -55,7 +57,8 @@ pub async fn index(
             items.push(tx_json(row));
         }
     }
-    Ok(paginate(items, &q.page))
+    let page = PageQuery { limit: q.limit, offset: q.offset };
+    Ok(paginate(items, &page))
 }
 
 pub async fn preview(
