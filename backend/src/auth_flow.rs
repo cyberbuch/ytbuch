@@ -88,6 +88,12 @@ pub async fn register(
         drop_company(&st.db, cid).await;
         return Err(e);
     }
+    let admin_role = crate::members::role_id_by_name(&st.db, crate::members::ROLE_ADMIN).await?;
+    if let Err(e) = crate::members::grant(&st.db, uid, cid, admin_role).await {
+        drop_user(&st.db, uid).await;
+        drop_company(&st.db, cid).await;
+        return Err(e);
+    }
     Ok((
         StatusCode::CREATED,
         Json(json!({

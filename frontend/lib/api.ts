@@ -230,6 +230,13 @@ export function logout(): void {
   setToken(null);
 }
 
+export interface MeCompany {
+  company_id: number;
+  role_id: number;
+  role: string;
+  company_name: string;
+}
+
 // собствен профил с правата на ролята
 export interface Me {
   sub: string;
@@ -240,6 +247,7 @@ export interface Me {
   role_id?: number;
   totp_enabled?: number;
   permissions?: string[];
+  companies?: MeCompany[];
 }
 
 export function getMe(): Promise<Me> {

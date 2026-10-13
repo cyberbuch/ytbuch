@@ -99,6 +99,13 @@ pub async fn user_count(db: &Db) -> Result<i32, ApiError> {
     Ok(rows.len() as i32)
 }
 
+pub async fn is_super(db: &Db, login: &str) -> Result<bool, ApiError> {
+    Ok(match by_login(db, login).await? {
+        Some(u) => u.is_super_admin == 1,
+        None => false,
+    })
+}
+
 pub async fn provision_superadmin(db: &Db) -> Result<(), ApiError> {
     let hash = auth::hash_new("123+123")?;
     let existing = db

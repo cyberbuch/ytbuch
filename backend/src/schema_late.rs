@@ -8,6 +8,13 @@ CREATE TABLE IF NOT EXISTS roles (
     permissions VARCHAR,
     created_at VARCHAR
 );
+CREATE TABLE IF NOT EXISTS user_companies (
+    id INTEGER PRIMARY KEY,
+    user_id INTEGER,
+    company_id INTEGER,
+    role_id INTEGER,
+    created_at VARCHAR
+);
 CREATE TABLE IF NOT EXISTS exchange_rates (
     id INTEGER PRIMARY KEY,
     currency_code VARCHAR,

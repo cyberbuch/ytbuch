@@ -8,7 +8,6 @@ use axum::http::{header, HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use serde::Deserialize;
 
-use crate::companies;
 use crate::form::auth_sub;
 use crate::saft_gl::{accounts_xml, entries_xml};
 use crate::saft_load::{self, Company, Owner, Parent, Snap};
@@ -39,7 +38,7 @@ pub async fn export(
         ));
     };
     let mode = mode_of(q.mode.as_deref().unwrap_or(""));
-    let cid = companies::active_company_id(&st.db, &sub).await?;
+    let cid = crate::form::active_or_one(&st, &sub).await?;
     if cid <= 0 {
         return Err(api_err(
             StatusCode::UNPROCESSABLE_ENTITY,

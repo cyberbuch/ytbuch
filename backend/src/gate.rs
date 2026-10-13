@@ -29,9 +29,12 @@ pub fn required_permission(method: &Method, path: &str) -> Option<&'static str> 
     match s.get(1).copied() {
         Some("companies") => {
             // Списъкът с фирми е на превключвателя — четенето е за всеки,
-            // създаването и редакцията изискват право.
+            // създаването и редакцията изискват право. Потребителите на
+            // фирма са под /users и се пазят от ролята "users".
             if s.len() == 2 && method == Method::GET {
                 None
+            } else if s.len() >= 4 && s.get(3) == Some(&"users") {
+                Some("users")
             } else {
                 Some("companies")
             }
@@ -92,9 +95,11 @@ pub async fn gate(
     };
     if user.is_active == 0 {
         return Err(api_err(StatusCode::FORBIDDEN, "потребителят е неактивен"));
-    }
+    };
     if user.is_super_admin != 1 {
-        let perms = crate::access::role_permissions(&st.db, user.role_id).await?;
+        // Правата идват от ролята на потребителя към активната фирма.
+        let company = crate::companies::resolve_active(&st.db, &sub).await?;
+        let perms = crate::members::perms_for(&st.db, &user, company).await?;
         if !allowed(&perms, key) {
             return Err(api_err(
                 StatusCode::FORBIDDEN,
@@ -133,6 +138,10 @@ mod tests {
         assert_eq!(perm("DELETE", "/v1/companies/3"), Some("companies"));
         assert_eq!(perm("POST", "/v1/companies/3/locations"), Some("companies"));
         assert_eq!(perm("DELETE", "/v1/document-series/7"), Some("companies"));
+        assert_eq!(perm("GET", "/v1/companies/3/users"), Some("users"));
+        assert_eq!(perm("POST", "/v1/companies/3/users"), Some("users"));
+        assert_eq!(perm("PATCH", "/v1/companies/3/users/5"), Some("users"));
+        assert_eq!(perm("DELETE", "/v1/companies/3/users/5"), Some("users"));
     }
 
     #[test]

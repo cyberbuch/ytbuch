@@ -110,7 +110,7 @@ pub async fn users_index(
     headers: HeaderMap,
     Query(q): Query<PageQuery>,
 ) -> Result<Json<Value>, ApiError> {
-    auth_sub(&st, &headers)?;
+    crate::members::require_super_admin(&st, &headers).await?;
     let rows = st
         .db
         .query(&format!("{USER_SEL} ORDER BY name"))
@@ -125,7 +125,7 @@ pub async fn users_create(
     headers: HeaderMap,
     Json(body): Json<Value>,
 ) -> Result<(StatusCode, Json<Value>), ApiError> {
-    auth_sub(&st, &headers)?;
+    crate::members::require_super_admin(&st, &headers).await?;
     let obj = form::object(&body)?;
     let email = form::required(form::str_field(obj, "email")?, "email")?;
     let email = email.trim().to_string();
@@ -173,7 +173,7 @@ pub async fn users_update(
     Path(id): Path<i32>,
     Json(body): Json<Value>,
 ) -> Result<Json<Value>, ApiError> {
-    auth_sub(&st, &headers)?;
+    crate::members::require_super_admin(&st, &headers).await?;
     let current = identity::by_id(&st.db, id)
         .await?
         .ok_or_else(|| api_err(StatusCode::NOT_FOUND, "потребителят не е намерен"))?;
@@ -256,6 +256,7 @@ pub async fn users_delete(
     Path(id): Path<i32>,
 ) -> Result<StatusCode, ApiError> {
     let sub = auth_sub(&st, &headers)?;
+    crate::members::require_super_admin(&st, &headers).await?;
     let user = identity::by_id(&st.db, id)
         .await?
         .ok_or_else(|| api_err(StatusCode::NOT_FOUND, "потребителят не е намерен"))?;
@@ -295,7 +296,7 @@ pub async fn roles_index(
     headers: HeaderMap,
     Query(q): Query<PageQuery>,
 ) -> Result<Json<Value>, ApiError> {
-    auth_sub(&st, &headers)?;
+    crate::members::require_super_admin(&st, &headers).await?;
     let rows = st
         .db
         .query("SELECT id, name, description, permissions, created_at FROM roles ORDER BY name")
@@ -322,7 +323,7 @@ pub async fn roles_create(
     headers: HeaderMap,
     Json(body): Json<Value>,
 ) -> Result<(StatusCode, Json<Value>), ApiError> {
-    auth_sub(&st, &headers)?;
+    crate::members::require_super_admin(&st, &headers).await?;
     let obj = form::object(&body)?;
     let name = form::required(form::str_field(obj, "name")?, "name")?;
     let description = form::str_field(obj, "description")?.unwrap_or_default();
@@ -350,7 +351,7 @@ pub async fn roles_update(
     Path(id): Path<i32>,
     Json(body): Json<Value>,
 ) -> Result<Json<Value>, ApiError> {
-    auth_sub(&st, &headers)?;
+    crate::members::require_super_admin(&st, &headers).await?;
     role_one(&st.db, id).await?;
     let obj = form::object(&body)?;
     if let Some(v) = form::str_field(obj, "name")? {
@@ -389,7 +390,7 @@ pub async fn roles_delete(
     headers: HeaderMap,
     Path(id): Path<i32>,
 ) -> Result<StatusCode, ApiError> {
-    auth_sub(&st, &headers)?;
+    crate::members::require_super_admin(&st, &headers).await?;
     role_one(&st.db, id).await?;
     st.db
         .exec(&format!("DELETE FROM roles WHERE id = {id}"))

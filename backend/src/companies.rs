@@ -299,10 +299,29 @@ pub async fn index(
     headers: HeaderMap,
     Query(q): Query<PageQuery>,
 ) -> Result<Json<Value>, ApiError> {
-    auth::subject(&st.jwt_secret, &headers)?;
-    let rows = st.db.query( &format!("{SELECT} ORDER BY id"))
-        .await
-        .map_err(|e| api_err(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    let sub = auth::subject(&st.jwt_secret, &headers)?;
+    let rows = if crate::identity::is_super(&st.db, &sub).await? {
+        st.db.query( &format!("{SELECT} ORDER BY id"))
+            .await
+            .map_err(|e| api_err(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+    } else {
+        let user = crate::identity::by_login(&st.db, &sub)
+            .await?
+            .ok_or_else(|| api_err(StatusCode::UNAUTHORIZED, "потребителят не съществува"))?;
+        let mine = crate::members::company_ids_of(&st.db, user.id).await?;
+        if mine.is_empty() {
+            return Ok(paginate(Vec::new(), &q));
+        }
+        let ids = mine
+            .iter()
+            .map(|i| i.to_string())
+            .collect::<Vec<_>>()
+            .join(",");
+        st.db
+            .query(&format!("{SELECT} WHERE id IN ({ids}) ORDER BY id"))
+            .await
+            .map_err(|e| api_err(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+    };
     let items: Vec<Value> = rows.iter().map(|r| to_json(&from_row(r))).collect();
     Ok(paginate(items, &q))
 }
@@ -381,7 +400,13 @@ pub async fn create(
     headers: HeaderMap,
     Json(body): Json<Value>,
 ) -> Result<(StatusCode, Json<Value>), ApiError> {
-    auth::subject(&st.jwt_secret, &headers)?;
+    let sub = auth::subject(&st.jwt_secret, &headers)?;
+    if !crate::identity::is_super(&st.db, &sub).await? {
+        return Err(api_err(
+            StatusCode::FORBIDDEN,
+            "създаването на фирма е за супер администратор",
+        ));
+    }
     let mut c = blank();
     apply_body(&mut c, &body)?;
     if c.name.trim().is_empty() {
@@ -410,7 +435,10 @@ pub async fn show(
     headers: HeaderMap,
     Path(id): Path<i32>,
 ) -> Result<Json<Value>, ApiError> {
-    auth::subject(&st.jwt_secret, &headers)?;
+    let sub = auth::subject(&st.jwt_secret, &headers)?;
+    if !can_access(&st.db, &sub, id).await? {
+        return Err(api_err(StatusCode::NOT_FOUND, "фирмата не е намерена"));
+    }
     let c = find(&st.db, id)
         .await?
         .ok_or_else(|| api_err(StatusCode::NOT_FOUND, "фирмата не е намерена"))?;
@@ -423,7 +451,10 @@ pub async fn update(
     Path(id): Path<i32>,
     Json(body): Json<Value>,
 ) -> Result<Json<Value>, ApiError> {
-    auth::subject(&st.jwt_secret, &headers)?;
+    let sub = auth::subject(&st.jwt_secret, &headers)?;
+    if !can_access(&st.db, &sub, id).await? {
+        return Err(api_err(StatusCode::NOT_FOUND, "фирмата не е намерена"));
+    }
     let mut c = find(&st.db, id)
         .await?
         .ok_or_else(|| api_err(StatusCode::NOT_FOUND, "фирмата не е намерена"))?;
@@ -437,7 +468,13 @@ pub async fn delete(
     headers: HeaderMap,
     Path(id): Path<i32>,
 ) -> Result<StatusCode, ApiError> {
-    auth::subject(&st.jwt_secret, &headers)?;
+    let sub = auth::subject(&st.jwt_secret, &headers)?;
+    if !crate::identity::is_super(&st.db, &sub).await? {
+        return Err(api_err(
+            StatusCode::FORBIDDEN,
+            "изтриването на фирма е за супер администратор",
+        ));
+    }
     let existing = st.db.query( &format!("SELECT id FROM companies WHERE id = {id}"))
         .await
         .map_err(|e| api_err(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
@@ -469,28 +506,54 @@ pub async fn active_company_id(db: &Db, sub: &str) -> Result<i32, ApiError> {
         .unwrap_or(0))
 }
 
+/// Активната фирма на потребителя с проверка на членството.
+/// Без избрана фирма се взема първата, до която има достъп.
+/// Потребител без членство получава 403.
+pub async fn resolve_active(db: &Db, sub: &str) -> Result<i32, ApiError> {
+    let Some(user) = crate::identity::by_login(db, sub).await? else {
+        return Err(api_err(StatusCode::UNAUTHORIZED, "потребителят не съществува"));
+    };
+    let stored = active_company_id(db, sub).await?;
+    if user.is_super_admin == 1 {
+        return Ok(if stored > 0 { stored } else { 1 });
+    }
+    let mine = crate::members::company_ids_of(db, user.id).await?;
+    if stored > 0 && mine.contains(&stored) {
+        return Ok(stored);
+    }
+    if let Some(first) = mine.first() {
+        return Ok(*first);
+    }
+    Err(api_err(
+        StatusCode::FORBIDDEN,
+        "нямате достъп до фирма",
+    ))
+}
+
+/// Дали потребителят има достъп до фирмата.
+pub async fn can_access(db: &Db, sub: &str, company_id: i32) -> Result<bool, ApiError> {
+    let Some(user) = crate::identity::by_login(db, sub).await? else {
+        return Ok(false);
+    };
+    if user.is_super_admin == 1 {
+        return Ok(true);
+    }
+    Ok(crate::members::membership_role(db, user.id, company_id)
+        .await?
+        .is_some())
+}
+
 pub async fn active_get(
     State(st): State<AppState>,
     headers: HeaderMap,
 ) -> Result<Json<Value>, ApiError> {
     let sub = auth::subject(&st.jwt_secret, &headers)?;
-    let key = active_key(&sub);
-    let rows = st.db.query(
-        &format!("SELECT value FROM settings WHERE setting_key = {}", q(&key)),
-    )
-    .await
-    .map_err(|e| api_err(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-    let Some(row) = rows.first() else {
-        return Ok(Json(json!({})));
-    };
-    let val = cell_str(row, 0);
-    let id: i32 = val.parse().unwrap_or(0);
-    if id <= 0 {
-        return Ok(Json(json!({})));
-    }
-    match find(&st.db, id).await? {
-        Some(c) => Ok(Json(to_json(&c))),
-        None => Ok(Json(json!({}))),
+    match resolve_active(&st.db, &sub).await {
+        Ok(id) => match find(&st.db, id).await? {
+            Some(c) => Ok(Json(to_json(&c))),
+            None => Ok(Json(json!({}))),
+        },
+        Err(_) => Ok(Json(json!({}))),
     }
 }
 
@@ -505,6 +568,9 @@ pub async fn active_set(
         .and_then(|v| v.as_i64())
         .ok_or_else(|| api_err(StatusCode::UNPROCESSABLE_ENTITY, "company_id е задължителен"))?
         as i32;
+    if !can_access(&st.db, &sub, id).await? {
+        return Err(api_err(StatusCode::NOT_FOUND, "фирмата не е намерена"));
+    }
     let c = find(&st.db, id)
         .await?
         .ok_or_else(|| api_err(StatusCode::NOT_FOUND, "фирмата не е намерена"))?;

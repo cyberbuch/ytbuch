@@ -130,8 +130,7 @@ pub fn auth_sub(st: &AppState, headers: &HeaderMap) -> Result<String, ApiError> 
 }
 
 pub async fn active_or_one(st: &AppState, sub: &str) -> Result<i32, ApiError> {
-    let id = companies::active_company_id(&st.db, sub).await?;
-    Ok(if id > 0 { id } else { 1 })
+    companies::resolve_active(&st.db, sub).await
 }
 
 pub async fn ensure_company(db: &Db, id: i32) -> Result<(), ApiError> {

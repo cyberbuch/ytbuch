@@ -7,9 +7,11 @@
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { RequireAuth } from "../../components/RequireAuth";
 import { useI18n } from "../../components/I18nProvider";
+import { useAuth } from "../../components/AuthProvider";
 import { DocumentSeriesTab, DocSeries } from "../../components/DocumentSeriesTab";
 import { FsFormulasTab } from "../../components/FsFormulasTab";
 import { SettingsStockTab } from "../../components/SettingsStockTab";
+import { SettingsUsersTab } from "../../components/SettingsUsersTab";
 import { SettingsCompanyTab } from "../../components/SettingsCompanyTab";
 import { SettingsSaftTab } from "../../components/SettingsSaftTab";
 import {
@@ -49,6 +51,7 @@ function parseKeys(raw: unknown): { mistral_api_key: string; zhipu_api_key: stri
 
 function SettingsInner() {
   const { t } = useI18n();
+  const { can, isSuperAdmin } = useAuth();
   const [activeId, setActiveId] = useState(0);
   const [tab, setTab] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -85,6 +88,8 @@ function SettingsInner() {
   const setL = (k: string, v: string) => setLocForm((p) => ({ ...p, [k]: v }));
   const setO = (k: string, v: string) => setOwnerForm((p) => ({ ...p, [k]: v }));
   const setP = (k: string, v: string) => setParentForm((p) => ({ ...p, [k]: v }));
+
+  const showUsers = can("users") || isSuperAdmin;
 
   const applyPack = (pack: SettingsPack) => {
     const c = pack.company;
@@ -508,6 +513,15 @@ function SettingsInner() {
         >
           {t("settings.tab.stock")}
         </button>
+        {showUsers && (
+          <button
+            type="button"
+            className={`tab${tab === 5 ? " tab-active" : ""}`}
+            onClick={() => setTab(5)}
+          >
+            {t("settings.tab.users")}
+          </button>
+        )}
       </div>
 
       {tab === 0 && (
@@ -581,6 +595,7 @@ function SettingsInner() {
 
       {tab === 3 && <FsFormulasTab />}
       {tab === 4 && <SettingsStockTab />}
+      {tab === 5 && showUsers && <SettingsUsersTab companyId={activeId} />}
     </>
   );
 }

@@ -3,6 +3,7 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { RequireAuth } from "../../components/RequireAuth";
 import { useI18n } from "../../components/I18nProvider";
+import { useAuth } from "../../components/AuthProvider";
 import { api, ListResponse } from "../../lib/api";
 import { IconButton } from "../../components/IconButton";
 
@@ -286,10 +287,25 @@ function UsersInner() {
   );
 }
 
+function UsersGate() {
+  const { t } = useI18n();
+  const { isSuperAdmin } = useAuth();
+  if (!isSuperAdmin) {
+    return (
+      <div className="card card-pad">
+        <p className="muted" style={{ margin: 0 }}>
+          {t("common.super_only")}
+        </p>
+      </div>
+    );
+  }
+  return <UsersInner />;
+}
+
 export default function UsersPage() {
   return (
     <RequireAuth>
-      <UsersInner />
+      <UsersGate />
     </RequireAuth>
   );
 }

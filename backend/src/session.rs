@@ -109,10 +109,14 @@ pub async fn me(State(st): State<AppState>, headers: HeaderMap) -> Result<Json<V
     let Some(user) = identity::by_login(&st.db, &sub).await? else {
         return Ok(Json(json!({ "sub": sub, "permissions": [] })));
     };
+    let companies = crate::members::me_companies(&st.db, user.id).await?;
     let perms = if user.is_super_admin == 1 {
         vec![serde_json::json!("*")]
     } else {
-        crate::access::role_permissions(&st.db, user.role_id).await?
+        match crate::companies::resolve_active(&st.db, &user.username).await {
+            Ok(company) => crate::members::perms_for(&st.db, &user, company).await?,
+            Err(_) => Vec::new(),
+        }
     };
     Ok(Json(json!({
         "sub": user.username,
@@ -124,5 +128,6 @@ pub async fn me(State(st): State<AppState>, headers: HeaderMap) -> Result<Json<V
         "role_id": user.role_id,
         "totp_enabled": user.totp_enabled,
         "permissions": perms,
+        "companies": companies,
     })))
 }

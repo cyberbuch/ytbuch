@@ -49,14 +49,14 @@ const NAV_ITEMS = [
   { href: "/fixed-assets", key: "nav.fixed_assets", perm: "assets" },
   { href: "/admin", key: "nav.admin", perm: "settings" },
   { href: "/profile", key: "nav.profile" },
-  { href: "/users", key: "nav.users", perm: "users" },
-  { href: "/roles", key: "nav.roles", perm: "users" },
+  { href: "/users", key: "nav.users", perm: "users", superOnly: true },
+  { href: "/roles", key: "nav.roles", perm: "users", superOnly: true },
 ];
 
 export function AppShell({ children }: { children: ReactNode }) {
   const { t, lang, setLang } = useI18n();
   const { theme, toggleTheme } = useTheme();
-  const { logout, can } = useAuth();
+  const { logout, can, isSuperAdmin } = useAuth();
   const pathname = usePathname();
   const router = useRouter();
 
@@ -115,7 +115,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       <aside className="sidebar">
         <div className="sidebar-brand">{t("app.name")}</div>
         <nav className="sidebar-nav">
-          {NAV_ITEMS.filter((item) => !item.perm || can(item.perm)).map((item) => {
+          {NAV_ITEMS.filter((item) => (!item.perm || can(item.perm)) && (!item.superOnly || isSuperAdmin)).map((item) => {
             const active =
               item.href === "/"
                 ? pathname === "/"

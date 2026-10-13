@@ -39,6 +39,7 @@ mod mfg;
 mod mail;
 mod mat_issue;
 mod master;
+mod members;
 mod opening;
 mod pagination;
 mod periods;
@@ -165,6 +166,12 @@ async fn main() {
     saft::ensure_chart(&db)
         .await
         .unwrap_or_else(|e| panic!("saft chart: {e}"));
+    members::ensure_roles(&db)
+        .await
+        .unwrap_or_else(|e| panic!("roles: {:?}", e.0));
+    members::backfill(&db)
+        .await
+        .unwrap_or_else(|e| panic!("members backfill: {:?}", e.0));
     let state = AppState {
         db,
         jwt_secret,
@@ -213,6 +220,14 @@ async fn main() {
         )
         .route("/v1/dashboard", get(companies::dashboard))
         .route("/v1/companies/{id}/settings", get(lists::company_settings))
+        .route(
+            "/v1/companies/{id}/users",
+            get(members::index).post(members::add),
+        )
+        .route(
+            "/v1/companies/{id}/users/{user_id}",
+            patch(members::update).delete(members::remove),
+        )
         .route("/v1/accounts", get(lists::accounts).post(master::account_create))
         .route(
             "/v1/accounts/{id}",
