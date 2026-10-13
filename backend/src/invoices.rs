@@ -10,41 +10,29 @@ use serde_json::{json, Map, Value};
 
 use crate::db::{cell_i32_at, cell_str, lit};
 use crate::form::{self, active_or_one, auth_sub};
+use crate::invoice_lines::{self, NewLine};
 use crate::invoice_money::{self, amount_for_doc};
 use crate::invoice_read::{self, Extra, Inv};
 use crate::{api_err, AppState, ApiError};
 
-struct Head {
-    direction: String,
-    document_type: String,
-    number: String,
-    issue_date: String,
-    due_date: String,
-    tax_event_date: String,
-    accounting_month: String,
-    counterpart_id: i32,
-    currency: String,
-    currency_rate: String,
-    payment_method: String,
-    notes: String,
-    discount_percent: String,
-    discount_amount: String,
-    vat_exemption_reason: String,
-    original_invoice_id: i32,
-    location_id: i32,
-}
-
-struct NewLine {
-    product_id: i32,
-    code: String,
-    description: String,
-    quantity: String,
-    unit: String,
-    unit_price: String,
-    vat_rate: String,
-    net_amount: String,
-    vat_amount: String,
-    total_amount: String,
+pub(crate) struct Head {
+    pub(crate) direction: String,
+    pub(crate) document_type: String,
+    pub(crate) number: String,
+    pub(crate) issue_date: String,
+    pub(crate) due_date: String,
+    pub(crate) tax_event_date: String,
+    pub(crate) accounting_month: String,
+    pub(crate) counterpart_id: i32,
+    pub(crate) currency: String,
+    pub(crate) currency_rate: String,
+    pub(crate) payment_method: String,
+    pub(crate) notes: String,
+    pub(crate) discount_percent: String,
+    pub(crate) discount_amount: String,
+    pub(crate) vat_exemption_reason: String,
+    pub(crate) original_invoice_id: i32,
+    pub(crate) location_id: i32,
 }
 
 fn opt_str(obj: &Map<String, Value>, key: &str, default: &str) -> Result<String, ApiError> {
@@ -319,82 +307,6 @@ fn extra_of(head: &Head, journal_id: i32) -> Extra {
     }
 }
 
-async fn counterpart_name(st: &AppState, id: i32, company_id: i32) -> Result<String, ApiError> {
-    let rows = invoice_read::qry(
-        &st.db,
-        &format!("SELECT name FROM counterparts WHERE id = {id} AND company_id = {company_id}"),
-    )
-    .await?;
-    let Some(row) = rows.first() else {
-        return Err(api_err(
-            StatusCode::UNPROCESSABLE_ENTITY,
-            "контрагентът не е намерен",
-        ));
-    };
-    Ok(cell_str(row, 0))
-}
-
-async fn product_code(st: &AppState, id: i32, company_id: i32) -> Result<String, ApiError> {
-    if id <= 0 {
-        return Ok(String::new());
-    }
-    let rows = invoice_read::qry(
-        &st.db,
-        &format!("SELECT code FROM products WHERE id = {id} AND company_id = {company_id}"),
-    )
-    .await?;
-    let Some(row) = rows.first() else {
-        return Err(api_err(StatusCode::UNPROCESSABLE_ENTITY, "стоката не е намерена"));
-    };
-    Ok(cell_str(row, 0))
-}
-
-async fn ensure_location(st: &AppState, company_id: i32, location_id: i32) -> Result<(), ApiError> {
-    if location_id <= 0 {
-        return Ok(());
-    }
-    let rows = invoice_read::qry(
-        &st.db,
-        &format!(
-            "SELECT id FROM company_locations WHERE id = {location_id} AND company_id = {company_id}"
-        ),
-    )
-    .await?;
-    if rows.is_empty() {
-        return Err(api_err(StatusCode::UNPROCESSABLE_ENTITY, "обектът не е намерен"));
-    }
-    Ok(())
-}
-
-async fn ensure_original(
-    st: &AppState,
-    company_id: i32,
-    original_id: i32,
-    self_id: i32,
-) -> Result<(), ApiError> {
-    if original_id <= 0 {
-        return Ok(());
-    }
-    if original_id == self_id {
-        return Err(api_err(
-            StatusCode::UNPROCESSABLE_ENTITY,
-            "известието не може да сочи към себе си",
-        ));
-    }
-    let rows = invoice_read::qry(
-        &st.db,
-        &format!("SELECT id FROM invoices WHERE id = {original_id} AND company_id = {company_id}"),
-    )
-    .await?;
-    if rows.is_empty() {
-        return Err(api_err(
-            StatusCode::UNPROCESSABLE_ENTITY,
-            "първоначалната фактура не е намерена",
-        ));
-    }
-    Ok(())
-}
-
 fn pad_num(n: i32, width: i32) -> String {
     let w = width.clamp(1, 10) as usize;
     let s = n.max(0).to_string();
@@ -458,102 +370,6 @@ pub(crate) async fn next_out(st: &AppState, company_id: i32, doc_type: &str) -> 
     Ok(pad_num(base.saturating_add(1), pad))
 }
 
-async fn insert_line(st: &AppState, invoice_id: i32, company_id: i32, line: &NewLine) -> Result<i32, ApiError> {
-    let mut code = line.code.clone();
-    let looked = product_code(st, line.product_id, company_id).await?;
-    if code.trim().is_empty() {
-        code = looked;
-    }
-    let id = invoice_read::nid(&st.db, "invoice_lines").await?;
-    invoice_read::exe(
-        &st.db,
-        &format!(
-            "INSERT INTO invoice_lines (id, invoice_id, code, description, quantity, unit, unit_price, \
-             vat_rate, net_amount, vat_amount, total_amount) VALUES ({id}, {invoice_id}, {}, {}, {}, {}, {}, {}, {}, {}, {})",
-            lit(code.trim()),
-            lit(&line.description),
-            lit(&line.quantity),
-            lit(line.unit.trim()),
-            lit(&line.unit_price),
-            lit(line.vat_rate.trim()),
-            lit(&line.net_amount),
-            lit(&line.vat_amount),
-            lit(&line.total_amount)
-        ),
-    )
-    .await?;
-    if line.product_id > 0 {
-        invoice_read::exe(
-            &st.db,
-            &format!(
-                "INSERT INTO invoice_line_extra (id, product_id) VALUES ({id}, {})",
-                line.product_id
-            ),
-        )
-        .await?;
-    }
-    Ok(id)
-}
-
-async fn drop_line(st: &AppState, line_id: i32) -> Result<(), ApiError> {
-    invoice_read::exe(
-        &st.db,
-        &format!("DELETE FROM invoice_line_extra WHERE id = {line_id}"),
-    )
-    .await?;
-    invoice_read::exe(
-        &st.db,
-        &format!("DELETE FROM invoice_lines WHERE id = {line_id}"),
-    )
-    .await
-}
-
-async fn replace_lines(
-    st: &AppState,
-    invoice_id: i32,
-    company_id: i32,
-    lines: &[NewLine],
-) -> Result<(), ApiError> {
-    let old = invoice_read::qry(
-        &st.db,
-        &format!("SELECT id FROM invoice_lines WHERE invoice_id = {invoice_id}"),
-    )
-    .await?;
-    let old_ids: Vec<i32> = old.iter().map(|r| cell_i32_at(r, 0)).collect();
-    let mut made = Vec::new();
-    for line in lines {
-        match insert_line(st, invoice_id, company_id, line).await {
-            Ok(id) => made.push(id),
-            Err(e) => {
-                for id in made {
-                    let _ = drop_line(st, id).await;
-                }
-                return Err(e);
-            }
-        }
-    }
-    for id in old_ids {
-        drop_line(st, id).await?;
-    }
-    Ok(())
-}
-
-async fn write_totals(st: &AppState, invoice_id: i32, lines: &[NewLine]) -> Result<(), ApiError> {
-    let net = invoice_money::sum_amounts(&lines.iter().map(|l| l.net_amount.clone()).collect::<Vec<_>>());
-    let vat = invoice_money::sum_amounts(&lines.iter().map(|l| l.vat_amount.clone()).collect::<Vec<_>>());
-    let total = invoice_money::sum_amounts(&lines.iter().map(|l| l.total_amount.clone()).collect::<Vec<_>>());
-    invoice_read::exe(
-        &st.db,
-        &format!(
-            "UPDATE invoices SET net_amount = {}, vat_amount = {}, total_amount = {} WHERE id = {invoice_id}",
-            lit(&net),
-            lit(&vat),
-            lit(&total)
-        ),
-    )
-    .await
-}
-
 async fn insert_header(
     st: &AppState,
     company_id: i32,
@@ -593,18 +409,12 @@ async fn insert_header(
         return Err(e);
     }
     for line in lines {
-        if let Err(e) = insert_line(st, id, company_id, line).await {
+        if let Err(e) = invoice_lines::insert_line(st, id, company_id, line).await {
             let _ = invoice_read::wipe_invoice(&st.db, id).await;
             return Err(e);
         }
     }
     Ok(id)
-}
-
-async fn prepare(st: &AppState, company_id: i32, head: &Head, self_id: i32) -> Result<String, ApiError> {
-    ensure_location(st, company_id, head.location_id).await?;
-    ensure_original(st, company_id, head.original_invoice_id, self_id).await?;
-    counterpart_name(st, head.counterpart_id, company_id).await
 }
 
 pub async fn create(
@@ -619,7 +429,7 @@ pub async fn create(
     if head.number.is_empty() {
         head.number = next_out(&st, company, &head.document_type).await?;
     }
-    let name = prepare(&st, company, &head, 0).await?;
+    let name = invoice_lines::prepare(&st, company, &head, 0).await?;
     let id = insert_header(&st, company, &head, &name, &lines).await?;
     Ok((StatusCode::CREATED, Json(invoice_read::detail(&st, &sub, id).await?)))
 }
@@ -646,7 +456,7 @@ pub async fn update(
     if head.direction == "out" && head.number.is_empty() {
         head.number = next_out(&st, company, &head.document_type).await?;
     }
-    let name = prepare(&st, company, &head, id).await?;
+    let name = invoice_lines::prepare(&st, company, &head, id).await?;
     invoice_read::exe(
         &st.db,
         &format!(
@@ -668,8 +478,8 @@ pub async fn update(
     .await?;
     invoice_read::save_extra(&st.db, id, &extra_of(&head, inv.journal_entry_id)).await?;
     if let Some(lines) = lines {
-        replace_lines(&st, id, company, &lines).await?;
-        write_totals(&st, id, &lines).await?;
+        invoice_lines::replace_lines(&st, id, company, &lines).await?;
+        invoice_lines::write_totals(&st, id, &lines).await?;
     }
     Ok(Json(invoice_read::detail(&st, &sub, id).await?))
 }

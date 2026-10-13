@@ -25,6 +25,7 @@ mod fsform;
 mod gate;
 mod httpx;
 mod identity;
+mod invoice_lines;
 mod invoice_money;
 mod invoice_post;
 mod idoc_print;

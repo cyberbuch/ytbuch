@@ -19,6 +19,8 @@
 |---------|------------|
 | `users` | email, име, хеш, роля, активен, super admin, TOTP флаг, `created_at`. Имейлът се сменя отделно от името за вход |
 | `user_login` | стабилно `username` и тайните на 2FA. Отделна таблица, защото Octo тук няма `ALTER TABLE` |
+| `user_companies` | членство: потребител към фирма с роля (`role_id`). Правата за фирма идват оттук |
+| `roles` | роли с `permissions` JSON списък. Сеят се „Администратор на фирма“, „Счетоводител“, „Фактурист“ |
 | `user_recovery_codes` | хеш на резервен код и флаг `used` |
 | `password_reset_tokens` | хеш на токен за нова парола, `expires_at` в unix секунди, флаг `used` |
 | `settings` | `setting_key` / `value`. Активната фирма е `активна_фирма:<sub>`. SMTP, S3 и `app.*` са същите редове |
@@ -37,11 +39,12 @@
 | `invoice_line_extra` | `product_id` към същия `id` като реда |
 | `journal_entries` | запис в дневника |
 | `journal_lines` | ред: сметка, `debit`/`credit`, сума, ДДС сума |
-| `accounting_periods` | година, месец, `open`/`closed`, дата на затваряне, бележка. Няма `company_id`. Липсващ месец е отворен |
-| `opening_balances` | фискална година, сметка, дебит, кредит, контрагент, продукт, количество, описание. Няма ред в дневника |
+| `accounting_periods` | година, месец, `open`/`closed`, дата на затваряне, бележка, `company_id`. Липсващ месец е отворен |
+| `opening_balances` | фискална година, фирма, сметка, дебит, кредит, контрагент, продукт, количество, описание. Няма ред в дневника |
+| `vat_manual` | ръчни клетки на ДДС декларацията по фирма и период: `cell_33` (коефициент), `cell_70`, `cell_71`, `cell_80`, `cell_81`, `cell_82` |
 | `bank_accounts` | банкова сметка на фирмата, IBAN, валута, салдо, GL и буферна сметка |
 | `bank_transactions` | ред от извлечение: дата, сума, референция, осчетоводен и разнесен |
-| `fixed_asset_categories` | категории ДМА, глобални, без `company_id` |
+| `fixed_asset_categories` | категории ДМА, `company_id` |
 | `fixed_assets` | актив, стойност, норми, натрупана амортизация, статус, обект |
 | `fixed_asset_events` | преоценка, местене, консервация, отписване |
 | `inventory_lots` | партида: артикул, фактура или поръчка, остатък, цена, обект. Презаписва се при преизчисление |
@@ -60,7 +63,7 @@
 | `roles` | име, описание и `permissions` като JSON текст. Общи за всички фирми |
 | `exchange_rates` | код, курс за 1 EUR, дата. Общи, без `company_id` |
 | `saft_account_mappings` | вид `stock`/`asset`/`cash`, код, Дт/Кт и аналитичности. По фирма |
-| `product_name_mappings` | име от сканиран документ към `product_id` за контрагент |
+| `product_name_mappings` | име от сканиран документ към `product_id` за контрагент, `company_id` |
 
 `schema5`, `schema_late` и `fsform` пускат `CREATE TABLE IF NOT EXISTS` при
 всеки старт. Нямат ред в `schema_migrations`. Номерата `1`, `2` и `3` са

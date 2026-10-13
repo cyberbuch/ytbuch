@@ -77,21 +77,23 @@ QR е SVG картинка. Резервните кодове се показв�
 
 | Метод | Път | Бележка |
 |-------|-----|---------|
-| GET | `/v1/companies` | списък |
-| POST | `/v1/companies` | 201. Задължителни `name` и `eik`. В отговора има `saft_accounts_seeded: 0` |
-| GET | `/v1/companies/{id}` | 404 `фирмата не е намерена` |
-| PATCH | `/v1/companies/{id}` | само подадените полета. Липсващо поле не се трие. `null` на низ го изчиства |
-| DELETE | `/v1/companies/{id}` | 204. Триe само реда на фирмата |
+| GET | `/v1/companies` | списък само на фирмите с достъп (супер администратор — всички) |
+| POST | `/v1/companies` | 201, само супер администратор. Сее сметкоплана. В отговора има `saft_accounts_seeded` |
+| GET | `/v1/companies/{id}` | 404 `фирмата не е намерена`, ако няма достъп |
+| PATCH | `/v1/companies/{id}` | само подадените полета. Липсващо поле не се трие. `null` на низ го изчиства. Само с достъп |
+| DELETE | `/v1/companies/{id}` | 204, само супер администратор. Триe само реда на фирмата |
 | GET | `/v1/active-company` | фирмата на ключ `активна_фирма:<sub>`, или `{}` |
-| PUT | `/v1/active-company` | `{"company_id":1}` |
-| GET | `/v1/dashboard` | суми от всички фактури в таблицата |
+| PUT | `/v1/active-company` | `{"company_id":1}`. Само фирма с достъп, иначе 404 |
+| GET | `/v1/dashboard` | суми от фактурите на активната фирма |
+| GET, POST | `/v1/companies/{id}/users` | потребители на фирмата (супер администратор или админ на нея). POST добавя съществуващ или нов потребител с роля; отговорът включва списък `roles` за избора |
+| PATCH, DELETE | `/v1/companies/{id}/users/{user_id}` | смяна на роля / премахване от фирмата. Собственият потребител не се маха |
 
 Таблото връща `company_id` (активната фирма), `year`, `invoices_draft`,
 `invoices_posted`, `receivables`, `payables`, `vat_output`, `vat_input`,
 `revenue_ytd`, `expense_ytd`, `bank_total`, `recent` (до 5 фактури, по-новият
 `id` е пръв). Сумите са низове с два знака. `bank_total` е винаги `"0.00"`.
 Изходяща фактура влиза във вземанията, входяща — в задълженията, включително
-черновите. Филтър по `company_id` върху фактурите още няма.
+черновите. Всичко е филтрирано по `company_id` на активната фирма.
 
 Нова фирма по подразбиране: валута `EUR`, ДДС период `monthly`, метод на
 запаси `WAC`, начало на годината месец `1`, държава `BG`.
@@ -255,10 +257,17 @@ QR е SVG картинка. Резервните кодове се показв�
 
 | Метод | Път | Бележка |
 |-------|-----|---------|
-| GET | `/v1/vat/registers?period=` | `period` е `YYYY-MM` или `YYYYMM`. Празен е 400. Пакетът има `purchases`, `sales`, `cells`, `due`, `refund` |
+| GET | `/v1/vat/registers?period=` | `period` е `YYYY-MM` или `YYYYMM`. Празен е 400. Пакетът има `purchases`, `sales`, `cells`, `due`, `refund` и `vies` (агрегирано по контрагент от ЕС) |
 | GET | `/v1/vat/return` | същият отговор |
-| GET | `/v1/vat/export?period=&type=` | `deklar`, `pokupki`, `prodagbi` са Windows-1251. `zip` е `PPDDS_YYYYMM.zip` без компресия |
+| GET | `/v1/vat/export?period=&type=` | `deklar`, `pokupki`, `prodagbi`, `vies` са Windows-1251. `zip` е `PPDDS_YYYYMM.zip` без компресия |
+| PUT | `/v1/vat/manual?period=` | ръчни клетки `cell_33` (коефициент 0–1), `cell_70`, `cell_71`, `cell_80`, `cell_81`, `cell_82` (суми). Връща пълния пакет |
 | GET | `/v1/vat-exemptions?search=` | каталог VATEX. `items` и `count` |
+
+`DEKLAR.TXT`, `POKUPKI.TXT`, `PRODAGBI.TXT` и `VIES_YYYYMM.TXT` са фиксирана
+ширина, CRLF, Windows-1251 — проверени позиционно спрямо примерните подавания
+на НАП в `secret/VAT/vat-2026` и `secret/vies`. Клетките 33/70/71/80/81/82 в
+`DEKLAR.TXT` идват от `vat_manual`. VIES агрегира ВОД (к3), тристранни (к4) и
+услуги по чл. 21, ал. 2 (к5) по контрагент от друга държава членка.
 
 Клетките са `01-01` … `01-82` като низ. `due` е клетка 01-50, `refund` е 01-60.
 
@@ -384,12 +393,15 @@ QR е SVG картинка. Резервните кодове се показв�
 
 ## Потребители, роли, курсове, VIES, сканиране
 
+Глобалните потребители и роли са само за супер администратор. Правата за работа
+във фирма идват от ролята в `user_companies` (вж. `/v1/companies/{id}/users`).
+
 | Метод | Път | Бележка |
 |-------|-----|---------|
-| GET, POST | `/v1/users` | списък и създаване. Паролата е поне 8 знака |
+| GET, POST | `/v1/users` | списък и създаване, само супер администратор. Паролата е поне 8 знака |
 | PATCH, DELETE | `/v1/users/{id}` | частичен PATCH. Смяна на имейл иска нова парола |
-| GET, POST | `/v1/roles` | `permissions` е списък от низове. Проверява ги `gate.rs` по маршрут; без право е `403` |
-| PATCH, DELETE | `/v1/roles/{id}` | |
+| GET, POST | `/v1/roles` | `permissions` е списък от низове, само супер администратор. Проверява ги `gate.rs` по маршрут; без право е `403` |
+| PATCH, DELETE | `/v1/roles/{id}` | само супер администратор |
 | GET | `/v1/exchange-rates` | `date`, `base`, `items`. Без дата е последният ден |
 | GET | `/v1/exchange-rates/rate` | `currency`, `date`. Липсващ ден е най-близкият по-ранен |
 | POST | `/v1/exchange-rates/import` | `{"mode":"daily"\|"history"}` |
