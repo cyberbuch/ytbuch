@@ -332,6 +332,7 @@ async fn main() {
         .route("/v1/vat/registers", get(vat::registers))
         .route("/v1/vat/return", get(vat::registers))
         .route("/v1/vat/export", get(vat::export))
+        .route("/v1/vat/manual", axum::routing::put(vat::manual_save))
         .route("/v1/vat-exemptions", get(vat_ex::index))
         .route("/v1/bank-accounts", get(banks::index).post(banks::create))
         .route(

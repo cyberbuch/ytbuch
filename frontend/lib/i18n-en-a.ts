@@ -3,6 +3,7 @@
 export const enA = {
   "app.name": "YT Accounting",
   "common.save": "Save",
+  "common.saved": "Saved",
   "common.cancel": "Cancel",
   "common.create": "Create",
   "common.edit": "Edit",

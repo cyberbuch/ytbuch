@@ -95,8 +95,15 @@ pub fn deklar(vat: &str, name: &str, period: &str, submitter: &str, c: &Cells) -
             c.s17, c.s18, c.s19, c.p30, c.p31, c.p41, c.p32, c.p42, c.p43,
         ],
     );
-    b.extend(sym("0.00", 4));
-    push_amts(&mut b, &[c.r40, c.r50, c.r60, 0, 0, 0, 0, 0]);
+    let coef = {
+        let t = c.m33.trim();
+        if t.is_empty() { "0.00".to_string() } else { t.to_string() }
+    };
+    b.extend(sym(&coef, 4));
+    push_amts(
+        &mut b,
+        &[c.r40, c.r50, c.r60, c.m70, c.m71, c.m80, c.m81, c.m82],
+    );
     b.extend(crlf());
     b
 }

@@ -113,6 +113,15 @@ function sumField(rows: VatRow[], field: keyof VatRow): number {
   }, 0);
 }
 
+const MANUAL_CELLS: { code: string; key: string }[] = [
+  { code: "01-33", key: "cell_33" },
+  { code: "01-70", key: "cell_70" },
+  { code: "01-71", key: "cell_71" },
+  { code: "01-80", key: "cell_80" },
+  { code: "01-81", key: "cell_81" },
+  { code: "01-82", key: "cell_82" },
+];
+
 function VatInner() {
   const { t } = useI18n();
   const initial = useMemo(() => prevPeriod(), []);
@@ -122,6 +131,9 @@ function VatInner() {
   const [data, setData] = useState<VatPack | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [manual, setManual] = useState<Record<string, string>>({});
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
 
   const period = `${year}-${month}`;
 
@@ -131,6 +143,12 @@ function VatInner() {
     try {
       const r = await api.get<VatPack>(`/v1/vat/registers?period=${encodeURIComponent(period)}`);
       setData(r);
+      const m: Record<string, string> = {};
+      for (const { code } of MANUAL_CELLS) {
+        m[code] = String(r.cells?.[code] ?? "0.00");
+      }
+      setManual(m);
+      setSaved(false);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
       setData(null);
@@ -142,6 +160,25 @@ function VatInner() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  const saveManual = async () => {
+    setSaving(true);
+    setError("");
+    setSaved(false);
+    try {
+      const body: Record<string, string> = {};
+      for (const { code, key } of MANUAL_CELLS) {
+        body[key] = manual[code] ?? "0.00";
+      }
+      await api.put(`/v1/vat/manual?period=${encodeURIComponent(period)}`, body);
+      setSaved(true);
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSaving(false);
+    }
+  };
 
   const download = async (type: string, filename: string) => {
     setError("");
@@ -419,6 +456,38 @@ function VatInner() {
               <div className="card content" style={{ marginBottom: 18 }}>
                 <h3 className="section-title">{t("vat.section_c")}</h3>
                 <CellTable codes={SECTION_C} cells={data.cells} t={t} />
+              </div>
+              <div className="card content" style={{ marginBottom: 18 }}>
+                <h3 className="section-title">{t("vat.manual_cells")}</h3>
+                <p className="muted" style={{ marginTop: 0 }}>{t("vat.manual_hint")}</p>
+                <div className="table-wrap">
+                  <table className="table">
+                    <tbody>
+                      {MANUAL_CELLS.map(({ code }) => (
+                        <tr key={code}>
+                          <td>{t(cellKey(code))}</td>
+                          <td className="num" style={{ width: 160 }}>
+                            <input
+                              className="input"
+                              value={manual[code] ?? ""}
+                              onChange={(e) => {
+                                setManual((prev) => ({ ...prev, [code]: e.target.value }));
+                                setSaved(false);
+                              }}
+                              inputMode="decimal"
+                            />
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <div className="toolbar" style={{ marginTop: 12 }}>
+                  <button className="btn btn-primary" onClick={() => void saveManual()} disabled={saving}>
+                    {t("common.save")}
+                  </button>
+                  {saved && <span className="muted">{t("common.saved")}</span>}
+                </div>
               </div>
             </>
           )}

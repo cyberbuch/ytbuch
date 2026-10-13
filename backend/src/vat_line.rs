@@ -209,6 +209,8 @@ pub struct Cells {
     pub p30: i64, pub p31: i64, pub p41: i64, pub p32: i64, pub p42: i64, pub p43: i64,
     pub r40: i64, pub r50: i64, pub r60: i64,
     pub sales_n: i64, pub purch_n: i64,
+    pub m33: String,
+    pub m70: i64, pub m71: i64, pub m80: i64, pub m81: i64, pub m82: i64,
 }
 
 impl Cells {
@@ -271,10 +273,11 @@ impl Cells {
             "01-19": money(self.s19), "01-30": money(self.p30),
             "01-31": money(self.p31), "01-41": money(self.p41),
             "01-32": money(self.p32), "01-42": money(self.p42),
-            "01-43": money(self.p43), "01-33": "0.00",
+            "01-43": money(self.p43), "01-33": self.m33,
             "01-40": money(self.r40), "01-50": money(self.r50),
-            "01-60": money(self.r60), "01-70": "0.00",
-            "01-71": "0.00", "01-80": "0.00", "01-81": "0.00", "01-82": "0.00",
+            "01-60": money(self.r60), "01-70": money(self.m70),
+            "01-71": money(self.m71), "01-80": money(self.m80),
+            "01-81": money(self.m81), "01-82": money(self.m82),
         })
     }
 }

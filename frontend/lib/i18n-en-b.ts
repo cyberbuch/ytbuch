@@ -182,6 +182,8 @@ export const enB = {
   "vat.c_01_80": "01-80 Refund under Art. 92(1)",
   "vat.c_01_81": "01-81 Refund under Art. 92(3)",
   "vat.c_01_82": "01-82 Refund under Art. 92(4)",
+  "vat.manual_cells": "Manual cells (entered by the accountant)",
+  "vat.manual_hint": "Cells 33, 70, 71, 80, 81 and 82 are entered manually and go into DEKLAR.TXT — tax actually paid, deducted and refunds under Art. 92 VAT Act.",
   "vat.col_no_credit": "Base no credit",
   "vat.col_full_base": "Base full credit",
   "vat.col_full_vat": "VAT full credit",

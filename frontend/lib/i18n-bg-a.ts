@@ -4,6 +4,7 @@ export const bgA = {
   // общи
   "app.name": "YT Счетоводство",
   "common.save": "Запази",
+  "common.saved": "Запазено",
   "common.cancel": "Отказ",
   "common.create": "Създай",
   "common.edit": "Редактирай",

@@ -171,6 +171,124 @@ async fn one_line(st: &AppState, company: i32, row: &Row, kind: &str) -> Result<
     Ok(ln)
 }
 
+async fn load_manual(st: &AppState, company_id: i32, period: &str, cells: &mut vat_line::Cells) -> Result<(), ApiError> {
+    let rows = invoice_read::qry(
+        &st.db,
+        &format!(
+            "SELECT cell_33, cell_70, cell_71, cell_80, cell_81, cell_82 FROM vat_manual WHERE company_id = {company_id} AND period = {}",
+            lit(period)
+        ),
+    )
+    .await?;
+    let Some(row) = rows.first() else {
+        return Ok(());
+    };
+    let c33 = cell_str(row, 0);
+    cells.m33 = if c33.trim().is_empty() { "0.00".into() } else { c33 };
+    cells.m70 = cents(&cell_str(row, 1)).unwrap_or(0);
+    cells.m71 = cents(&cell_str(row, 2)).unwrap_or(0);
+    cells.m80 = cents(&cell_str(row, 3)).unwrap_or(0);
+    cells.m81 = cents(&cell_str(row, 4)).unwrap_or(0);
+    cells.m82 = cents(&cell_str(row, 5)).unwrap_or(0);
+    Ok(())
+}
+
+fn money_field(obj: &serde_json::Map<String, serde_json::Value>, key: &str) -> Result<String, ApiError> {
+    let raw = obj
+        .get(key)
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .trim()
+        .replace(',', ".");
+    if raw.is_empty() {
+        return Ok("0.00".into());
+    }
+    match cents(&raw) {
+        Some(c) => Ok(crate::invoice_money::money(c)),
+        None => Err(api_err(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            format!("{key} трябва да е сума"),
+        )),
+    }
+}
+
+fn coef_field(obj: &serde_json::Map<String, serde_json::Value>, key: &str) -> Result<String, ApiError> {
+    let raw = obj
+        .get(key)
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .trim()
+        .replace(',', ".");
+    if raw.is_empty() {
+        return Ok("0.00".into());
+    }
+    match raw.parse::<f64>() {
+        Ok(v) if (0.0..=1.0).contains(&v) => Ok(format!("{v:.2}")),
+        _ => Err(api_err(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            format!("{key} трябва да е коефициент между 0 и 1"),
+        )),
+    }
+}
+
+pub async fn manual_save(
+    State(st): State<AppState>,
+    headers: HeaderMap,
+    Query(q): Query<PeriodQ>,
+    Json(body): Json<Value>,
+) -> Result<Json<Value>, ApiError> {
+    let sub = auth_sub(&st, &headers)?;
+    let company_id = active_or_one(&st, &sub).await?;
+    let period = match vat_fmt::parse_period(q.period.as_deref().unwrap_or("")) {
+        Ok(p) => p,
+        Err(_) => return Err(period_err(q.period.as_deref().unwrap_or(""))),
+    };
+    let obj = body.as_object().cloned().ok_or_else(|| {
+        api_err(StatusCode::UNPROCESSABLE_ENTITY, "невалидно тяло")
+    })?;
+    let c33 = coef_field(&obj, "cell_33")?;
+    let c70 = money_field(&obj, "cell_70")?;
+    let c71 = money_field(&obj, "cell_71")?;
+    let c80 = money_field(&obj, "cell_80")?;
+    let c81 = money_field(&obj, "cell_81")?;
+    let c82 = money_field(&obj, "cell_82")?;
+    let existing = invoice_read::qry(
+        &st.db,
+        &format!(
+            "SELECT id FROM vat_manual WHERE company_id = {company_id} AND period = {}",
+            lit(&period.iso)
+        ),
+    )
+    .await?;
+    if let Some(row) = existing.first() {
+        let id = cell_i32_at(row, 0);
+        invoice_read::exe(
+            &st.db,
+            &format!(
+                "UPDATE vat_manual SET cell_33 = {}, cell_70 = {}, cell_71 = {}, cell_80 = {}, cell_81 = {}, cell_82 = {} WHERE id = {id}",
+                lit(&c33), lit(&c70), lit(&c71), lit(&c80), lit(&c81), lit(&c82)
+            ),
+        )
+        .await?;
+    } else {
+        let id = st.db.next_id("vat_manual").await.map_err(|e| {
+            api_err(StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
+        })?;
+        invoice_read::exe(
+            &st.db,
+            &format!(
+                "INSERT INTO vat_manual (id, company_id, period, cell_33, cell_70, cell_71, cell_80, cell_81, cell_82) VALUES ({id}, {company_id}, {}, {}, {}, {}, {}, {}, {})",
+                lit(&period.iso), lit(&c33), lit(&c70), lit(&c71), lit(&c80), lit(&c81), lit(&c82)
+            ),
+        )
+        .await?;
+    }
+    let mut cells = vat_line::Cells::default();
+    load_manual(&st, company_id, &period.iso, &mut cells).await?;
+    let packed = collect(&st, company_id, &period).await?;
+    Ok(Json(packed.body))
+}
+
 async fn collect(st: &AppState, company_id: i32, period: &vat_fmt::Period) -> Result<Pack, ApiError> {
     let co = company(st, company_id).await?;
     let mut rows = invoice_read::qry(
@@ -216,6 +334,7 @@ async fn collect(st: &AppState, company_id: i32, period: &vat_fmt::Period) -> Re
         }
     }
     cells.finish();
+    load_manual(st, company_id, &period.iso, &mut cells).await?;
     let dek = deklar(&co.vat, &co.name, &period.nap, &co.submitter, &cells);
     let body = vat_line::pack_json(
         &period.iso,

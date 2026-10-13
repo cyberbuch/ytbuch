@@ -186,7 +186,6 @@ pub struct MatIssue {
     pub company_id: i32,
     pub number: String,
     pub date: String,
-    pub location_id: i32,
     pub status: String,
     pub journal_id: i32,
 }
@@ -195,7 +194,6 @@ pub struct MatLine {
     pub product_id: i32,
     pub quantity: String,
     pub amount: i128,
-    pub account_id: i32,
     pub inventory_account_id: i32,
     pub line_no: i32,
 }
@@ -206,7 +204,6 @@ pub struct ProdOrder {
     pub number: String,
     pub output_product_id: i32,
     pub quantity: String,
-    pub location_id: i32,
     pub date: String,
     pub status: String,
     pub journal_id: i32,
@@ -225,8 +222,6 @@ pub struct Idoc {
     pub company_id: i32,
     pub number: String,
     pub date: String,
-    pub from_location_id: i32,
-    pub to_location_id: i32,
     pub status: String,
 }
 
@@ -553,21 +548,20 @@ pub async fn load(db: &Db, company_id: i32) -> Result<Snap, ApiError> {
     .await?;
     let mat_issues = map_rows(
         db,
-        "SELECT id, company_id, number, doc_date, location_id, status, journal_entry_id FROM material_issues ORDER BY id",
+        "SELECT id, company_id, number, doc_date, status, journal_entry_id FROM material_issues ORDER BY id",
         |r| MatIssue {
             id: cell_i32_at(r, 0),
             company_id: cell_i32_at(r, 1),
             number: cell_str(r, 2),
             date: cell_str(r, 3),
-            location_id: cell_i32_at(r, 4),
-            status: cell_str(r, 5),
-            journal_id: cell_i32_at(r, 6),
+            status: cell_str(r, 4),
+            journal_id: cell_i32_at(r, 5),
         },
     )
     .await?;
     let mrows = db
         .query(
-            "SELECT doc_id, product_id, quantity, amount, account_id, inventory_account_id, line_no \
+            "SELECT doc_id, product_id, quantity, amount, inventory_account_id, line_no \
              FROM material_issue_lines ORDER BY id",
         )
         .await
@@ -578,14 +572,13 @@ pub async fn load(db: &Db, company_id: i32) -> Result<Snap, ApiError> {
             product_id: cell_i32_at(r, 1),
             quantity: cell_str(r, 2),
             amount: money_of(&cell_str(r, 3)),
-            account_id: cell_i32_at(r, 4),
-            inventory_account_id: cell_i32_at(r, 5),
-            line_no: cell_i32_at(r, 6),
+            inventory_account_id: cell_i32_at(r, 4),
+            line_no: cell_i32_at(r, 5),
         });
     }
     let prod_orders = map_rows(
         db,
-        "SELECT id, company_id, number, output_product_id, quantity, location_id, order_date, status, journal_entry_id, \
+        "SELECT id, company_id, number, output_product_id, quantity, order_date, status, journal_entry_id, \
          material_cost FROM production_orders ORDER BY id",
         |r| ProdOrder {
             id: cell_i32_at(r, 0),
@@ -593,11 +586,10 @@ pub async fn load(db: &Db, company_id: i32) -> Result<Snap, ApiError> {
             number: cell_str(r, 2),
             output_product_id: cell_i32_at(r, 3),
             quantity: cell_str(r, 4),
-            location_id: cell_i32_at(r, 5),
-            date: cell_str(r, 6),
-            status: cell_str(r, 7),
-            journal_id: cell_i32_at(r, 8),
-            cost: money_of(&cell_str(r, 9)),
+            date: cell_str(r, 5),
+            status: cell_str(r, 6),
+            journal_id: cell_i32_at(r, 7),
+            cost: money_of(&cell_str(r, 8)),
         },
     )
     .await?;
@@ -618,15 +610,13 @@ pub async fn load(db: &Db, company_id: i32) -> Result<Snap, ApiError> {
     }
     let idocs = map_rows(
         db,
-        "SELECT id, company_id, number, doc_date, from_location_id, to_location_id, status FROM internal_docs ORDER BY id",
+        "SELECT id, company_id, number, doc_date, status FROM internal_docs ORDER BY id",
         |r| Idoc {
             id: cell_i32_at(r, 0),
             company_id: cell_i32_at(r, 1),
             number: cell_str(r, 2),
             date: cell_str(r, 3),
-            from_location_id: cell_i32_at(r, 4),
-            to_location_id: cell_i32_at(r, 5),
-            status: cell_str(r, 6),
+            status: cell_str(r, 4),
         },
     )
     .await?;

@@ -15,6 +15,17 @@ CREATE TABLE IF NOT EXISTS user_companies (
     role_id INTEGER,
     created_at VARCHAR
 );
+CREATE TABLE IF NOT EXISTS vat_manual (
+    id INTEGER PRIMARY KEY,
+    company_id INTEGER,
+    period VARCHAR,
+    cell_33 VARCHAR,
+    cell_70 VARCHAR,
+    cell_71 VARCHAR,
+    cell_80 VARCHAR,
+    cell_81 VARCHAR,
+    cell_82 VARCHAR
+);
 CREATE TABLE IF NOT EXISTS exchange_rates (
     id INTEGER PRIMARY KEY,
     currency_code VARCHAR,
