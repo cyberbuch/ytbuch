@@ -5,9 +5,10 @@
 // са специализирани (редове/кореспонденции) и са отделни страници.
 
 import { useCallback, useEffect, useMemo, useState, FormEvent } from "react";
-import { api, ListResponse } from "../lib/api";
+import { api, fetchAll } from "../lib/api";
 import { useI18n } from "./I18nProvider";
 import { IconButton } from "./IconButton";
+import { Pagination } from "./Pagination";
 
 export interface SelectOption {
   value: string;
@@ -85,6 +86,8 @@ export interface CrudConfig {
 
 type Record_ = Record<string, unknown>;
 
+const PAGE_SIZE = 50;
+
 function cellText(rec: Record_, field: FieldDef, t: (k: string) => string): string {
   const v = rec[field.name];
   if (v === null || v === undefined) return "";
@@ -112,13 +115,13 @@ export function CrudPage({ config }: { config: CrudConfig }) {
   const [viesFilled, setViesFilled] = useState(false);
   const [viesNote, setViesNote] = useState("");
   const [q, setQ] = useState("");
+  const [offset, setOffset] = useState(0);
 
   const load = useCallback(async () => {
     setLoading(true);
     setError("");
     try {
-      const data = await api.get<ListResponse<Record_>>(config.endpoint);
-      setRows(data.items ?? []);
+      setRows(await fetchAll<Record_>(config.endpoint));
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -322,6 +325,13 @@ export function CrudPage({ config }: { config: CrudConfig }) {
     );
   }, [rows, q]);
 
+  // Страниране върху филтрираните редове; page се ограничава, за да не остане
+  // offset от предишно търсене или след изтриване на последния ред.
+  const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const page = Math.min(Math.floor(offset / PAGE_SIZE), pageCount - 1);
+  const start = page * PAGE_SIZE;
+  const paged = filtered.slice(start, start + PAGE_SIZE);
+
   return (
     <div>
       <div className="page-head">
@@ -361,7 +371,7 @@ export function CrudPage({ config }: { config: CrudConfig }) {
               </tr>
             </thead>
             <tbody>
-              {filtered.map((rec) => (
+              {paged.map((rec) => (
                 <tr key={String(rec.id)}>
                   {config.columns.map((c) => {
                     const custom = config.columnText?.(c, rec);
@@ -403,6 +413,12 @@ export function CrudPage({ config }: { config: CrudConfig }) {
             </tbody>
           </table>
         )}
+        <Pagination
+          total={filtered.length}
+          limit={PAGE_SIZE}
+          offset={start}
+          onPageChange={setOffset}
+        />
       </div>
 
       {modalOpen && (

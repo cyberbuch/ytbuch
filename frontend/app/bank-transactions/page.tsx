@@ -7,7 +7,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { RequireAuth } from "../../components/RequireAuth";
 import { useI18n } from "../../components/I18nProvider";
-import { api, ListResponse } from "../../lib/api";
+import { api, fetchAll, ListResponse } from "../../lib/api";
 import {
   Account,
   BankAccount,
@@ -61,12 +61,12 @@ function BankTransactionsInner() {
     try {
       const [b, a, c] = await Promise.all([
         api.get<ListResponse<BankAccount>>("/v1/bank-accounts"),
-        api.get<ListResponse<Account>>("/v1/accounts"),
-        api.get<ListResponse<Counterpart>>("/v1/counterparts"),
+        fetchAll<Account>("/v1/accounts"),
+        fetchAll<Counterpart>("/v1/counterparts"),
       ]);
       setAccounts(b.items ?? []);
-      setChartAccounts(a.items ?? []);
-      setCounterparts(c.items ?? []);
+      setChartAccounts(a);
+      setCounterparts(c);
     } catch {
       /* silent */
     }

@@ -7,8 +7,11 @@ import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { RequireAuth } from "../../components/RequireAuth";
 import { SaftAccountPicker, SaftNomAccount } from "../../components/SaftAccountPicker";
 import { useI18n } from "../../components/I18nProvider";
-import { api, ListResponse } from "../../lib/api";
+import { api, fetchAll, ListResponse } from "../../lib/api";
 import { IconButton } from "../../components/IconButton";
+import { Pagination } from "../../components/Pagination";
+
+const PAGE_SIZE = 50;
 
 interface Account {
   id: number;
@@ -39,18 +42,19 @@ function AccountsInner() {
   const [seeding, setSeeding] = useState(false);
   const [formError, setFormError] = useState("");
   const [q, setQ] = useState("");
+  const [offset, setOffset] = useState(0);
 
   const load = useCallback(async () => {
     setLoading(true);
     setError("");
     try {
       const [a, n] = await Promise.all([
-        api.get<ListResponse<Account>>("/v1/accounts"),
+        fetchAll<Account>("/v1/accounts"),
         api.get<ListResponse<SaftNomAccount>>(
           "/v1/saft/nomenclatures?kind=accounts"
         ),
       ]);
-      setRows(a.items ?? []);
+      setRows(a);
       setNoms(n.items ?? []);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -158,6 +162,13 @@ function AccountsInner() {
     );
   }, [rows, q]);
 
+  // Страниране върху филтрираните редове; page се ограничава, за да не остане
+  // offset от предишно търсене или след изтриване на последния ред.
+  const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const page = Math.min(Math.floor(offset / PAGE_SIZE), pageCount - 1);
+  const start = page * PAGE_SIZE;
+  const paged = filtered.slice(start, start + PAGE_SIZE);
+
   const analyticLabel = (v: string) => {
     if (v === "counterpart") return t("accounts.analytic.counterpart");
     if (v === "product") return t("accounts.analytic.product");
@@ -211,7 +222,7 @@ function AccountsInner() {
               </tr>
             </thead>
             <tbody>
-              {filtered.map((acc) => (
+              {paged.map((acc) => (
                 <tr key={acc.id}>
                   <td style={{ fontFamily: "ui-monospace, monospace" }}>
                     {acc.number}
@@ -241,6 +252,12 @@ function AccountsInner() {
             </tbody>
           </table>
         )}
+        <Pagination
+          total={filtered.length}
+          limit={PAGE_SIZE}
+          offset={start}
+          onPageChange={setOffset}
+        />
       </div>
 
       {modalOpen && (

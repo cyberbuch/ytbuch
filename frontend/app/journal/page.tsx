@@ -4,7 +4,7 @@
 // таба (Покупки / Продажби / Без ДДС). Клик върху ред зарежда записа.
 
 import { useCallback, useEffect, useMemo, useState, FormEvent, MouseEvent } from "react";
-import { api, ListResponse } from "../../lib/api";
+import { api, fetchAll, ListResponse } from "../../lib/api";
 import { formatBgDate, todayIso } from "../../lib/dates";
 import { useI18n } from "../../components/I18nProvider";
 import { RequireAuth } from "../../components/RequireAuth";
@@ -133,10 +133,10 @@ function JournalInner() {
 
   const loadRefs = useCallback(async () => {
     try {
-      const a = await api.get<ListResponse<Account>>("/v1/accounts");
-      setAccounts(a.items ?? []);
-      const c = await api.get<ListResponse<Counterpart>>("/v1/counterparts");
-      setCounterparts(c.items ?? []);
+      const a = await fetchAll<Account>("/v1/accounts");
+      setAccounts(a);
+      const c = await fetchAll<Counterpart>("/v1/counterparts");
+      setCounterparts(c);
     } catch {
       /* празни списъци */
     }

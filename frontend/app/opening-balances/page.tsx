@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
-import { api, ListResponse } from "../../lib/api";
+import { api, fetchAll, ListResponse } from "../../lib/api";
 import { useI18n } from "../../components/I18nProvider";
 import { RequireAuth } from "../../components/RequireAuth";
 import { IconButton } from "../../components/IconButton";
@@ -112,13 +112,13 @@ function ObInner() {
     try {
       const [ob, accs, cps, prs] = await Promise.all([
         api.get<ObList>(`/v1/opening-balances?year=${year}`),
-        api.get<ListResponse<Account>>("/v1/accounts"),
-        api.get<ListResponse<Counterpart>>("/v1/counterparts"),
+        fetchAll<Account>("/v1/accounts"),
+        fetchAll<Counterpart>("/v1/counterparts"),
         api.get<ListResponse<Product>>("/v1/products"),
       ]);
       setData(ob);
-      setAccounts(accs.items ?? []);
-      setCounterparts(cps.items ?? []);
+      setAccounts(accs);
+      setCounterparts(cps);
       setProducts(prs.items ?? []);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));

@@ -6,7 +6,7 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { RequireAuth } from "../../components/RequireAuth";
 import { useI18n } from "../../components/I18nProvider";
-import { api, ListResponse } from "../../lib/api";
+import { api, fetchAll, ListResponse } from "../../lib/api";
 import { IconButton } from "../../components/IconButton";
 
 interface BankAccount {
@@ -61,10 +61,10 @@ function BankAccountsInner() {
     try {
       const [b, a] = await Promise.all([
         api.get<ListResponse<BankAccount>>("/v1/bank-accounts"),
-        api.get<ListResponse<Account>>("/v1/accounts"),
+        fetchAll<Account>("/v1/accounts"),
       ]);
       setRows(b.items ?? []);
-      setAccounts(a.items ?? []);
+      setAccounts(a);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {

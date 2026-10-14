@@ -5,7 +5,7 @@ import { ChangeEvent, DragEvent, useCallback, useEffect, useMemo, useState } fro
 import { RequireAuth } from "../../components/RequireAuth";
 import { useI18n } from "../../components/I18nProvider";
 import { IconButton } from "../../components/IconButton";
-import { api, ListResponse } from "../../lib/api";
+import { api, fetchAll, ListResponse } from "../../lib/api";
 import {
   Invoice,
   InvoiceLine,
@@ -124,10 +124,10 @@ function ScanInner() {
   const loadLookups = useCallback(async () => {
     try {
       const [cp, pr] = await Promise.all([
-        api.get<ListResponse<Counterpart>>("/v1/counterparts"),
+        fetchAll<Counterpart>("/v1/counterparts"),
         api.get<ListResponse<Product>>("/v1/products"),
       ]);
-      setCounterparts(cp.items ?? []);
+      setCounterparts(cp);
       setProducts(pr.items ?? []);
     } catch {
       /* non-fatal */

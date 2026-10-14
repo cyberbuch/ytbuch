@@ -2,7 +2,7 @@
 
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { api, ListResponse, getActiveCompany } from "../lib/api";
+import { api, fetchAll, ListResponse, getActiveCompany } from "../lib/api";
 import {
   Invoice,
   InvoiceLine,
@@ -85,14 +85,14 @@ export function InvoiceForm({ mode, invoiceId }: Props) {
   const loadLookups = useCallback(async () => {
     try {
       const [cp, pr, inv, un, ex, co] = await Promise.all([
-        api.get<ListResponse<Counterpart>>("/v1/counterparts"),
+        fetchAll<Counterpart>("/v1/counterparts"),
         api.get<ListResponse<Product>>("/v1/products"),
         api.get<ListResponse<Invoice>>("/v1/invoices"),
         api.get<ListResponse<UnitOfMeasure>>("/v1/units"),
         api.get<ListResponse<VatExemption>>("/v1/vat-exemptions"),
         getActiveCompany(),
       ]);
-      setCounterparts(cp.items ?? []);
+      setCounterparts(cp);
       setProducts(pr.items ?? []);
       setInvoices(inv.items ?? []);
       setUnits(un.items ?? []);
