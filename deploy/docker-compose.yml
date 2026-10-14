@@ -11,9 +11,10 @@ services:
     restart: unless-stopped
     stdin_open: true
     tty: true
-    # Оригиналният startup скрипт чака вход от терминала при %ydboctoAdmin,
-    # затова минава със stdin от /dev/null. Bash на tty-то държи контейнера жив.
-    entrypoint: ["/bin/bash", "-c", "/usr/local/bin/ydb-backup.sh loop >/dev/null 2>&1 & /docker-debian-startup.sh </dev/null >/data/logs/startup.log 2>&1 & exec /bin/bash"]
+    # Собствен startup (ydb-backup.sh + ydb-startup.sh): stock скриптът на образа
+    # оставя $ydb_gbldir празен без интерактивен терминал и rocto не тръгва.
+    # Bash на tty-то държи контейнера жив.
+    entrypoint: ["/bin/bash", "-c", "/usr/local/bin/ydb-backup.sh loop >/dev/null 2>&1 & /usr/local/bin/ydb-startup.sh </dev/null >/data/logs/startup.log 2>&1 & exec /bin/bash"]
     ports:
       - "127.0.0.1:1337:1337"
       - "127.0.0.1:9080:9080"
@@ -21,6 +22,7 @@ services:
       - ydb-data:/data
       - ydb-backup:/backup
       - ./ydb-backup.sh:/usr/local/bin/ydb-backup.sh:ro
+      - ./ydb-startup.sh:/usr/local/bin/ydb-startup.sh:ro
     healthcheck:
       test: ["CMD-SHELL", "bash -c 'echo >/dev/tcp/127.0.0.1/1337'"]
       interval: 10s
