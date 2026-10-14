@@ -4,8 +4,11 @@ import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { RequireAuth } from "../../components/RequireAuth";
 import { useI18n } from "../../components/I18nProvider";
 import { useAuth } from "../../components/AuthProvider";
-import { api, ListResponse } from "../../lib/api";
+import { api, fetchAll } from "../../lib/api";
 import { IconButton } from "../../components/IconButton";
+import { Pagination } from "../../components/Pagination";
+
+const PAGE_SIZE = 50;
 
 interface Role {
   id: number;
@@ -42,17 +45,18 @@ function UsersInner() {
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState("");
   const [q, setQ] = useState("");
+  const [offset, setOffset] = useState(0);
 
   const load = useCallback(async () => {
     setLoading(true);
     setError("");
     try {
       const [u, r] = await Promise.all([
-        api.get<ListResponse<User>>("/v1/users"),
-        api.get<ListResponse<Role>>("/v1/roles"),
+        fetchAll<User>("/v1/users"),
+        fetchAll<Role>("/v1/roles"),
       ]);
-      setRows(u.items ?? []);
-      setRoles(r.items ?? []);
+      setRows(u);
+      setRoles(r);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -135,6 +139,11 @@ function UsersInner() {
     );
   }, [rows, q, roleName]);
 
+  const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const page = Math.min(Math.floor(offset / PAGE_SIZE), pageCount - 1);
+  const start = page * PAGE_SIZE;
+  const paged = filtered.slice(start, start + PAGE_SIZE);
+
   return (
     <div>
       <div className="page-head">
@@ -170,7 +179,7 @@ function UsersInner() {
               </tr>
             </thead>
             <tbody>
-              {filtered.map((u) => (
+              {paged.map((u) => (
                 <tr key={u.id}>
                   <td>{u.name}</td>
                   <td>{u.email}</td>
@@ -193,6 +202,12 @@ function UsersInner() {
             </tbody>
           </table>
         )}
+        <Pagination
+          total={filtered.length}
+          limit={PAGE_SIZE}
+          offset={start}
+          onPageChange={setOffset}
+        />
       </div>
       {modal && (
         <div className="modal-backdrop" onClick={() => setModal(false)}>

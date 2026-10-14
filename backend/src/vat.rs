@@ -214,11 +214,11 @@ async fn one_line(st: &AppState, company: i32, row: &Row, kind: &str) -> Result<
     if cp > 0 {
         let cps = invoice_read::qry(
             &st.db,
-            &format!("SELECT vat_number FROM counterparts WHERE id = {cp} AND company_id = {company}"),
+            &format!("SELECT vat_number, eik FROM counterparts WHERE id = {cp} AND company_id = {company}"),
         )
         .await?;
         if let Some(c) = cps.first() {
-            ln.cp_vat = vat_fmt::cp_vat(&cell_str(c, 0));
+            ln.cp_vat = vat_fmt::cp_ident(&cell_str(c, 0), &cell_str(c, 1));
         }
     }
     let doc_id = cell_i32_at(row, 4);
@@ -341,8 +341,6 @@ pub async fn manual_save(
         )
         .await?;
     }
-    let mut cells = vat_line::Cells::default();
-    load_manual(&st, company_id, &period.iso, &mut cells).await?;
     let packed = collect(&st, company_id, &period).await?;
     Ok(Json(packed.body))
 }

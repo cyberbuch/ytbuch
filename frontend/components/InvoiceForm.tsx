@@ -86,15 +86,15 @@ export function InvoiceForm({ mode, invoiceId }: Props) {
     try {
       const [cp, pr, inv, un, ex, co] = await Promise.all([
         fetchAll<Counterpart>("/v1/counterparts"),
-        api.get<ListResponse<Product>>("/v1/products"),
-        api.get<ListResponse<Invoice>>("/v1/invoices"),
+        fetchAll<Product>("/v1/products"),
+        fetchAll<Invoice>("/v1/invoices"),
         api.get<ListResponse<UnitOfMeasure>>("/v1/units"),
         api.get<ListResponse<VatExemption>>("/v1/vat-exemptions"),
         getActiveCompany(),
       ]);
       setCounterparts(cp);
-      setProducts(pr.items ?? []);
-      setInvoices(inv.items ?? []);
+      setProducts(pr);
+      setInvoices(inv);
       setUnits(un.items ?? []);
       setExemptions(ex.items ?? []);
       setVatRegistered(Number((co as { is_vat_registered?: number }).is_vat_registered ?? 1) === 1);

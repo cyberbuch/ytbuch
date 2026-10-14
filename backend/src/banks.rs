@@ -89,6 +89,17 @@ pub async fn update(
     if iban.trim().is_empty() {
         return Err(api_err(StatusCode::UNPROCESSABLE_ENTITY, "iban е задължително"));
     }
+    let dup = invoice_read::qry(
+        &st.db,
+        &format!(
+            "SELECT id FROM bank_accounts WHERE company_id = {company} AND iban = {} AND id != {id}",
+            lit(iban.trim())
+        ),
+    )
+    .await?;
+    if !dup.is_empty() {
+        return Err(api_err(StatusCode::CONFLICT, "IBAN вече съществува"));
+    }
     let balance = match form::str_field(obj, "balance")? {
         Some(s) => norm_balance(s)?,
         None => cur["balance"].as_str().unwrap_or("0.00").to_string(),

@@ -94,6 +94,7 @@ pub struct Party {
     pub name: String,
     pub kind: String,
     pub eik: String,
+    pub vat: String,
     pub city: String,
     pub post: String,
     pub country: String,
@@ -398,7 +399,7 @@ pub async fn load(db: &Db, company_id: i32) -> Result<Snap, ApiError> {
     }
     let parties = map_rows(
         db,
-        "SELECT c.id, c.company_id, c.name, c.counterpart_type, c.eik, c.city, c.post_code, c.country, \
+        "SELECT c.id, c.company_id, c.name, c.counterpart_type, c.eik, c.vat_number, c.city, c.post_code, c.country, \
          e.street_name, e.building_number, e.address_building, e.additional_address_detail, e.address_type, e.region \
          FROM counterparts c LEFT JOIN counterpart_extra e ON c.id = e.id ORDER BY c.id",
         |r| Party {
@@ -407,15 +408,16 @@ pub async fn load(db: &Db, company_id: i32) -> Result<Snap, ApiError> {
             name: cell_str(r, 2),
             kind: cell_str(r, 3),
             eik: cell_str(r, 4),
-            city: cell_str(r, 5),
-            post: cell_str(r, 6),
-            country: cell_str(r, 7),
-            street: cell_str(r, 8),
-            number: cell_str(r, 9),
-            building: cell_str(r, 10),
-            extra: cell_str(r, 11),
-            addr_type: cell_str(r, 12),
-            region: cell_str(r, 13),
+            vat: cell_str(r, 5),
+            city: cell_str(r, 6),
+            post: cell_str(r, 7),
+            country: cell_str(r, 8),
+            street: cell_str(r, 9),
+            number: cell_str(r, 10),
+            building: cell_str(r, 11),
+            extra: cell_str(r, 12),
+            addr_type: cell_str(r, 13),
+            region: cell_str(r, 14),
         },
     )
     .await?;

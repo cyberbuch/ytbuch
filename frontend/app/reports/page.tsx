@@ -5,7 +5,7 @@
 // Експорт PDF/XLSX/ODS през същия reportbaga път като печата на фактури.
 
 import { useCallback, useEffect, useState } from "react";
-import { api, downloadFile, ListResponse } from "../../lib/api";
+import { api, downloadFile, fetchAll } from "../../lib/api";
 import { formatBgDate, todayIso } from "../../lib/dates";
 import { useI18n } from "../../components/I18nProvider";
 import { RequireAuth } from "../../components/RequireAuth";
@@ -70,9 +70,8 @@ function ReportsInner() {
   const [bgNums, setBgNums] = useState(true);
 
   useEffect(() => {
-    api
-      .get<ListResponse<Counterpart>>("/v1/counterparts")
-      .then((d) => setCounterparts(d.items ?? []))
+    fetchAll<Counterpart>("/v1/counterparts")
+      .then((d) => setCounterparts(d))
       .catch(() => setCounterparts([]));
   }, []);
 

@@ -2,11 +2,14 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { api, ListResponse } from "../../lib/api";
+import { api, fetchAll } from "../../lib/api";
 import { Invoice, docTypesFor, formatBgDate } from "../../lib/invoice";
 import { useI18n } from "../../components/I18nProvider";
 import { RequireAuth } from "../../components/RequireAuth";
 import { IconButton } from "../../components/IconButton";
+import { Pagination } from "../../components/Pagination";
+
+const PAGE_SIZE = 50;
 
 interface Counterpart {
   id: number;
@@ -35,6 +38,7 @@ function InvoicesInner() {
   const [statusFilter, setStatusFilter] = useState("");
   const [selected, setSelected] = useState<number[]>([]);
   const [busy, setBusy] = useState(false);
+  const [offset, setOffset] = useState(0);
 
   // Филтри от адреса (/invoices?status=draft) — така таблото може да води
   // право към чернови или вземания. Пазено в URL, не в Suspense.
@@ -48,8 +52,7 @@ function InvoicesInner() {
     setLoading(true);
     setError("");
     try {
-      const data = await api.get<ListResponse<Invoice>>("/v1/invoices");
-      setRows(data.items ?? []);
+      setRows(await fetchAll<Invoice>("/v1/invoices"));
       setSelected([]);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -60,9 +63,8 @@ function InvoicesInner() {
 
   useEffect(() => {
     load();
-    api
-      .get<ListResponse<Counterpart>>("/v1/counterparts")
-      .then((d) => setCounterparts(d.items ?? []))
+    fetchAll<Counterpart>("/v1/counterparts")
+      .then((d) => setCounterparts(d))
       .catch(() => setCounterparts([]));
   }, [load]);
 
@@ -86,6 +88,11 @@ function InvoicesInner() {
       return inv.number.toLowerCase().includes(q) || name.includes(q);
     });
   }, [rows, search, typeFilter, dirFilter, statusFilter, counterparts]);
+
+  const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const page = Math.min(Math.floor(offset / PAGE_SIZE), pageCount - 1);
+  const start = page * PAGE_SIZE;
+  const paged = filtered.slice(start, start + PAGE_SIZE);
 
   const statusClass = (s: string) => {
     if (s === "posted" || s === "paid") return "badge-success";
@@ -279,7 +286,7 @@ function InvoicesInner() {
               </tr>
             </thead>
             <tbody>
-              {filtered.map((inv) => (
+              {paged.map((inv) => (
                 <tr key={inv.id}>
                   <td>
                     <input
@@ -334,6 +341,12 @@ function InvoicesInner() {
           </table>
           </div>
         )}
+        <Pagination
+          total={filtered.length}
+          limit={PAGE_SIZE}
+          offset={start}
+          onPageChange={setOffset}
+        />
       </div>
     </div>
   );

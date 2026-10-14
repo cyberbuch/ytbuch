@@ -125,6 +125,55 @@ fn cp_type_ok(value: &str) -> bool {
     matches!(value, "customer" | "supplier" | "both")
 }
 
+fn digits_of(s: &str) -> String {
+    s.chars().filter(|c| c.is_ascii_digit()).collect()
+}
+
+pub(crate) fn is_placeholder_eik(eik: &str) -> bool {
+    let t = eik.trim();
+    t.is_empty() || t.starts_with("999")
+}
+
+async fn check_cp_duplicate(
+    st: &AppState,
+    company: i32,
+    eik: &str,
+    vat: &str,
+    exclude_id: i32,
+) -> Result<(), ApiError> {
+    let vat_t = vat.trim();
+    let eik_t = eik.trim();
+    if vat_t.is_empty() && is_placeholder_eik(eik_t) {
+        return Ok(());
+    }
+    let rows = st
+        .db
+        .query(&format!(
+            "SELECT id, eik, vat_number FROM counterparts WHERE company_id = {company} AND id != {exclude_id}"
+        ))
+        .await
+        .map_err(db_err)?;
+    for row in &rows {
+        let have_eik = cell_str(row, 1);
+        let have_vat = cell_str(row, 2);
+        let have_eik_t = have_eik.trim();
+        let have_vat_t = have_vat.trim();
+        if !vat_t.is_empty() && !have_vat_t.is_empty() && vat_t.eq_ignore_ascii_case(have_vat_t) {
+            return Err(api_err(
+                StatusCode::CONFLICT,
+                "контрагент с този ДДС номер вече съществува",
+            ));
+        }
+        if !is_placeholder_eik(eik_t) && !is_placeholder_eik(have_eik_t) && eik_t.eq_ignore_ascii_case(have_eik_t) {
+            return Err(api_err(
+                StatusCode::CONFLICT,
+                "контрагент с този ЕИК вече съществува",
+            ));
+        }
+    }
+    Ok(())
+}
+
 fn address_type_norm(raw: &str) -> Result<String, ApiError> {
     let t = raw.trim();
     if t.is_empty() {
@@ -227,6 +276,22 @@ fn apply_cp(c: &mut Counterpart, obj: &serde_json::Map<String, Value>, fresh: bo
     }
     if c.country.trim().is_empty() {
         c.country = "BG".into();
+    } else {
+        c.country = c.country.trim().to_ascii_uppercase();
+    }
+    c.vat_number = c.vat_number.trim().to_ascii_uppercase();
+    c.eik = c.eik.trim().to_string();
+    if c.eik.is_empty() {
+        if c.vat_number.starts_with("BG") {
+            let d = digits_of(&c.vat_number[2..]);
+            if !d.is_empty() {
+                c.eik = d;
+            }
+        } else if !c.country.eq_ignore_ascii_case("BG")
+            || (!c.vat_number.is_empty() && !c.vat_number.starts_with("BG"))
+        {
+            c.eik = "999999999".into();
+        }
     }
     if c.counterpart_type.trim().is_empty() {
         c.counterpart_type = "both".into();
@@ -381,6 +446,7 @@ pub async fn counterpart_create(
     };
     apply_cp(&mut c, obj, true)?;
     c.id = st.db.next_id("counterparts").await.map_err(db_err)?;
+    check_cp_duplicate(&st, c.company_id, &c.eik, &c.vat_number, 0).await?;
     cp_save(&st, &c, true).await?;
     Ok((StatusCode::CREATED, Json(cp_json(&cp_load(&st, c.id, c.company_id).await?))))
 }
@@ -396,6 +462,7 @@ pub async fn counterpart_update(
     let obj = form::object(&body)?;
     let mut c = cp_load(&st, id, company).await?;
     apply_cp(&mut c, obj, false)?;
+    check_cp_duplicate(&st, company, &c.eik, &c.vat_number, id).await?;
     cp_save(&st, &c, false).await?;
     Ok(Json(cp_json(&cp_load(&st, id, company).await?)))
 }
@@ -429,6 +496,7 @@ pub(crate) async fn create_mapped(
     };
     apply_cp(&mut c, obj, true)?;
     c.id = st.db.next_id("counterparts").await.map_err(db_err)?;
+    check_cp_duplicate(st, company_id, &c.eik, &c.vat_number, 0).await?;
     cp_save(st, &c, true).await?;
     Ok(cp_json(&cp_load(st, c.id, company_id).await?))
 }
@@ -450,4 +518,62 @@ pub async fn counterpart_delete(
         .await
         .map_err(db_err)?;
     Ok(StatusCode::NO_CONTENT)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn placeholder_eik_allows_999_and_empty() {
+        assert!(is_placeholder_eik(""));
+        assert!(is_placeholder_eik("   "));
+        assert!(is_placeholder_eik("999999999"));
+        assert!(is_placeholder_eik("999123"));
+        assert!(!is_placeholder_eik("207123456"));
+        assert!(!is_placeholder_eik("111111111"));
+    }
+
+    #[test]
+    fn foreign_counterpart_gets_nine_nines_eik() {
+        let mut c = Counterpart {
+            id: 0,
+            company_id: 1,
+            name: String::new(),
+            counterpart_type: "both".into(),
+            eik: String::new(),
+            vat_number: String::new(),
+            address: String::new(),
+            city: String::new(),
+            post_code: String::new(),
+            country: "BG".into(),
+            contact_person: String::new(),
+            vies_address: String::new(),
+            street_name: String::new(),
+            building_number: String::new(),
+            address_building: String::new(),
+            additional_address_detail: String::new(),
+            address_type: String::new(),
+            region: String::new(),
+            email: String::new(),
+            phone: String::new(),
+        };
+        let obj = serde_json::json!({
+            "name": "Foreign Ltd",
+            "country": "US"
+        });
+        apply_cp(&mut c, obj.as_object().unwrap(), true).unwrap();
+        assert_eq!(c.eik, "999999999");
+
+        let mut bg = c;
+        bg.eik.clear();
+        let obj_bg = serde_json::json!({
+            "name": "BG Firm",
+            "country": "BG",
+            "vat_number": "bg207123456"
+        });
+        apply_cp(&mut bg, obj_bg.as_object().unwrap(), true).unwrap();
+        assert_eq!(bg.vat_number, "BG207123456");
+        assert_eq!(bg.eik, "207123456");
+    }
 }

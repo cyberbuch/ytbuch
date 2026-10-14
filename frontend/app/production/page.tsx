@@ -4,12 +4,15 @@
 // и заприходява готова продукция през склада (WAC/FIFO/LIFO) + запис 611.
 
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
-import { api, ListResponse } from "../../lib/api";
+import { api, fetchAll } from "../../lib/api";
 import { formatBgDate, todayIso } from "../../lib/dates";
 import { fetchCompanyLocations, CompanyLocation } from "../../lib/locations";
 import { useI18n } from "../../components/I18nProvider";
 import { RequireAuth } from "../../components/RequireAuth";
 import { IconButton } from "../../components/IconButton";
+import { Pagination } from "../../components/Pagination";
+
+const PAGE_SIZE = 50;
 
 type Tab = "recipes" | "orders";
 
@@ -89,6 +92,9 @@ function ProductionInner() {
   const [editing, setEditing] = useState<Recipe | null>(null);
   const [detail, setDetail] = useState<Order | null>(null);
   const [saving, setSaving] = useState(false);
+  const [q, setQ] = useState("");
+  const [recipeOffset, setRecipeOffset] = useState(0);
+  const [orderOffset, setOrderOffset] = useState(0);
   const [rform, setRform] = useState({
     code: "",
     name: "",
@@ -111,14 +117,14 @@ function ProductionInner() {
     setError("");
     try {
       const [r, o, p, loc] = await Promise.all([
-        api.get<ListResponse<Recipe>>("/v1/recipes"),
-        api.get<ListResponse<Order>>("/v1/production-orders"),
-        api.get<ListResponse<Product>>("/v1/products"),
+        fetchAll<Recipe>("/v1/recipes"),
+        fetchAll<Order>("/v1/production-orders"),
+        fetchAll<Product>("/v1/products"),
         fetchCompanyLocations(),
       ]);
-      setRecipes(r.items ?? []);
-      setOrders(o.items ?? []);
-      setProducts(p.items ?? []);
+      setRecipes(r);
+      setOrders(o);
+      setProducts(p);
       setLocations(loc);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -255,6 +261,36 @@ function ProductionInner() {
 
   const locName = (id: number) => locations.find((l) => l.id === id)?.name ?? String(id);
 
+  const filteredRecipes = useMemo(() => {
+    const s = q.trim().toLowerCase();
+    if (!s) return recipes;
+    return recipes.filter((r) =>
+      `${r.code} ${r.name} ${pname(products, r.output_product_id)}`
+        .toLowerCase()
+        .includes(s)
+    );
+  }, [recipes, q, products]);
+
+  const filteredOrders = useMemo(() => {
+    const s = q.trim().toLowerCase();
+    if (!s) return orders;
+    return orders.filter((o) =>
+      `${o.number} ${o.order_date} ${pname(products, o.output_product_id)} ${o.status}`
+        .toLowerCase()
+        .includes(s)
+    );
+  }, [orders, q, products]);
+
+  const rPageCount = Math.max(1, Math.ceil(filteredRecipes.length / PAGE_SIZE));
+  const rPage = Math.min(Math.floor(recipeOffset / PAGE_SIZE), rPageCount - 1);
+  const rStart = rPage * PAGE_SIZE;
+  const pagedRecipes = filteredRecipes.slice(rStart, rStart + PAGE_SIZE);
+
+  const oPageCount = Math.max(1, Math.ceil(filteredOrders.length / PAGE_SIZE));
+  const oPage = Math.min(Math.floor(orderOffset / PAGE_SIZE), oPageCount - 1);
+  const oStart = oPage * PAGE_SIZE;
+  const pagedOrders = filteredOrders.slice(oStart, oStart + PAGE_SIZE);
+
   if (detail) {
     return (
       <div>
@@ -340,12 +376,20 @@ function ProductionInner() {
         </button>
       </div>
       {error && <div className="error-text">{error}</div>}
+      <div className="card" style={{ marginBottom: 12 }}>
+        <input
+          className="input"
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder={t("common.search")}
+        />
+      </div>
       {loading && <div className="muted">{t("common.loading")}</div>}
 
       {tab === "recipes" && !loading && (
         <div className="card">
           <div className="content table-wrap">
-            {recipes.length === 0 ? (
+            {filteredRecipes.length === 0 ? (
               <div className="muted">{t("common.empty")}</div>
             ) : (
               <table className="table">
@@ -359,7 +403,7 @@ function ProductionInner() {
                   </tr>
                 </thead>
                 <tbody>
-                  {recipes.map((r) => (
+                  {pagedRecipes.map((r) => (
                     <tr key={r.id}>
                       <td>{r.code}</td>
                       <td>{r.name}</td>
@@ -377,13 +421,19 @@ function ProductionInner() {
               </table>
             )}
           </div>
+          <Pagination
+            total={filteredRecipes.length}
+            limit={PAGE_SIZE}
+            offset={rStart}
+            onPageChange={setRecipeOffset}
+          />
         </div>
       )}
 
       {tab === "orders" && !loading && (
         <div className="card">
           <div className="content table-wrap">
-            {orders.length === 0 ? (
+            {filteredOrders.length === 0 ? (
               <div className="muted">{t("common.empty")}</div>
             ) : (
               <table className="table">
@@ -398,7 +448,7 @@ function ProductionInner() {
                   </tr>
                 </thead>
                 <tbody>
-                  {orders.map((o) => (
+                  {pagedOrders.map((o) => (
                     <tr key={o.id}>
                       <td>{o.number}</td>
                       <td>{formatBgDate(o.order_date)}</td>
@@ -419,6 +469,12 @@ function ProductionInner() {
               </table>
             )}
           </div>
+          <Pagination
+            total={filteredOrders.length}
+            limit={PAGE_SIZE}
+            offset={oStart}
+            onPageChange={setOrderOffset}
+          />
         </div>
       )}
 

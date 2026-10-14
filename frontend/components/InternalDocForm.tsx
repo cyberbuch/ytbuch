@@ -2,7 +2,7 @@
 
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { api, ListResponse } from "../lib/api";
+import { api, fetchAll } from "../lib/api";
 import { useI18n } from "./I18nProvider";
 import {
   CompanyLocation,
@@ -56,8 +56,7 @@ export function InternalDocForm({ mode, docId }: Props) {
     setLocations(locs);
     setLocsReady(true);
     try {
-      const fa = await api.get<ListResponse<FaRow>>("/v1/fixed-assets");
-      setAssets(fa.items ?? []);
+      setAssets(await fetchAll<FaRow>("/v1/fixed-assets"));
     } catch {
       setAssets([]);
     }

@@ -6,8 +6,11 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { RequireAuth } from "../../components/RequireAuth";
 import { useI18n } from "../../components/I18nProvider";
-import { api, fetchAll, ListResponse } from "../../lib/api";
+import { api, fetchAll } from "../../lib/api";
 import { IconButton } from "../../components/IconButton";
+import { Pagination } from "../../components/Pagination";
+
+const PAGE_SIZE = 50;
 
 interface BankAccount {
   id: number;
@@ -54,16 +57,17 @@ function BankAccountsInner() {
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState("");
   const [q, setQ] = useState("");
+  const [offset, setOffset] = useState(0);
 
   const load = useCallback(async () => {
     setLoading(true);
     setError("");
     try {
       const [b, a] = await Promise.all([
-        api.get<ListResponse<BankAccount>>("/v1/bank-accounts"),
+        fetchAll<BankAccount>("/v1/bank-accounts"),
         fetchAll<Account>("/v1/accounts"),
       ]);
-      setRows(b.items ?? []);
+      setRows(b);
       setAccounts(a);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -150,6 +154,11 @@ function BankAccountsInner() {
     );
   }, [rows, q]);
 
+  const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const page = Math.min(Math.floor(offset / PAGE_SIZE), pageCount - 1);
+  const start = page * PAGE_SIZE;
+  const paged = filtered.slice(start, start + PAGE_SIZE);
+
   const accountCode = (id: number) => {
     if (!id) return "-";
     const a = accounts.find((x) => x.id === id);
@@ -213,7 +222,7 @@ function BankAccountsInner() {
               </tr>
             </thead>
             <tbody>
-              {filtered.map((b) => (
+              {paged.map((b) => (
                 <tr key={b.id}>
                   <td style={{ fontWeight: 500 }}>{b.name}</td>
                   <td>{b.bank_name}</td>
@@ -249,6 +258,12 @@ function BankAccountsInner() {
             </tbody>
           </table>
         )}
+        <Pagination
+          total={filtered.length}
+          limit={PAGE_SIZE}
+          offset={start}
+          onPageChange={setOffset}
+        />
       </div>
 
       {modalOpen && (

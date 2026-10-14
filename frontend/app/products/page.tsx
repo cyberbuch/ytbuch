@@ -7,6 +7,9 @@ import { useI18n } from "../../components/I18nProvider";
 import { api, fetchAll, ListResponse } from "../../lib/api";
 import { UnitOfMeasure } from "../../lib/units";
 import { IconButton } from "../../components/IconButton";
+import { Pagination } from "../../components/Pagination";
+
+const PAGE_SIZE = 50;
 
 interface Account {
   id: number;
@@ -65,6 +68,7 @@ function ProductsInner() {
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState("");
   const [q, setQ] = useState("");
+  const [offset, setOffset] = useState(0);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -96,6 +100,11 @@ function ProductsInner() {
       `${p.name} ${p.code} ${p.unit} ${p.description}`.toLowerCase().includes(s)
     );
   }, [rows, q]);
+
+  const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const page = Math.min(Math.floor(offset / PAGE_SIZE), pageCount - 1);
+  const start = page * PAGE_SIZE;
+  const paged = filtered.slice(start, start + PAGE_SIZE);
 
   const openCreate = () => {
     setForm(emptyForm);
@@ -211,7 +220,7 @@ function ProductsInner() {
               </tr>
             </thead>
             <tbody>
-              {filtered.map((p) => (
+              {paged.map((p) => (
                 <tr key={p.id}>
                   <td>
                     {p.name}
@@ -251,6 +260,12 @@ function ProductsInner() {
             </tbody>
           </table>
         )}
+        <Pagination
+          total={filtered.length}
+          limit={PAGE_SIZE}
+          offset={start}
+          onPageChange={setOffset}
+        />
       </div>
 
       {modalOpen && (

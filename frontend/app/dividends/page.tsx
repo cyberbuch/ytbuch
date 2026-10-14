@@ -11,6 +11,9 @@ import { escapeHtml } from "../../lib/html";
 import { useI18n } from "../../components/I18nProvider";
 import { RequireAuth } from "../../components/RequireAuth";
 import { IconButton } from "../../components/IconButton";
+import { Pagination } from "../../components/Pagination";
+
+const PAGE_SIZE = 50;
 
 interface Owner {
   id: number;
@@ -73,6 +76,7 @@ function DividendsInner() {
   const [modal, setModal] = useState(false);
   const [editing, setEditing] = useState<Dist | null>(null);
   const [saving, setSaving] = useState(false);
+  const [offset, setOffset] = useState(0);
   const now = new Date();
   const [form, setForm] = useState({
     year: String(now.getFullYear()),
@@ -87,7 +91,7 @@ function DividendsInner() {
     setLoading(true);
     setError("");
     try {
-      const data = await api.get<DistList>("/v1/dividend-distributions");
+      const data = await api.get<DistList>("/v1/dividend-distributions", { limit: 500 });
       setList(data.items ?? []);
       setOwners(data.owners ?? []);
       setCurrency(data.currency || "BGN");
@@ -256,6 +260,11 @@ ${rows.map((r) => `<tr><td>${escapeHtml(r.owner_name)}</td><td>${escapeHtml(r.ow
   };
 
   const statusLabel = (s: string) => t(`div.status.${s}`);
+
+  const pageCount = Math.max(1, Math.ceil(list.length / PAGE_SIZE));
+  const page = Math.min(Math.floor(offset / PAGE_SIZE), pageCount - 1);
+  const start = page * PAGE_SIZE;
+  const paged = list.slice(start, start + PAGE_SIZE);
 
   if (detail) {
     const anyPaid = (detail.dividends ?? []).some((r) => r.is_paid);
@@ -458,7 +467,7 @@ ${rows.map((r) => `<tr><td>${escapeHtml(r.owner_name)}</td><td>${escapeHtml(r.ow
                 </tr>
               </thead>
               <tbody>
-                {list.map((d) => (
+                {paged.map((d) => (
                   <tr key={d.id}>
                     <td>{d.year}</td>
                     <td>{formatBgDate(d.decision_date)}</td>
@@ -479,6 +488,12 @@ ${rows.map((r) => `<tr><td>${escapeHtml(r.owner_name)}</td><td>${escapeHtml(r.ow
               </tbody>
             </table>
           </div>
+          <Pagination
+            total={list.length}
+            limit={PAGE_SIZE}
+            offset={start}
+            onPageChange={setOffset}
+          />
         </div>
       )}
       {modal && editModal()}

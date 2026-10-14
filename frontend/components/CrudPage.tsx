@@ -195,8 +195,12 @@ export function CrudPage({ config }: { config: CrudConfig }) {
             next[field] = val;
           }
         }
-        if (v.eikField && data.country_code === "BG") {
-          next[v.eikField] = data.vat_number.substring(2);
+        if (v.eikField) {
+          if (data.country_code === "BG") {
+            next[v.eikField] = data.vat_number.substring(2);
+          } else if (!String(next[v.eikField] ?? "").trim()) {
+            next[v.eikField] = "999999999";
+          }
         }
         return next;
       });

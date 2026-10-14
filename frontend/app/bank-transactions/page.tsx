@@ -7,7 +7,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { RequireAuth } from "../../components/RequireAuth";
 import { useI18n } from "../../components/I18nProvider";
-import { api, fetchAll, ListResponse } from "../../lib/api";
+import { api, fetchAll } from "../../lib/api";
 import {
   Account,
   BankAccount,
@@ -18,6 +18,9 @@ import {
 } from "./types";
 import { fmtAmount, isPositive, matchCounterpart } from "./helpers";
 import { BankTxModals } from "./BankTxModals";
+import { Pagination } from "../../components/Pagination";
+
+const PAGE_SIZE = 50;
 
 function BankTransactionsInner() {
   const { t } = useI18n();
@@ -28,6 +31,7 @@ function BankTransactionsInner() {
   const [selectedAccount, setSelectedAccount] = useState("");
   const [filterStatus, setFilterStatus] = useState("");
   const [q, setQ] = useState("");
+  const [offset, setOffset] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
@@ -60,11 +64,11 @@ function BankTransactionsInner() {
   const loadMeta = useCallback(async () => {
     try {
       const [b, a, c] = await Promise.all([
-        api.get<ListResponse<BankAccount>>("/v1/bank-accounts"),
+        fetchAll<BankAccount>("/v1/bank-accounts"),
         fetchAll<Account>("/v1/accounts"),
         fetchAll<Counterpart>("/v1/counterparts"),
       ]);
-      setAccounts(b.items ?? []);
+      setAccounts(b);
       setChartAccounts(a);
       setCounterparts(c);
     } catch {
@@ -76,14 +80,10 @@ function BankTransactionsInner() {
     setLoading(true);
     setError("");
     try {
-      const params = new URLSearchParams();
-      if (selectedAccount) params.set("bank_account_id", selectedAccount);
-      if (filterStatus) params.set("status", filterStatus);
-      const qs = params.toString();
-      const data = await api.get<ListResponse<BankTransaction>>(
-        `/v1/bank-transactions${qs ? `?${qs}` : ""}`
-      );
-      setRows(data.items ?? []);
+      const extra: Record<string, string | undefined> = {};
+      if (selectedAccount) extra.bank_account_id = selectedAccount;
+      if (filterStatus) extra.status = filterStatus;
+      setRows(await fetchAll<BankTransaction>("/v1/bank-transactions", extra));
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -109,6 +109,11 @@ function BankTransactionsInner() {
         .includes(s)
     );
   }, [rows, q]);
+
+  const pageCount = Math.max(1, Math.ceil(filteredRows.length / PAGE_SIZE));
+  const page = Math.min(Math.floor(offset / PAGE_SIZE), pageCount - 1);
+  const start = page * PAGE_SIZE;
+  const pagedRows = filteredRows.slice(start, start + PAGE_SIZE);
 
   const handleFile = async (file: File) => {
     if (!selectedAccount) {
@@ -361,7 +366,7 @@ function BankTransactionsInner() {
               </tr>
             </thead>
             <tbody>
-              {filteredRows.map((tx) => (
+              {pagedRows.map((tx) => (
                 <tr key={tx.id}>
                   <td style={{ whiteSpace: "nowrap" }}>{tx.transaction_date}</td>
                   <td
@@ -416,6 +421,12 @@ function BankTransactionsInner() {
             </tbody>
           </table>
         )}
+        <Pagination
+          total={filteredRows.length}
+          limit={PAGE_SIZE}
+          offset={start}
+          onPageChange={setOffset}
+        />
       </div>
 
 

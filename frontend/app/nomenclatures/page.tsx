@@ -7,6 +7,9 @@ import { useCallback, useEffect, useState } from "react";
 import { api, ListResponse } from "../../lib/api";
 import { useI18n } from "../../components/I18nProvider";
 import { RequireAuth } from "../../components/RequireAuth";
+import { Pagination } from "../../components/Pagination";
+
+const PAGE_SIZE = 50;
 
 const NOM_KINDS = [
   "stock_movements",
@@ -105,6 +108,7 @@ function NomenclaturesInner() {
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [offset, setOffset] = useState(0);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -134,6 +138,10 @@ function NomenclaturesInner() {
   }, [load]);
 
   const cols = COLS[kind];
+  const pageCount = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
+  const page = Math.min(Math.floor(offset / PAGE_SIZE), pageCount - 1);
+  const start = page * PAGE_SIZE;
+  const paged = rows.slice(start, start + PAGE_SIZE);
 
   return (
     <div>
@@ -184,7 +192,7 @@ function NomenclaturesInner() {
                 </tr>
               </thead>
               <tbody>
-                {rows.map((rec, i) => (
+                {paged.map((rec, i) => (
                   <tr key={cell(rec, "code") + cell(rec, "method_code") + String(i)}>
                     {cols.map((c) => (
                       <td
@@ -200,6 +208,12 @@ function NomenclaturesInner() {
             </table>
           </div>
         )}
+        <Pagination
+          total={rows.length}
+          limit={PAGE_SIZE}
+          offset={start}
+          onPageChange={setOffset}
+        />
       </div>
     </div>
   );

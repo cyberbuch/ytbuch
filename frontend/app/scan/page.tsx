@@ -125,10 +125,10 @@ function ScanInner() {
     try {
       const [cp, pr] = await Promise.all([
         fetchAll<Counterpart>("/v1/counterparts"),
-        api.get<ListResponse<Product>>("/v1/products"),
+        fetchAll<Product>("/v1/products"),
       ]);
       setCounterparts(cp);
-      setProducts(pr.items ?? []);
+      setProducts(pr);
     } catch {
       /* non-fatal */
     }
@@ -149,9 +149,8 @@ function ScanInner() {
 
   useEffect(() => {
     if (stage !== 1 || !docTypeRequiresOriginal(documentType) || invLoaded) return;
-    api
-      .get<ListResponse<Invoice>>("/v1/invoices")
-      .then((r) => setInvoiceChoices(r.items ?? []))
+    fetchAll<Invoice>("/v1/invoices")
+      .then((r) => setInvoiceChoices(r))
       .catch(() => setInvoiceChoices([]))
       .finally(() => setInvLoaded(true));
   }, [stage, documentType, invLoaded]);
@@ -365,7 +364,9 @@ function ScanInner() {
           counterpart_type: ctype,
         });
       }
-      setCounterparts((prev) => [...prev, created]);
+      setCounterparts((prev) =>
+        prev.some((c) => c.id === created.id) ? prev : [...prev, created]
+      );
       setCounterpartId(String(created.id));
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));

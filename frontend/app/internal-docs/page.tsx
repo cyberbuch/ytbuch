@@ -2,11 +2,14 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { api, ListResponse } from "../../lib/api";
+import { fetchAll } from "../../lib/api";
 import { InternalDoc } from "../../lib/internalDoc";
 import { CompanyLocation, fetchCompanyLocations } from "../../lib/locations";
 import { useI18n } from "../../components/I18nProvider";
 import { RequireAuth } from "../../components/RequireAuth";
+import { Pagination } from "../../components/Pagination";
+
+const PAGE_SIZE = 50;
 
 function Inner() {
   const { t } = useI18n();
@@ -15,13 +18,13 @@ function Inner() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [q, setQ] = useState("");
+  const [offset, setOffset] = useState(0);
 
   const load = useCallback(async () => {
     setLoading(true);
     setError("");
     try {
-      const data = await api.get<ListResponse<InternalDoc>>("/v1/internal-docs");
-      setRows(data.items ?? []);
+      setRows(await fetchAll<InternalDoc>("/v1/internal-docs"));
       setLocations(await fetchCompanyLocations());
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -48,6 +51,11 @@ function Inner() {
         .includes(s)
     );
   }, [rows, q, locName]);
+
+  const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const page = Math.min(Math.floor(offset / PAGE_SIZE), pageCount - 1);
+  const start = page * PAGE_SIZE;
+  const paged = filtered.slice(start, start + PAGE_SIZE);
 
   return (
     <div>
@@ -83,7 +91,7 @@ function Inner() {
               </tr>
             </thead>
             <tbody>
-              {filtered.map((d) => (
+              {paged.map((d) => (
                 <tr key={d.id}>
                   <td>
                     <Link href={`/internal-docs/${d.id}`}>{d.number}</Link>
@@ -103,6 +111,12 @@ function Inner() {
             </tbody>
           </table>
         )}
+        <Pagination
+          total={filtered.length}
+          limit={PAGE_SIZE}
+          offset={start}
+          onPageChange={setOffset}
+        />
       </div>
     </div>
   );

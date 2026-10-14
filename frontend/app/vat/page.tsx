@@ -8,6 +8,9 @@ import { api, downloadFile } from "../../lib/api";
 import { formatBgDate } from "../../lib/dates";
 import { useI18n } from "../../components/I18nProvider";
 import { RequireAuth } from "../../components/RequireAuth";
+import { Pagination } from "../../components/Pagination";
+
+const PAGE_SIZE = 50;
 
 type Tab = "summary" | "purchases" | "sales" | "declaration" | "vies";
 
@@ -137,6 +140,8 @@ function VatInner() {
   const [manual, setManual] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [purOffset, setPurOffset] = useState(0);
+  const [salOffset, setSalOffset] = useState(0);
 
   const period = `${year}-${month}`;
 
@@ -326,128 +331,152 @@ function VatInner() {
             </>
           )}
 
-          {tab === "purchases" && (
-            <div className="card" style={{ marginBottom: 18 }}>
-              <div className="content">
-                <h3 style={{ margin: "0 0 10px" }}>{t("vat.purchases")}</h3>
-                {data.purchases.length === 0 ? (
-                  <div className="muted">{t("common.empty")}</div>
-                ) : (
-                  <div className="table-wrap">
-                    <table className="table">
-                      <thead>
-                        <tr>
-                          <th>{t("vat.row")}</th>
-                          <th>{t("vat.doc_type")}</th>
-                          <th>{t("vat.document")}</th>
-                          <th>{t("vat.date")}</th>
-                          <th>{t("vat.vat_number")}</th>
-                          <th>{t("vat.counterpart")}</th>
-                          <th>{t("vat.goods")}</th>
-                          <th className="num">{t("vat.col_no_credit")}</th>
-                          <th className="num">{t("vat.col_full_base")}</th>
-                          <th className="num">{t("vat.col_full_vat")}</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {data.purchases.map((r) => (
-                          <tr key={r.id}>
-                            <td>{r.row}</td>
-                            <td>{r.document_type}</td>
-                            <td>{r.document_number}</td>
-                            <td>{formatBgDate(r.document_date)}</td>
-                            <td>{r.counterpart_vat_number}</td>
-                            <td>{r.counterpart_name}</td>
-                            <td>{r.goods}</td>
-                            <td className="num">{money(r.base_no_credit)}</td>
-                            <td className="num">{money(r.base_full_credit)}</td>
-                            <td className="num">{money(r.vat_full_credit)}</td>
+          {tab === "purchases" && (() => {
+            const pCount = Math.max(1, Math.ceil(data.purchases.length / PAGE_SIZE));
+            const pPage = Math.min(Math.floor(purOffset / PAGE_SIZE), pCount - 1);
+            const pStart = pPage * PAGE_SIZE;
+            const pagedPur = data.purchases.slice(pStart, pStart + PAGE_SIZE);
+            return (
+              <div className="card" style={{ marginBottom: 18 }}>
+                <div className="content">
+                  <h3 style={{ margin: "0 0 10px" }}>{t("vat.purchases")}</h3>
+                  {data.purchases.length === 0 ? (
+                    <div className="muted">{t("common.empty")}</div>
+                  ) : (
+                    <div className="table-wrap">
+                      <table className="table">
+                        <thead>
+                          <tr>
+                            <th>{t("vat.row")}</th>
+                            <th>{t("vat.doc_type")}</th>
+                            <th>{t("vat.document")}</th>
+                            <th>{t("vat.date")}</th>
+                            <th>{t("vat.vat_number")}</th>
+                            <th>{t("vat.counterpart")}</th>
+                            <th>{t("vat.goods")}</th>
+                            <th className="num">{t("vat.col_no_credit")}</th>
+                            <th className="num">{t("vat.col_full_base")}</th>
+                            <th className="num">{t("vat.col_full_vat")}</th>
                           </tr>
-                        ))}
-                      </tbody>
-                      <tfoot>
-                        <tr>
-                          <td colSpan={7}>{t("vat.total")}</td>
-                          <td className="num">{money(String(sumField(data.purchases, "base_no_credit")))}</td>
-                          <td className="num">{money(String(sumField(data.purchases, "base_full_credit")))}</td>
-                          <td className="num">{money(String(sumField(data.purchases, "vat_full_credit")))}</td>
-                        </tr>
-                      </tfoot>
-                    </table>
-                  </div>
-                )}
+                        </thead>
+                        <tbody>
+                          {pagedPur.map((r) => (
+                            <tr key={r.id}>
+                              <td>{r.row}</td>
+                              <td>{r.document_type}</td>
+                              <td>{r.document_number}</td>
+                              <td>{formatBgDate(r.document_date)}</td>
+                              <td>{r.counterpart_vat_number}</td>
+                              <td>{r.counterpart_name}</td>
+                              <td>{r.goods}</td>
+                              <td className="num">{money(r.base_no_credit)}</td>
+                              <td className="num">{money(r.base_full_credit)}</td>
+                              <td className="num">{money(r.vat_full_credit)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                        <tfoot>
+                          <tr>
+                            <td colSpan={7}>{t("vat.total")}</td>
+                            <td className="num">{money(String(sumField(data.purchases, "base_no_credit")))}</td>
+                            <td className="num">{money(String(sumField(data.purchases, "base_full_credit")))}</td>
+                            <td className="num">{money(String(sumField(data.purchases, "vat_full_credit")))}</td>
+                          </tr>
+                        </tfoot>
+                      </table>
+                    </div>
+                  )}
+                </div>
+                <Pagination
+                  total={data.purchases.length}
+                  limit={PAGE_SIZE}
+                  offset={pStart}
+                  onPageChange={setPurOffset}
+                />
               </div>
-            </div>
-          )}
+            );
+          })()}
 
-          {tab === "sales" && (
-            <div className="card" style={{ marginBottom: 18 }}>
-              <div className="content">
-                <h3 style={{ margin: "0 0 10px" }}>{t("vat.sales")}</h3>
-                {data.sales.length === 0 ? (
-                  <div className="muted">{t("common.empty")}</div>
-                ) : (
-                  <div className="table-wrap">
-                    <table className="table">
-                      <thead>
-                        <tr>
-                          <th>{t("vat.row")}</th>
-                          <th>{t("vat.doc_type")}</th>
-                          <th>{t("vat.document")}</th>
-                          <th>{t("vat.date")}</th>
-                          <th>{t("vat.vat_number")}</th>
-                          <th>{t("vat.counterpart")}</th>
-                          <th>{t("vat.goods")}</th>
-                          <th className="num">{t("vat.base")}</th>
-                          <th className="num">{t("vat.vat")}</th>
-                          <th className="num">{t("vat.col_base20")}</th>
-                          <th className="num">{t("vat.col_vat20")}</th>
-                          <th className="num">{t("vat.col_base9")}</th>
-                          <th className="num">{t("vat.col_vat9")}</th>
-                          <th className="num">{t("vat.col_vod")}</th>
-                          <th className="num">{t("vat.col_exempt")}</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {data.sales.map((r) => (
-                          <tr key={r.id}>
-                            <td>{r.row}</td>
-                            <td>{r.document_type}</td>
-                            <td>{r.document_number}</td>
-                            <td>{formatBgDate(r.document_date)}</td>
-                            <td>{r.counterpart_vat_number}</td>
-                            <td>{r.counterpart_name}</td>
-                            <td>{r.goods}</td>
-                            <td className="num">{money(r.total_base)}</td>
-                            <td className="num">{money(r.total_vat)}</td>
-                            <td className="num">{money(r.base_20)}</td>
-                            <td className="num">{money(r.vat_20)}</td>
-                            <td className="num">{money(r.base_9)}</td>
-                            <td className="num">{money(r.vat_9)}</td>
-                            <td className="num">{money(r.base_vod)}</td>
-                            <td className="num">{money(r.base_exempt)}</td>
+          {tab === "sales" && (() => {
+            const sCount = Math.max(1, Math.ceil(data.sales.length / PAGE_SIZE));
+            const sPage = Math.min(Math.floor(salOffset / PAGE_SIZE), sCount - 1);
+            const sStart = sPage * PAGE_SIZE;
+            const pagedSal = data.sales.slice(sStart, sStart + PAGE_SIZE);
+            return (
+              <div className="card" style={{ marginBottom: 18 }}>
+                <div className="content">
+                  <h3 style={{ margin: "0 0 10px" }}>{t("vat.sales")}</h3>
+                  {data.sales.length === 0 ? (
+                    <div className="muted">{t("common.empty")}</div>
+                  ) : (
+                    <div className="table-wrap">
+                      <table className="table">
+                        <thead>
+                          <tr>
+                            <th>{t("vat.row")}</th>
+                            <th>{t("vat.doc_type")}</th>
+                            <th>{t("vat.document")}</th>
+                            <th>{t("vat.date")}</th>
+                            <th>{t("vat.vat_number")}</th>
+                            <th>{t("vat.counterpart")}</th>
+                            <th>{t("vat.goods")}</th>
+                            <th className="num">{t("vat.base")}</th>
+                            <th className="num">{t("vat.vat")}</th>
+                            <th className="num">{t("vat.col_base20")}</th>
+                            <th className="num">{t("vat.col_vat20")}</th>
+                            <th className="num">{t("vat.col_base9")}</th>
+                            <th className="num">{t("vat.col_vat9")}</th>
+                            <th className="num">{t("vat.col_vod")}</th>
+                            <th className="num">{t("vat.col_exempt")}</th>
                           </tr>
-                        ))}
-                      </tbody>
-                      <tfoot>
-                        <tr>
-                          <td colSpan={7}>{t("vat.total")}</td>
-                          <td className="num">{money(String(sumField(data.sales, "total_base")))}</td>
-                          <td className="num">{money(String(sumField(data.sales, "total_vat")))}</td>
-                          <td className="num">{money(String(sumField(data.sales, "base_20")))}</td>
-                          <td className="num">{money(String(sumField(data.sales, "vat_20")))}</td>
-                          <td className="num">{money(String(sumField(data.sales, "base_9")))}</td>
-                          <td className="num">{money(String(sumField(data.sales, "vat_9")))}</td>
-                          <td className="num">{money(String(sumField(data.sales, "base_vod")))}</td>
-                          <td className="num">{money(String(sumField(data.sales, "base_exempt")))}</td>
-                        </tr>
-                      </tfoot>
-                    </table>
-                  </div>
-                )}
+                        </thead>
+                        <tbody>
+                          {pagedSal.map((r) => (
+                            <tr key={r.id}>
+                              <td>{r.row}</td>
+                              <td>{r.document_type}</td>
+                              <td>{r.document_number}</td>
+                              <td>{formatBgDate(r.document_date)}</td>
+                              <td>{r.counterpart_vat_number}</td>
+                              <td>{r.counterpart_name}</td>
+                              <td>{r.goods}</td>
+                              <td className="num">{money(r.total_base)}</td>
+                              <td className="num">{money(r.total_vat)}</td>
+                              <td className="num">{money(r.base_20)}</td>
+                              <td className="num">{money(r.vat_20)}</td>
+                              <td className="num">{money(r.base_9)}</td>
+                              <td className="num">{money(r.vat_9)}</td>
+                              <td className="num">{money(r.base_vod)}</td>
+                              <td className="num">{money(r.base_exempt)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                        <tfoot>
+                          <tr>
+                            <td colSpan={7}>{t("vat.total")}</td>
+                            <td className="num">{money(String(sumField(data.sales, "total_base")))}</td>
+                            <td className="num">{money(String(sumField(data.sales, "total_vat")))}</td>
+                            <td className="num">{money(String(sumField(data.sales, "base_20")))}</td>
+                            <td className="num">{money(String(sumField(data.sales, "vat_20")))}</td>
+                            <td className="num">{money(String(sumField(data.sales, "base_9")))}</td>
+                            <td className="num">{money(String(sumField(data.sales, "vat_9")))}</td>
+                            <td className="num">{money(String(sumField(data.sales, "base_vod")))}</td>
+                            <td className="num">{money(String(sumField(data.sales, "base_exempt")))}</td>
+                          </tr>
+                        </tfoot>
+                      </table>
+                    </div>
+                  )}
+                </div>
+                <Pagination
+                  total={data.sales.length}
+                  limit={PAGE_SIZE}
+                  offset={sStart}
+                  onPageChange={setSalOffset}
+                />
               </div>
-            </div>
-          )}
+            );
+          })()}
 
           {tab === "declaration" && (
             <>

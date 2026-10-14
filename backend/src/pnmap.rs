@@ -144,6 +144,12 @@ fn same_id(a: &str, b: &str) -> bool {
     !x.is_empty() && x == y
 }
 
+fn same_eik(a: &str, b: &str) -> bool {
+    !crate::counterparts::is_placeholder_eik(a)
+        && !crate::counterparts::is_placeholder_eik(b)
+        && same_id(a, b)
+}
+
 pub struct PartyHit {
     pub id: i32,
     pub name: String,
@@ -162,7 +168,9 @@ pub async fn counterpart_hit(db: &Db, company: i32, vat: &str, eik: &str) -> Res
         let have_eik = cell_str(row, 2);
         let have_vat = cell_str(row, 3);
         let vat_ok = same_id(&have_vat, vat);
-        let eik_ok = same_id(&have_eik, eik) || same_id(&have_eik, &digits(vat)) || same_id(eik, &digits(&have_vat));
+        let eik_ok = same_eik(&have_eik, eik)
+            || same_eik(&have_eik, &digits(vat))
+            || same_eik(eik, &digits(&have_vat));
         if vat_ok || eik_ok {
             return Ok(Some(PartyHit {
                 id: cell_i32_at(row, 0),

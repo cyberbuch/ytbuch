@@ -1,10 +1,13 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { RequireAuth } from "../../components/RequireAuth";
 import { useI18n } from "../../components/I18nProvider";
 import { ACTIVE_COMPANY_EVENT, api, fetchAll, ListResponse } from "../../lib/api";
 import { CompanyLocation, fetchCompanyLocations } from "../../lib/locations";
+import { Pagination } from "../../components/Pagination";
+
+const PAGE_SIZE = 50;
 
 interface Account {
   id: number;
@@ -64,19 +67,21 @@ function Inner() {
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
+  const [q, setQ] = useState("");
+  const [offset, setOffset] = useState(0);
 
   const load = useCallback(async () => {
     setLoading(true);
     setError("");
     try {
       const [list, locs, prods, acc, rulePack] = await Promise.all([
-        api.get<ListResponse<Doc>>("/v1/material-issues", { limit: 500 }),
+        fetchAll<Doc>("/v1/material-issues"),
         fetchCompanyLocations(),
         fetchAll<Product>("/v1/products"),
         fetchAll<Account>("/v1/accounts"),
         api.get<ListResponse<Rule>>("/v1/stock/rules"),
       ]);
-      setRows(list.items ?? []);
+      setRows(list);
       setLocations(locs);
       setProducts(prods.filter((p) => Number(p.is_inventory) === 1));
       setAccounts(acc);
@@ -99,11 +104,29 @@ function Inner() {
     return () => window.removeEventListener(ACTIVE_COMPANY_EVENT, onChange);
   }, [load]);
 
-  const locName = (id: number) => locations.find((l) => l.id === id)?.name ?? "";
+  const locName = useCallback(
+    (id: number) => locations.find((l) => l.id === id)?.name ?? "",
+    [locations]
+  );
   const accLabel = (id: number) => {
     const a = accounts.find((x) => x.id === id);
     return a ? `${a.number} ${a.name}` : "";
   };
+
+  const filtered = useMemo(() => {
+    const s = q.trim().toLowerCase();
+    if (!s) return rows;
+    return rows.filter((d) =>
+      `${d.number} ${d.doc_date} ${locName(d.location_id)} ${d.status} ${d.notes}`
+        .toLowerCase()
+        .includes(s)
+    );
+  }, [rows, q, locName]);
+
+  const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const page = Math.min(Math.floor(offset / PAGE_SIZE), pageCount - 1);
+  const start = page * PAGE_SIZE;
+  const paged = filtered.slice(start, start + PAGE_SIZE);
 
   async function open(id: number) {
     setError("");
@@ -167,40 +190,56 @@ function Inner() {
       ) : loading ? (
         <div className="content muted">{t("common.loading")}</div>
       ) : (
-        <div className="card">
-          {rows.length === 0 ? (
-            <div className="content muted">{t("common.empty")}</div>
-          ) : (
-            <table className="table">
-              <thead>
-                <tr>
-                  <th>{t("mat.number")}</th>
-                  <th>{t("mat.date")}</th>
-                  <th>{t("mat.location")}</th>
-                  <th>{t("mat.status")}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((d) => (
-                  <tr key={d.id}>
-                    <td>
-                      <button type="button" className="btn-ghost" onClick={() => open(d.id)}>
-                        {d.number}
-                      </button>
-                    </td>
-                    <td>{d.doc_date}</td>
-                    <td>{locName(d.location_id)}</td>
-                    <td>
-                      <span className={`badge ${d.status === "confirmed" ? "badge-success" : "badge-warning"}`}>
-                        {t(`mat.status.${d.status}`)}
-                      </span>
-                    </td>
+        <>
+          <div className="card" style={{ marginBottom: 12 }}>
+            <input
+              className="input"
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              placeholder={t("common.search")}
+            />
+          </div>
+          <div className="card">
+            {filtered.length === 0 ? (
+              <div className="content muted">{t("common.empty")}</div>
+            ) : (
+              <table className="table">
+                <thead>
+                  <tr>
+                    <th>{t("mat.number")}</th>
+                    <th>{t("mat.date")}</th>
+                    <th>{t("mat.location")}</th>
+                    <th>{t("mat.status")}</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </div>
+                </thead>
+                <tbody>
+                  {paged.map((d) => (
+                    <tr key={d.id}>
+                      <td>
+                        <button type="button" className="btn-ghost" onClick={() => open(d.id)}>
+                          {d.number}
+                        </button>
+                      </td>
+                      <td>{d.doc_date}</td>
+                      <td>{locName(d.location_id)}</td>
+                      <td>
+                        <span className={`badge ${d.status === "confirmed" ? "badge-success" : "badge-warning"}`}>
+                          {t(`mat.status.${d.status}`)}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+            <Pagination
+              total={filtered.length}
+              limit={PAGE_SIZE}
+              offset={start}
+              onPageChange={setOffset}
+            />
+          </div>
+        </>
       )}
     </div>
   );

@@ -140,6 +140,12 @@ pub async fn create(
     }
     let company = active_or_one(&st, &sub).await?;
     let cc = &vat[..2];
+    let eik = if cc == "BG" { vat[2..].to_string() } else { "999999999".to_string() };
+    if let Some(existing) = crate::pnmap::counterpart_hit(&st.db, company, &vat, &eik).await? {
+        if let Some(val) = counterparts::json_by_id(&st.db, existing.id, company).await? {
+            return Ok((StatusCode::OK, Json(val)));
+        }
+    }
     let addr_raw = if hit.address == "---" { String::new() } else { hit.address.clone() };
     let (parts, _) = addr::split(&st.db, company, &addr_raw, cc, "", "").await?;
     let name = if hit.name.is_empty() || hit.name == "---" {
@@ -147,7 +153,6 @@ pub async fn create(
     } else {
         hit.name.clone()
     };
-    let eik = if cc == "BG" { vat[2..].to_string() } else { String::new() };
     let country = if parts.country.is_empty() { cc.to_string() } else { parts.country.clone() };
     let mut map = Map::new();
     map.insert("name".into(), json!(name));

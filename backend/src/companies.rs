@@ -357,6 +357,26 @@ async fn insert_company(db: &Db, c: &Company) -> Result<(), ApiError> {
 }
 
 /// Фирма от публична регистрация. Сее сметкоплан за новата фирма.
+async fn check_company_eik(db: &Db, eik: &str, exclude_id: i32) -> Result<(), ApiError> {
+    let eik_t = eik.trim();
+    if eik_t.is_empty() {
+        return Ok(());
+    }
+    let rows = db
+        .query(&format!("SELECT id, eik FROM companies WHERE id != {exclude_id}"))
+        .await
+        .map_err(|e| api_err(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    for row in &rows {
+        if cell_str(row, 1).trim().eq_ignore_ascii_case(eik_t) {
+            return Err(api_err(
+                StatusCode::CONFLICT,
+                "фирма с този ЕИК вече съществува",
+            ));
+        }
+    }
+    Ok(())
+}
+
 pub(crate) async fn create_for_register(
     db: &Db,
     name: &str,
@@ -366,16 +386,7 @@ pub(crate) async fn create_for_register(
     city: &str,
     email: &str,
 ) -> Result<i32, ApiError> {
-    let rows = db
-        .query(&format!("SELECT id FROM companies WHERE eik = {}", q(eik)))
-        .await
-        .map_err(|e| api_err(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-    if !rows.is_empty() {
-        return Err(api_err(
-            StatusCode::CONFLICT,
-            "фирма с този ЕИК вече съществува",
-        ));
-    }
+    check_company_eik(db, eik, 0).await?;
     let mut c = blank();
     c.name = name.to_string();
     c.eik = eik.to_string();
@@ -415,6 +426,7 @@ pub async fn create(
     if c.eik.trim().is_empty() {
         return Err(api_err(StatusCode::UNPROCESSABLE_ENTITY, "eik е задължителен"));
     }
+    check_company_eik(&st.db, &c.eik, 0).await?;
     c.id = st.db.next_id( "companies")
         .await
         .map_err(|e| api_err(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
@@ -459,6 +471,7 @@ pub async fn update(
         .await?
         .ok_or_else(|| api_err(StatusCode::NOT_FOUND, "фирмата не е намерена"))?;
     apply_body(&mut c, &body)?;
+    check_company_eik(&st.db, &c.eik, id).await?;
     save(&st.db, &c).await?;
     Ok(Json(to_json(&c)))
 }
@@ -689,6 +702,17 @@ pub async fn dashboard(
             }));
         }
     }
+    let bank_rows = st
+        .db
+        .query(&format!(
+            "SELECT balance FROM bank_accounts WHERE company_id = {company_id}"
+        ))
+        .await
+        .map_err(|e| api_err(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    let mut bank_total = 0.0;
+    for r in &bank_rows {
+        bank_total += cell_str(r, 0).parse::<f64>().unwrap_or(0.0);
+    }
     let money = |v: f64| format!("{v:.2}");
     Ok(Json(json!({
         "company_id": company_id,
@@ -701,7 +725,7 @@ pub async fn dashboard(
         "vat_input": money(vat_in),
         "revenue_ytd": money(revenue),
         "expense_ytd": money(expense),
-        "bank_total": "0.00",
+        "bank_total": money(bank_total),
         "recent": recent
     })))
 }

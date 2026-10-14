@@ -5,6 +5,9 @@ import { RequireAuth } from "../../components/RequireAuth";
 import { useI18n } from "../../components/I18nProvider";
 import { ACTIVE_COMPANY_EVENT, api, downloadFile } from "../../lib/api";
 import { CompanyLocation, fetchCompanyLocations } from "../../lib/locations";
+import { Pagination } from "../../components/Pagination";
+
+const PAGE_SIZE = 50;
 
 interface Flow {
   date: string;
@@ -49,6 +52,7 @@ function Inner() {
   const [note, setNote] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [balOffset, setBalOffset] = useState(0);
 
   const locName = useCallback(
     (id: number) => locations.find((l) => l.id === id)?.name ?? (id > 0 ? String(id) : ""),
@@ -183,33 +187,48 @@ function Inner() {
           )}
           <FlowTable title={t("stock.receipts")} rows={report.receipts ?? []} locName={locName} reason={reason} t={t} />
           <FlowTable title={t("stock.issues")} rows={report.issues ?? []} locName={locName} reason={reason} t={t} />
-          <div className="card" style={{ marginTop: 12 }}>
-            <div className="content"><strong>{t("stock.balances")}</strong></div>
-            <table className="table">
-              <thead>
-                <tr>
-                  <th>{t("stock.product")}</th>
-                  <th>{t("stock.location")}</th>
-                  <th>{t("stock.quantity")}</th>
-                  <th>{t("stock.value")}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {(report.balances ?? []).length === 0 ? (
-                  <tr><td colSpan={4} className="muted">{t("common.empty")}</td></tr>
-                ) : (
-                  report.balances.map((b, i) => (
-                    <tr key={`${b.product_name}-${b.location_id}-${i}`}>
-                      <td>{b.product_name}</td>
-                      <td>{locName(b.location_id)}</td>
-                      <td>{b.quantity}</td>
-                      <td>{b.value}</td>
+          {(() => {
+            const bals = report.balances ?? [];
+            const pageCount = Math.max(1, Math.ceil(bals.length / PAGE_SIZE));
+            const page = Math.min(Math.floor(balOffset / PAGE_SIZE), pageCount - 1);
+            const start = page * PAGE_SIZE;
+            const pagedBals = bals.slice(start, start + PAGE_SIZE);
+            return (
+              <div className="card" style={{ marginTop: 12 }}>
+                <div className="content"><strong>{t("stock.balances")}</strong></div>
+                <table className="table">
+                  <thead>
+                    <tr>
+                      <th>{t("stock.product")}</th>
+                      <th>{t("stock.location")}</th>
+                      <th>{t("stock.quantity")}</th>
+                      <th>{t("stock.value")}</th>
                     </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
+                  </thead>
+                  <tbody>
+                    {bals.length === 0 ? (
+                      <tr><td colSpan={4} className="muted">{t("common.empty")}</td></tr>
+                    ) : (
+                      pagedBals.map((b, i) => (
+                        <tr key={`${b.product_name}-${b.location_id}-${i}`}>
+                          <td>{b.product_name}</td>
+                          <td>{locName(b.location_id)}</td>
+                          <td>{b.quantity}</td>
+                          <td>{b.value}</td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+                <Pagination
+                  total={bals.length}
+                  limit={PAGE_SIZE}
+                  offset={start}
+                  onPageChange={setBalOffset}
+                />
+              </div>
+            );
+          })()}
         </>
       )}
     </div>
@@ -229,6 +248,11 @@ function FlowTable({
   reason: (r: string) => string;
   t: (key: string) => string;
 }) {
+  const [offset, setOffset] = useState(0);
+  const pageCount = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
+  const page = Math.min(Math.floor(offset / PAGE_SIZE), pageCount - 1);
+  const start = page * PAGE_SIZE;
+  const paged = rows.slice(start, start + PAGE_SIZE);
   return (
     <div className="card" style={{ marginTop: 12 }}>
       <div className="content"><strong>{title}</strong></div>
@@ -248,7 +272,7 @@ function FlowTable({
           {rows.length === 0 ? (
             <tr><td colSpan={7} className="muted">{t("common.empty")}</td></tr>
           ) : (
-            rows.map((r, i) => (
+            paged.map((r, i) => (
               <tr key={`${r.date}-${r.document}-${r.product_name}-${i}`}>
                 <td>{r.date}</td>
                 <td>{r.document}</td>
@@ -262,6 +286,12 @@ function FlowTable({
           )}
         </tbody>
       </table>
+      <Pagination
+        total={rows.length}
+        limit={PAGE_SIZE}
+        offset={start}
+        onPageChange={setOffset}
+      />
     </div>
   );
 }

@@ -111,6 +111,20 @@ pub fn cp_vat(v: &str) -> String {
     t
 }
 
+/// Поле 06 в POKUPKI.TXT и PRODAGBI.TXT: ДДС номер (ако има), иначе ЕИК без BG префикс,
+/// или 999999999 за нерегистрирани/чуждестранни контрагенти без номер.
+pub fn cp_ident(vat: &str, eik: &str) -> String {
+    let v = cp_vat(vat);
+    if !v.is_empty() {
+        return v;
+    }
+    let e = eik.trim().to_ascii_uppercase();
+    if !e.is_empty() {
+        return e;
+    }
+    "999999999".into()
+}
+
 pub fn cp1251(s: &str) -> Vec<u8> {
     let mut out = Vec::with_capacity(s.len());
     for ch in s.chars() {
@@ -185,5 +199,13 @@ mod tests {
     fn cyrillic_byte() {
         assert_eq!(cp1251("Бага"), vec![0xC1, 0xE0, 0xE3, 0xE0]);
         assert_eq!(cp1251("A"), vec![b'A']);
+    }
+
+    #[test]
+    fn counterpart_ident_fallback() {
+        assert_eq!(cp_ident("BG123456789", "123456789"), "BG123456789");
+        assert_eq!(cp_ident("", "201559838"), "201559838");
+        assert_eq!(cp_ident("", "999999999"), "999999999");
+        assert_eq!(cp_ident("", ""), "999999999");
     }
 }

@@ -4,11 +4,14 @@
 // таба (Покупки / Продажби / Без ДДС). Клик върху ред зарежда записа.
 
 import { useCallback, useEffect, useMemo, useState, FormEvent, MouseEvent } from "react";
-import { api, fetchAll, ListResponse } from "../../lib/api";
+import { api, fetchAll } from "../../lib/api";
 import { formatBgDate, todayIso } from "../../lib/dates";
 import { useI18n } from "../../components/I18nProvider";
 import { RequireAuth } from "../../components/RequireAuth";
 import { IconButton } from "../../components/IconButton";
+import { Pagination } from "../../components/Pagination";
+
+const PAGE_SIZE = 50;
 
 interface JournalEntry {
   id: number;
@@ -102,6 +105,7 @@ function JournalInner() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [q, setQ] = useState("");
+  const [offset, setOffset] = useState(0);
 
   // модал
   const [modalOpen, setModalOpen] = useState(false);
@@ -122,8 +126,7 @@ function JournalInner() {
     setLoading(true);
     setError("");
     try {
-      const data = await api.get<ListResponse<JournalEntry>>("/v1/journal");
-      setEntries(data.items ?? []);
+      setEntries(await fetchAll<JournalEntry>("/v1/journal"));
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -237,6 +240,11 @@ function JournalInner() {
     );
   }, [entries, q]);
 
+  const pageCount = Math.max(1, Math.ceil(filteredEntries.length / PAGE_SIZE));
+  const page = Math.min(Math.floor(offset / PAGE_SIZE), pageCount - 1);
+  const start = page * PAGE_SIZE;
+  const pagedEntries = filteredEntries.slice(start, start + PAGE_SIZE);
+
   const filteredCounterparts = counterparts.filter((c) => {
     if (String(c.id) === counterpartId) return true;
     if (tab === "purchase") return c.counterpart_type !== "customer";
@@ -327,7 +335,7 @@ function JournalInner() {
                 </tr>
               </thead>
               <tbody>
-                {filteredEntries.map((en) => (
+                {pagedEntries.map((en) => (
                   <tr
                     key={en.id}
                     onClick={() => void openEdit(en)}
@@ -365,6 +373,12 @@ function JournalInner() {
             </table>
           </div>
         )}
+        <Pagination
+          total={filteredEntries.length}
+          limit={PAGE_SIZE}
+          offset={start}
+          onPageChange={setOffset}
+        />
       </div>
 
       {modalOpen && (

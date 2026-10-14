@@ -249,6 +249,21 @@ const PROD_SEL: &str = "SELECT id, company_id, name, code, description, unit, pr
 vat_rate, is_service, is_inventory, inventory_account_id, revenue_account_id, stock_quantity, \
 stock_value, is_active FROM products";
 
+async fn code_taken(st: &AppState, company_id: i32, code: &str, except: i32) -> Result<bool, ApiError> {
+    let t = code.trim();
+    if t.is_empty() {
+        return Ok(false);
+    }
+    let rows = st
+        .db
+        .query(&format!(
+            "SELECT id, code FROM products WHERE company_id = {company_id} AND id <> {except}"
+        ))
+        .await
+        .map_err(db_err)?;
+    Ok(rows.iter().any(|r| cell_str(r, 1).trim().eq_ignore_ascii_case(t)))
+}
+
 async fn product_load(st: &AppState, id: i32, company: i32) -> Result<Product, ApiError> {
     let rows = st
         .db
@@ -396,6 +411,9 @@ pub async fn product_create(
     if p.name.trim().is_empty() {
         return Err(api_err(StatusCode::UNPROCESSABLE_ENTITY, "name е задължително"));
     }
+    if code_taken(&st, p.company_id, &p.code, 0).await? {
+        return Err(api_err(StatusCode::CONFLICT, "артикул с този код вече съществува"));
+    }
     form::ensure_ref(&st.db, "accounts", p.inventory_account_id, p.company_id, "сметката").await?;
     form::ensure_ref(&st.db, "accounts", p.revenue_account_id, p.company_id, "сметката").await?;
     finish_product(&mut p);
@@ -443,6 +461,9 @@ pub async fn product_update(
     let qty = p.stock_quantity.clone();
     let val = p.stock_value.clone();
     apply_product(&mut p, obj)?;
+    if code_taken(&st, p.company_id, &p.code, p.id).await? {
+        return Err(api_err(StatusCode::CONFLICT, "артикул с този код вече съществува"));
+    }
     form::ensure_ref(&st.db, "accounts", p.inventory_account_id, p.company_id, "сметката").await?;
     form::ensure_ref(&st.db, "accounts", p.revenue_account_id, p.company_id, "сметката").await?;
     finish_product(&mut p);

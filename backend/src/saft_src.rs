@@ -46,8 +46,9 @@ fn party(tag: &str, id_tag: &str, p: &Party, id: &str, account: &str, sides: &st
 
 fn company(p: &Party) -> String {
     let name = clip(&p.name, 70);
+    let reg = eik_or0(&p.eik);
     let mut xml = saft_xml::open("CompanyStructure");
-    xml.push_str(&text("RegistrationNumber", &eik_or0(&p.eik)));
+    xml.push_str(&text("RegistrationNumber", &reg));
     if saft_xml::cyr(&name) || name.is_empty() {
         xml.push_str(&text("Name", &shown_name(&name, 70)));
     } else {
@@ -67,6 +68,14 @@ fn company(p: &Party) -> String {
             kind: &p.addr_type,
         },
     ));
+    let vat = clip(&p.vat, 35);
+    if !vat.is_empty() {
+        xml.push_str(&saft_xml::open("TaxRegistration"));
+        xml.push_str(&text("TaxRegistrationNumber", &reg));
+        xml.push_str(&text("TaxType", "100010"));
+        xml.push_str(&text("TaxNumber", &vat));
+        xml.push_str(&saft_xml::close("TaxRegistration"));
+    }
     xml.push_str(&text("RelatedParty", "N"));
     xml.push_str(&saft_xml::close("CompanyStructure"));
     xml

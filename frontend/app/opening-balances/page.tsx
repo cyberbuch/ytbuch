@@ -1,10 +1,13 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
-import { api, fetchAll, ListResponse } from "../../lib/api";
+import { api, fetchAll } from "../../lib/api";
 import { useI18n } from "../../components/I18nProvider";
 import { RequireAuth } from "../../components/RequireAuth";
 import { IconButton } from "../../components/IconButton";
+import { Pagination } from "../../components/Pagination";
+
+const PAGE_SIZE = 50;
 
 interface Account {
   id: number;
@@ -100,6 +103,7 @@ function ObInner() {
   const [quantity, setQuantity] = useState("");
   const [description, setDescription] = useState("");
   const [q, setQ] = useState("");
+  const [offset, setOffset] = useState(0);
 
   const acc = accounts.find((a) => String(a.id) === accountId);
   const side = acc ? naturalSide(acc.number) : "any";
@@ -114,12 +118,12 @@ function ObInner() {
         api.get<ObList>(`/v1/opening-balances?year=${year}`),
         fetchAll<Account>("/v1/accounts"),
         fetchAll<Counterpart>("/v1/counterparts"),
-        api.get<ListResponse<Product>>("/v1/products"),
+        fetchAll<Product>("/v1/products"),
       ]);
       setData(ob);
       setAccounts(accs);
       setCounterparts(cps);
-      setProducts(prs.items ?? []);
+      setProducts(prs);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -150,6 +154,10 @@ function ObInner() {
         .includes(s)
     );
   }, [data, q]);
+  const pageCount = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
+  const page = Math.min(Math.floor(offset / PAGE_SIZE), pageCount - 1);
+  const start = page * PAGE_SIZE;
+  const paged = rows.slice(start, start + PAGE_SIZE);
   const diff = Number(data?.difference || "0");
   const balanced = Math.abs(diff) < 0.005;
 
@@ -451,7 +459,7 @@ function ObInner() {
               </tr>
             </thead>
             <tbody>
-              {rows.map((r) => (
+              {paged.map((r) => (
                 <tr key={r.id}>
                   <td>
                     {r.account_number} {r.account_name}
@@ -475,6 +483,12 @@ function ObInner() {
             </tbody>
           </table>
         )}
+        <Pagination
+          total={rows.length}
+          limit={PAGE_SIZE}
+          offset={start}
+          onPageChange={setOffset}
+        />
       </div>
     </div>
   );

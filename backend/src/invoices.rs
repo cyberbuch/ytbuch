@@ -417,6 +417,33 @@ async fn insert_header(
     Ok(id)
 }
 
+async fn check_in_duplicate(
+    st: &AppState,
+    company_id: i32,
+    head: &Head,
+    exclude_id: i32,
+) -> Result<(), ApiError> {
+    if head.direction != "in" || head.number.trim().is_empty() || head.counterpart_id <= 0 {
+        return Ok(());
+    }
+    let rows = invoice_read::qry(
+        &st.db,
+        &format!(
+            "SELECT id, number FROM invoices WHERE company_id = {company_id} AND direction = 'in' AND counterpart_id = {} AND id != {exclude_id}",
+            head.counterpart_id
+        ),
+    )
+    .await?;
+    let want = head.number.trim();
+    if rows.iter().any(|r| cell_str(r, 1).trim().eq_ignore_ascii_case(want)) {
+        return Err(api_err(
+            StatusCode::CONFLICT,
+            "входящ документ с този номер от този доставчик вече съществува",
+        ));
+    }
+    Ok(())
+}
+
 pub async fn create(
     State(st): State<AppState>,
     headers: HeaderMap,
@@ -429,6 +456,7 @@ pub async fn create(
     if head.number.is_empty() {
         head.number = next_out(&st, company, &head.document_type).await?;
     }
+    check_in_duplicate(&st, company, &head, 0).await?;
     let name = invoice_lines::prepare(&st, company, &head, 0).await?;
     let id = insert_header(&st, company, &head, &name, &lines).await?;
     Ok((StatusCode::CREATED, Json(invoice_read::detail(&st, &sub, id).await?)))
@@ -456,6 +484,7 @@ pub async fn update(
     if head.direction == "out" && head.number.is_empty() {
         head.number = next_out(&st, company, &head.document_type).await?;
     }
+    check_in_duplicate(&st, company, &head, id).await?;
     let name = invoice_lines::prepare(&st, company, &head, id).await?;
     invoice_read::exe(
         &st.db,

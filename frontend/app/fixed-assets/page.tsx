@@ -3,12 +3,15 @@
 // ДМА — дълготрайни материални активи: активи (CRUD), категории (ЗКПО),
 // месечна амортизация (изчисляване + осчетоводяване).
 
-import { useCallback, useEffect, useState, FormEvent, Fragment } from "react";
-import { api, ListResponse } from "../../lib/api";
+import { useCallback, useEffect, useMemo, useState, FormEvent, Fragment } from "react";
+import { api, fetchAll } from "../../lib/api";
 import { useI18n } from "../../components/I18nProvider";
 import { RequireAuth } from "../../components/RequireAuth";
 import { CrudPage, CrudConfig } from "../../components/CrudPage";
 import { IconButton } from "../../components/IconButton";
+import { Pagination } from "../../components/Pagination";
+
+const PAGE_SIZE = 50;
 import {
   CompanyLocation,
   fetchCompanyLocations,
@@ -50,6 +53,8 @@ function FaInner() {
   const [locations, setLocations] = useState<CompanyLocation[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [q, setQ] = useState("");
+  const [offset, setOffset] = useState(0);
 
   // модал за актив
   const [modalOpen, setModalOpen] = useState(false);
@@ -80,11 +85,14 @@ function FaInner() {
     setLoading(true);
     setError("");
     try {
-      const a = await api.get<ListResponse<Fa>>("/v1/fixed-assets");
-      setAssets(a.items ?? []);
-      const c = await api.get<ListResponse<Fac>>("/v1/fixed-asset-categories");
-      setCategories(c.items ?? []);
-      setLocations(await fetchCompanyLocations());
+      const [a, c, locs] = await Promise.all([
+        fetchAll<Fa>("/v1/fixed-assets"),
+        fetchAll<Fac>("/v1/fixed-asset-categories"),
+        fetchCompanyLocations(),
+      ]);
+      setAssets(a);
+      setCategories(c);
+      setLocations(locs);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -96,8 +104,26 @@ function FaInner() {
     load();
   }, [load]);
 
-  const catName = (id?: number) =>
-    id ? categories.find((c) => c.id === id)?.name ?? String(id) : "";
+  const catName = useCallback(
+    (id?: number) =>
+      id ? categories.find((c) => c.id === id)?.name ?? String(id) : "",
+    [categories]
+  );
+
+  const filteredAssets = useMemo(() => {
+    const s = q.trim().toLowerCase();
+    if (!s) return assets;
+    return assets.filter((a) =>
+      `${a.inventory_number} ${a.name} ${catName(a.category_id)} ${a.serial_number}`
+        .toLowerCase()
+        .includes(s)
+    );
+  }, [assets, q, catName]);
+
+  const pageCount = Math.max(1, Math.ceil(filteredAssets.length / PAGE_SIZE));
+  const page = Math.min(Math.floor(offset / PAGE_SIZE), pageCount - 1);
+  const start = page * PAGE_SIZE;
+  const pagedAssets = filteredAssets.slice(start, start + PAGE_SIZE);
 
   const openCreate = () => {
     setForm({
@@ -326,7 +352,14 @@ function FaInner() {
 
       {tab === "assets" && (
         <div>
-          <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 12 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", gap: 12, marginBottom: 12 }}>
+            <input
+              className="input"
+              style={{ maxWidth: 360 }}
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              placeholder={t("common.search")}
+            />
             <button className="btn btn-primary" onClick={openCreate}>
               {t("common.create")}
             </button>
@@ -334,7 +367,7 @@ function FaInner() {
           <div className="card">
             {loading ? (
               <div className="content muted">{t("common.loading")}</div>
-            ) : assets.length === 0 ? (
+            ) : filteredAssets.length === 0 ? (
               <div className="content muted">{t("common.empty")}</div>
             ) : (
               <table className="table">
@@ -351,7 +384,7 @@ function FaInner() {
                   </tr>
                 </thead>
                 <tbody>
-                  {assets.map((a) => (
+                  {pagedAssets.map((a) => (
                     <Fragment key={a.id}>
                     <tr>
                       <td>{a.inventory_number}</td>
@@ -422,6 +455,12 @@ function FaInner() {
                 </tbody>
               </table>
             )}
+            <Pagination
+              total={filteredAssets.length}
+              limit={PAGE_SIZE}
+              offset={start}
+              onPageChange={setOffset}
+            />
           </div>
         </div>
       )}
