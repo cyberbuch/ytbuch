@@ -33,6 +33,11 @@ pub(crate) struct Head {
     pub(crate) vat_exemption_reason: String,
     pub(crate) original_invoice_id: i32,
     pub(crate) location_id: i32,
+    pub(crate) exclude_vat: i32,
+    pub(crate) vat_article: String,
+    pub(crate) customs_statistical: String,
+    pub(crate) customs_duty: String,
+    pub(crate) customs_vat: String,
 }
 
 fn opt_str(obj: &Map<String, Value>, key: &str, default: &str) -> Result<String, ApiError> {
@@ -106,6 +111,34 @@ fn parse_lines(value: &Value, doc_type: &str) -> Result<Vec<NewLine>, ApiError> 
     Ok(lines)
 }
 
+fn opt_money(obj: &Map<String, Value>, key: &str, default: &str) -> Result<String, ApiError> {
+    let raw = opt_str(obj, key, default)?;
+    let t = raw.trim();
+    if t.is_empty() {
+        return Ok(default.to_string());
+    }
+    let Some(c) = invoice_money::cents(t) else {
+        return Err(api_err(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            format!("{key} е невалидна сума"),
+        ));
+    };
+    Ok(invoice_money::money(c))
+}
+
+fn flag_int(obj: &Map<String, Value>, key: &str) -> Result<Option<i32>, ApiError> {
+    match obj.get(key) {
+        None | Some(Value::Null) => Ok(None),
+        Some(Value::Bool(b)) => Ok(Some(if *b { 1 } else { 0 })),
+        Some(Value::Number(n)) => Ok(Some(if n.as_i64().unwrap_or(0) != 0 { 1 } else { 0 })),
+        Some(Value::String(s)) => {
+            let t = s.trim();
+            Ok(Some(if t == "1" || t.eq_ignore_ascii_case("true") { 1 } else { 0 }))
+        }
+        _ => Err(api_err(StatusCode::UNPROCESSABLE_ENTITY, format!("{key} е невалиден флаг"))),
+    }
+}
+
 fn check_head(head: &Head) -> Result<(), ApiError> {
     if head.direction != "in" && head.direction != "out" {
         return Err(api_err(
@@ -119,7 +152,7 @@ fn check_head(head: &Head) -> Result<(), ApiError> {
             "issue_date е задължително",
         ));
     }
-    if head.counterpart_id <= 0 {
+    if head.counterpart_id <= 0 && head.document_type != "07" {
         return Err(api_err(
             StatusCode::UNPROCESSABLE_ENTITY,
             "counterpart_id е задължително",
@@ -137,7 +170,7 @@ fn check_head(head: &Head) -> Result<(), ApiError> {
             "известието трябва да сочи към първоначална фактура",
         ));
     }
-    if head.direction == "in" && head.number.trim().is_empty() {
+    if head.direction == "in" && head.document_type != "09" && head.number.trim().is_empty() {
         return Err(api_err(
             StatusCode::UNPROCESSABLE_ENTITY,
             "номерът на входящия документ е задължителен",
@@ -147,8 +180,11 @@ fn check_head(head: &Head) -> Result<(), ApiError> {
         ("discount_percent", head.discount_percent.as_str()),
         ("discount_amount", head.discount_amount.as_str()),
         ("currency_rate", head.currency_rate.as_str()),
+        ("customs_statistical", head.customs_statistical.as_str()),
+        ("customs_duty", head.customs_duty.as_str()),
+        ("customs_vat", head.customs_vat.as_str()),
     ] {
-        if invoice_money::cents(value).is_none() {
+        if !value.trim().is_empty() && invoice_money::cents(value).is_none() {
             return Err(api_err(
                 StatusCode::UNPROCESSABLE_ENTITY,
                 format!("{key} е невалидна сума"),
@@ -197,6 +233,11 @@ fn head_from_create(obj: &Map<String, Value>) -> Result<(Head, Vec<NewLine>), Ap
         vat_exemption_reason: opt_str(obj, "vat_exemption_reason", "")?,
         original_invoice_id: form::i32_field(obj, "original_invoice_id")?.unwrap_or(0),
         location_id: form::i32_field(obj, "location_id")?.unwrap_or(0),
+        exclude_vat: flag_int(obj, "exclude_vat")?.unwrap_or(0),
+        vat_article: opt_str(obj, "vat_article", "")?,
+        customs_statistical: opt_money(obj, "customs_statistical", "")?,
+        customs_duty: opt_money(obj, "customs_duty", "")?,
+        customs_vat: opt_money(obj, "customs_vat", "")?,
     };
     check_head(&head)?;
     let lines = match obj.get("lines") {
@@ -260,6 +301,21 @@ fn overlay(head: &mut Head, obj: &Map<String, Value>) -> Result<Option<Vec<NewLi
     if let Some(v) = form::i32_field(obj, "location_id")? {
         head.location_id = v;
     }
+    if let Some(v) = flag_int(obj, "exclude_vat")? {
+        head.exclude_vat = v;
+    }
+    if let Some(v) = form::str_field(obj, "vat_article")? {
+        head.vat_article = v;
+    }
+    if obj.contains_key("customs_statistical") {
+        head.customs_statistical = opt_money(obj, "customs_statistical", "")?;
+    }
+    if obj.contains_key("customs_duty") {
+        head.customs_duty = opt_money(obj, "customs_duty", "")?;
+    }
+    if obj.contains_key("customs_vat") {
+        head.customs_vat = opt_money(obj, "customs_vat", "")?;
+    }
     if head.tax_event_date.trim().is_empty() {
         head.tax_event_date = head.issue_date.clone();
     }
@@ -290,6 +346,11 @@ fn head_of(inv: &Inv) -> Head {
         vat_exemption_reason: inv.vat_exemption_reason.clone(),
         original_invoice_id: inv.original_invoice_id,
         location_id: inv.location_id,
+        exclude_vat: inv.exclude_vat,
+        vat_article: inv.vat_article.clone(),
+        customs_statistical: inv.customs_statistical.clone(),
+        customs_duty: inv.customs_duty.clone(),
+        customs_vat: inv.customs_vat.clone(),
     }
 }
 
@@ -304,6 +365,11 @@ fn extra_of(head: &Head, journal_id: i32) -> Extra {
         original_invoice_id: head.original_invoice_id,
         location_id: head.location_id,
         journal_entry_id: journal_id,
+        exclude_vat: head.exclude_vat,
+        vat_article: head.vat_article.clone(),
+        customs_statistical: head.customs_statistical.clone(),
+        customs_duty: head.customs_duty.clone(),
+        customs_vat: head.customs_vat.clone(),
     }
 }
 
@@ -350,7 +416,7 @@ pub(crate) async fn next_out(st: &AppState, company_id: i32, doc_type: &str) -> 
     let rows = invoice_read::qry(
         &st.db,
         &format!(
-            "SELECT document_type, number FROM invoices WHERE company_id = {company_id} AND direction = 'out'"
+            "SELECT document_type, number FROM invoices WHERE company_id = {company_id} AND (direction = 'out' OR document_type = '09')"
         ),
     )
     .await?;
@@ -370,16 +436,29 @@ pub(crate) async fn next_out(st: &AppState, company_id: i32, doc_type: &str) -> 
     Ok(pad_num(base.saturating_add(1), pad))
 }
 
-async fn insert_header(
+pub(crate) async fn insert_header(
     st: &AppState,
     company_id: i32,
     head: &Head,
     name: &str,
     lines: &[NewLine],
 ) -> Result<i32, ApiError> {
-    let net = invoice_money::sum_amounts(&lines.iter().map(|l| l.net_amount.clone()).collect::<Vec<_>>());
-    let vat = invoice_money::sum_amounts(&lines.iter().map(|l| l.vat_amount.clone()).collect::<Vec<_>>());
-    let total = invoice_money::sum_amounts(&lines.iter().map(|l| l.total_amount.clone()).collect::<Vec<_>>());
+    let (net, vat, total) = if head.document_type == "07" && !head.customs_statistical.trim().is_empty() {
+        let s = invoice_money::cents(&head.customs_statistical).unwrap_or(0);
+        let d = invoice_money::cents(&head.customs_duty).unwrap_or(0);
+        let v = invoice_money::cents(&head.customs_vat).unwrap_or(0);
+        (
+            invoice_money::money(s + d),
+            invoice_money::money(v),
+            invoice_money::money(s + d + v),
+        )
+    } else {
+        (
+            invoice_money::sum_amounts(&lines.iter().map(|l| l.net_amount.clone()).collect::<Vec<_>>()),
+            invoice_money::sum_amounts(&lines.iter().map(|l| l.vat_amount.clone()).collect::<Vec<_>>()),
+            invoice_money::sum_amounts(&lines.iter().map(|l| l.total_amount.clone()).collect::<Vec<_>>()),
+        )
+    };
     let id = invoice_read::nid(&st.db, "invoices").await?;
     let inserted = invoice_read::exe(
         &st.db,
@@ -481,7 +560,7 @@ pub async fn update(
     let obj = form::object(&body)?;
     let mut head = head_of(&inv);
     let lines = overlay(&mut head, obj)?;
-    if head.direction == "out" && head.number.is_empty() {
+    if (head.direction == "out" || head.document_type == "09") && head.number.is_empty() {
         head.number = next_out(&st, company, &head.document_type).await?;
     }
     check_in_duplicate(&st, company, &head, id).await?;
@@ -509,6 +588,21 @@ pub async fn update(
     if let Some(lines) = lines {
         invoice_lines::replace_lines(&st, id, company, &lines).await?;
         invoice_lines::write_totals(&st, id, &lines).await?;
+    }
+    if head.document_type == "07" && !head.customs_statistical.trim().is_empty() {
+        let s = invoice_money::cents(&head.customs_statistical).unwrap_or(0);
+        let d = invoice_money::cents(&head.customs_duty).unwrap_or(0);
+        let v = invoice_money::cents(&head.customs_vat).unwrap_or(0);
+        invoice_read::exe(
+            &st.db,
+            &format!(
+                "UPDATE invoices SET net_amount = {}, vat_amount = {}, total_amount = {} WHERE id = {id}",
+                lit(&invoice_money::money(s + d)),
+                lit(&invoice_money::money(v)),
+                lit(&invoice_money::money(s + d + v)),
+            ),
+        )
+        .await?;
     }
     Ok(Json(invoice_read::detail(&st, &sub, id).await?))
 }
@@ -550,7 +644,7 @@ pub async fn next_number(
     let document_type = q.document_type.unwrap_or_else(|| "01".into());
     let document_type = document_type.trim();
     let document_type = if document_type.is_empty() { "01" } else { document_type };
-    let number = if direction == "out" {
+    let number = if direction == "out" || document_type == "09" {
         next_out(&st, company, document_type).await?
     } else {
         String::new()

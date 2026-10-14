@@ -15,8 +15,9 @@ const SEL: &str = "SELECT i.id, i.company_id, i.direction, i.document_type, i.nu
 i.due_date, i.counterpart_id, i.counterpart_name, i.currency, i.net_amount, i.vat_amount, \
 i.total_amount, i.status, i.payment_method, i.notes, e.tax_event_date, e.accounting_month, \
 e.currency_rate, e.discount_percent, e.discount_amount, e.vat_exemption_reason, \
-e.original_invoice_id, e.location_id, e.journal_entry_id \
-FROM invoices i LEFT JOIN invoice_extra e ON i.id = e.id";
+e.original_invoice_id, e.location_id, e.journal_entry_id, \
+f.exclude_vat, f.vat_article, f.customs_statistical, f.customs_duty, f.customs_vat \
+FROM invoices i LEFT JOIN invoice_extra e ON i.id = e.id LEFT JOIN invoice_flags f ON i.id = f.id";
 
 pub(crate) struct Inv {
     pub id: i32,
@@ -44,6 +45,11 @@ pub(crate) struct Inv {
     pub original_invoice_id: i32,
     pub location_id: i32,
     pub journal_entry_id: i32,
+    pub exclude_vat: i32,
+    pub vat_article: String,
+    pub customs_statistical: String,
+    pub customs_duty: String,
+    pub customs_vat: String,
 }
 
 pub(crate) struct Line {
@@ -70,6 +76,11 @@ pub(crate) struct Extra {
     pub original_invoice_id: i32,
     pub location_id: i32,
     pub journal_entry_id: i32,
+    pub exclude_vat: i32,
+    pub vat_article: String,
+    pub customs_statistical: String,
+    pub customs_duty: String,
+    pub customs_vat: String,
 }
 
 pub(crate) async fn qry(db: &Db, sql: &str) -> Result<Vec<Row>, ApiError> {
@@ -134,6 +145,11 @@ fn from_row(r: &Row) -> Inv {
         original_invoice_id: cell_i32_at(r, 22),
         location_id: cell_i32_at(r, 23),
         journal_entry_id: cell_i32_at(r, 24),
+        exclude_vat: cell_i32_at(r, 25),
+        vat_article: cell_str(r, 26),
+        customs_statistical: cell_str(r, 27),
+        customs_duty: cell_str(r, 28),
+        customs_vat: cell_str(r, 29),
     }
 }
 
@@ -246,6 +262,11 @@ pub(crate) async fn invoice_value(db: &Db, mut inv: Inv, with_lines: bool) -> Re
         "discount_amount": inv.discount_amount,
         "vat_exemption_reason": inv.vat_exemption_reason,
         "location_id": inv.location_id,
+        "exclude_vat": inv.exclude_vat,
+        "vat_article": inv.vat_article,
+        "customs_statistical": inv.customs_statistical,
+        "customs_duty": inv.customs_duty,
+        "customs_vat": inv.customs_vat,
     });
     if inv.original_invoice_id > 0 {
         v["original_invoice_id"] = json!(inv.original_invoice_id);
@@ -340,6 +361,34 @@ pub(crate) async fn save_extra(db: &Db, id: i32, e: &Extra) -> Result<(), ApiErr
         )
         .await?;
     }
+    let frows = qry(db, &format!("SELECT id FROM invoice_flags WHERE id = {id}")).await?;
+    if frows.is_empty() {
+        exe(
+            db,
+            &format!(
+                "INSERT INTO invoice_flags (id, exclude_vat, vat_article, customs_statistical, customs_duty, customs_vat) VALUES ({id}, {}, {}, {}, {}, {})",
+                e.exclude_vat,
+                lit(&e.vat_article),
+                lit(&e.customs_statistical),
+                lit(&e.customs_duty),
+                lit(&e.customs_vat)
+            ),
+        )
+        .await?;
+    } else {
+        exe(
+            db,
+            &format!(
+                "UPDATE invoice_flags SET exclude_vat = {}, vat_article = {}, customs_statistical = {}, customs_duty = {}, customs_vat = {} WHERE id = {id}",
+                e.exclude_vat,
+                lit(&e.vat_article),
+                lit(&e.customs_statistical),
+                lit(&e.customs_duty),
+                lit(&e.customs_vat)
+            ),
+        )
+        .await?;
+    }
     Ok(())
 }
 
@@ -412,6 +461,7 @@ pub(crate) async fn wipe_invoice(db: &Db, id: i32) -> Result<(), ApiError> {
         exe(db, &format!("DELETE FROM invoice_line_extra WHERE id = {line_id}")).await?;
     }
     exe(db, &format!("DELETE FROM invoice_lines WHERE invoice_id = {id}")).await?;
+    exe(db, &format!("DELETE FROM invoice_flags WHERE id = {id}")).await?;
     exe(db, &format!("DELETE FROM invoice_extra WHERE id = {id}")).await?;
     exe(db, &format!("DELETE FROM invoices WHERE id = {id}")).await?;
     Ok(())

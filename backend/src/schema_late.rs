@@ -82,4 +82,12 @@ CREATE TABLE IF NOT EXISTS material_issue_lines (
     inventory_account_id INTEGER,
     line_no INTEGER
 );
+CREATE TABLE IF NOT EXISTS invoice_flags (
+    id INTEGER PRIMARY KEY,
+    exclude_vat INTEGER,
+    vat_article VARCHAR,
+    customs_statistical VARCHAR,
+    customs_duty VARCHAR,
+    customs_vat VARCHAR
+);
 ";

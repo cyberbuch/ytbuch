@@ -32,6 +32,7 @@ mod idoc_print;
 mod idocs;
 mod invoice_print;
 mod invoice_read;
+mod invoice_special;
 mod invoice_ubl;
 mod invoices;
 mod journal_manual;
@@ -310,6 +311,8 @@ async fn main() {
                 .delete(invoices::delete),
         )
         .route("/v1/invoices/{id}/post", post(invoice_post::post))
+        .route("/v1/invoices/{id}/issue-protocol", post(invoice_special::issue_protocol))
+        .route("/v1/invoices/{id}/issue-customs", post(invoice_special::issue_customs))
         .route("/v1/invoices/{id}/print", get(invoice_print::print))
         .route("/v1/invoices/{id}/ubl", get(invoice_ubl::export))
         .route("/v1/journal", get(lists::journal).post(journal_manual::create))

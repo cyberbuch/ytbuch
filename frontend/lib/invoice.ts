@@ -114,6 +114,11 @@ export interface Invoice {
   original_invoice_id?: number;
   journal_entry_id?: number;
   location_id?: number;
+  exclude_vat?: number;
+  vat_article?: string;
+  customs_statistical?: string;
+  customs_duty?: string;
+  customs_vat?: string;
   lines?: InvoiceLine[];
   counterpart?: InvoiceParty;
   company?: InvoiceParty;
@@ -236,7 +241,7 @@ export function docTypeTitle(t: string): string {
     case "07":
       return "МИТНИЧЕСКА ДЕКЛАРАЦИЯ";
     case "09":
-      return "ПРОТОКОЛ";
+      return "ПРОТОКОЛ ПО ЧЛ. 117 ОТ ЗДДС";
     case "11":
       return "ФАКТУРА - КАСОВА ОТЧЕТНОСТ";
     case "12":

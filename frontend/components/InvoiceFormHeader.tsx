@@ -33,6 +33,16 @@ export function InvoiceFormHeader({
   selectedCp,
   setCpOpen,
   setFormError,
+  excludeVat,
+  setExcludeVat,
+  vatArticle,
+  setVatArticle,
+  customsStatistical,
+  setCustomsStatistical,
+  customsDuty,
+  setCustomsDuty,
+  customsVat,
+  setCustomsVat,
 }: {
   t: (k: string) => string;
   direction: string;
@@ -61,7 +71,21 @@ export function InvoiceFormHeader({
   selectedCp: InvoiceFormCounterpart | undefined;
   setCpOpen: (v: boolean) => void;
   setFormError: (v: string) => void;
+  excludeVat: boolean;
+  setExcludeVat: (v: boolean) => void;
+  vatArticle: string;
+  setVatArticle: (v: string) => void;
+  customsStatistical: string;
+  setCustomsStatistical: (v: string) => void;
+  customsDuty: string;
+  setCustomsDuty: (v: string) => void;
+  customsVat: string;
+  setCustomsVat: (v: string) => void;
 }) {
+  const isCustoms = direction === "in" && documentType === "07";
+  const isProtocol = direction === "in" && documentType === "09";
+  const canExcludeVat =
+    direction === "in" && documentType !== "07" && documentType !== "09";
   return (
     <>
       <section className="card invoice-section">
@@ -121,16 +145,16 @@ export function InvoiceFormHeader({
           )}
           <div className="field">
             <label className="label">
-              {t("invoices.number")}
-              {direction === "in" ? " *" : ""}
+              {isCustoms ? t("invoices.customs_mrn") : t("invoices.number")}
+              {direction === "in" && documentType !== "09" ? " *" : ""}
             </label>
             <input
               className="input"
               value={number}
               onChange={(e) => setNumber(e.target.value)}
-              required={direction === "in"}
+              required={direction === "in" && documentType !== "09"}
               placeholder={
-                direction === "in"
+                direction === "in" && documentType !== "09"
                   ? t("invoices.number_in_hint")
                   : t("invoices.number_out_hint")
               }
@@ -208,14 +232,17 @@ export function InvoiceFormHeader({
             </div>
           )}
         </div>
-        {docTypeRequiresOriginal(documentType) && (
+        {(docTypeRequiresOriginal(documentType) || isProtocol || isCustoms) && (
           <div className="field">
-            <label className="label">{t("invoices.original_invoice")} *</label>
+            <label className="label">
+              {t("invoices.original_invoice")}
+              {docTypeRequiresOriginal(documentType) ? " *" : ""}
+            </label>
             <select
               className="select"
               value={originalInvoiceId}
               onChange={(e) => setOriginalInvoiceId(e.target.value)}
-              required
+              required={docTypeRequiresOriginal(documentType)}
             >
               <option value="">—</option>
               {invoices
@@ -228,12 +255,132 @@ export function InvoiceFormHeader({
             </select>
           </div>
         )}
+        {isProtocol && (
+          <div className="field" style={{ marginTop: 12 }}>
+            <label className="label">{t("invoices.vat_article")}</label>
+            <select
+              className="select"
+              value={vatArticle || "чл. 117"}
+              onChange={(e) => setVatArticle(e.target.value)}
+            >
+              <option value="чл. 117">чл. 117 от ЗДДС (ВОП / чл. 82, ал. 2)</option>
+              <option value="чл. 163а">чл. 163а от ЗДДС (обратно начисляване)</option>
+              <option value="чл. 151в">чл. 151в от ЗДДС</option>
+            </select>
+            <p className="muted" style={{ marginTop: 6 }}>
+              {t("invoices.protocol_hint")}
+            </p>
+          </div>
+        )}
+        {isCustoms && (
+          <div
+            style={{
+              marginTop: 14,
+              padding: 14,
+              borderRadius: 8,
+              border: "1px solid var(--border)",
+              background: "var(--surface-2, rgba(0,0,0,0.03))",
+            }}
+          >
+            <h3 style={{ margin: "0 0 8px", fontSize: 15 }}>
+              {t("invoices.customs_modal_title")}
+            </h3>
+            <p className="muted" style={{ margin: "0 0 12px" }}>
+              {t("invoices.customs_hint")}
+            </p>
+            <div className="form-grid">
+              <div className="field">
+                <label className="label">{t("invoices.customs_statistical")}</label>
+                <input
+                  className="input"
+                  value={customsStatistical}
+                  onChange={(e) => {
+                    const st = e.target.value;
+                    setCustomsStatistical(st);
+                    const s = parseFloat(st.replace(",", ".")) || 0;
+                    const d = parseFloat(customsDuty.replace(",", ".")) || 0;
+                    setCustomsVat(((s + d) * 0.2).toFixed(2));
+                  }}
+                  placeholder="0.00"
+                />
+              </div>
+              <div className="field">
+                <label className="label">{t("invoices.customs_duty")}</label>
+                <input
+                  className="input"
+                  value={customsDuty}
+                  onChange={(e) => {
+                    const du = e.target.value;
+                    setCustomsDuty(du);
+                    const s = parseFloat(customsStatistical.replace(",", ".")) || 0;
+                    const d = parseFloat(du.replace(",", ".")) || 0;
+                    setCustomsVat(((s + d) * 0.2).toFixed(2));
+                  }}
+                  placeholder="0.00"
+                />
+              </div>
+              <div className="field">
+                <label className="label">{t("invoices.customs_vat")}</label>
+                <input
+                  className="input"
+                  value={customsVat}
+                  onChange={(e) => setCustomsVat(e.target.value)}
+                  placeholder="0.00"
+                />
+              </div>
+            </div>
+          </div>
+        )}
+        {canExcludeVat && (
+          <div style={{ marginTop: 14 }}>
+            <label
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 8,
+                fontWeight: 500,
+                cursor: "pointer",
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={excludeVat}
+                onChange={(e) => setExcludeVat(e.target.checked)}
+              />
+              {t("invoices.exclude_vat")}
+            </label>
+            {excludeVat && (
+              <div
+                style={{
+                  marginTop: 10,
+                  padding: "10px 14px",
+                  borderRadius: 8,
+                  border: "1px solid #d97706",
+                  background: "rgba(245, 158, 11, 0.12)",
+                  color: "var(--fg)",
+                  fontSize: 14,
+                }}
+              >
+                ⚠️ {t("invoices.exclude_vat_warning")}
+              </div>
+            )}
+          </div>
+        )}
       </section>
 
       <section className="card invoice-section">
         <h2 className="invoice-section-title">
-          {direction === "in" ? t("invoices.supplier") : t("invoices.recipient")}
+          {isCustoms
+            ? t("invoices.customs_agency")
+            : direction === "in"
+              ? t("invoices.supplier")
+              : t("invoices.recipient")}
         </h2>
+        {isCustoms && !selectedCp && (
+          <p className="muted" style={{ marginBottom: 8 }}>
+            {t("invoices.customs_agency")} — Агенция „Митници“ (сметка 458)
+          </p>
+        )}
         <button
           type="button"
           className={`btn picker-trigger${selectedCp ? "" : " picker-empty"}`}
@@ -241,7 +388,9 @@ export function InvoiceFormHeader({
         >
           {selectedCp
             ? `${selectedCp.eik ? `${selectedCp.eik} — ` : ""}${selectedCp.name}`
-            : t("invoices.pick_counterpart")}
+            : isCustoms
+              ? t("invoices.customs_agency")
+              : t("invoices.pick_counterpart")}
         </button>
         {selectedCp && (
           <div className="party-preview">

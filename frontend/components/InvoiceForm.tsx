@@ -62,6 +62,22 @@ export function InvoiceForm({ mode, invoiceId }: Props) {
   const [vatExemption, setVatExemption] = useState("");
   const [originalInvoiceId, setOriginalInvoiceId] = useState("");
   const [pricesIncludeVat, setPricesIncludeVat] = useState(false);
+  const [excludeVat, setExcludeVat] = useState(false);
+  const [vatArticle, setVatArticle] = useState("чл. 117");
+  const [customsStatistical, setCustomsStatistical] = useState("");
+  const [customsDuty, setCustomsDuty] = useState("");
+  const [customsVat, setCustomsVat] = useState("");
+  const [protoModal, setProtoModal] = useState(false);
+  const [protoArticle, setProtoArticle] = useState("чл. 117");
+  const [protoRate, setProtoRate] = useState("20");
+  const [protoDate, setProtoDate] = useState(todayIso());
+  const [protoNumber, setProtoNumber] = useState("");
+  const [customsModal, setCustomsModal] = useState(false);
+  const [mrnNumber, setMrnNumber] = useState("");
+  const [mrnDate, setMrnDate] = useState(todayIso());
+  const [mrnStat, setMrnStat] = useState("");
+  const [mrnDuty, setMrnDuty] = useState("0.00");
+  const [mrnVat, setMrnVat] = useState("");
 
   const [counterpartId, setCounterpartId] = useState("");
   const [counterparts, setCounterparts] = useState<Counterpart[]>([]);
@@ -110,7 +126,7 @@ export function InvoiceForm({ mode, invoiceId }: Props) {
 
   const loadNumber = useCallback(
     async (dt: string, dir: string) => {
-      if (dir !== "out") {
+      if (dir !== "out" && dt !== "09") {
         setNumber("");
         return;
       }
@@ -168,6 +184,11 @@ export function InvoiceForm({ mode, invoiceId }: Props) {
         setOriginalInvoiceId(
           inv.original_invoice_id ? String(inv.original_invoice_id) : ""
         );
+        setExcludeVat(Number(inv.exclude_vat || 0) === 1);
+        setVatArticle(inv.vat_article || "чл. 117");
+        setCustomsStatistical(inv.customs_statistical || "");
+        setCustomsDuty(inv.customs_duty || "");
+        setCustomsVat(inv.customs_vat || "");
         setCounterpartId(inv.counterpart_id ? String(inv.counterpart_id) : "");
         const party = inv.counterpart;
         if (party && (party.id || inv.counterpart_id)) {
@@ -290,74 +311,119 @@ export function InvoiceForm({ mode, invoiceId }: Props) {
     setItemQuery("");
   };
 
+  const saveUnderlyingInvoice = async (): Promise<number | null> => {
+    setFormError("");
+    if (!counterpartId && documentType !== "07") {
+      setFormError(t("invoices.pick_counterpart"));
+      return null;
+    }
+    if (direction === "in" && documentType !== "09" && !number.trim()) {
+      setFormError(t("invoices.number_in_hint"));
+      return null;
+    }
+    if (docTypeRequiresOriginal(documentType) && !originalInvoiceId) {
+      setFormError(t("invoices.need_original"));
+      return null;
+    }
+    if (hasZeroVat && !excludeVat && documentType !== "07" && documentType !== "09" && !vatExemption) {
+      setFormError(t("invoices.vat_exemption_pick"));
+      return null;
+    }
+    const computed = pricedLines.map((l) => calcLine(l, pricesIncludeVat, isCredit));
+    const payloadLines = applyDiscountToLines(computed, discountPercent).map((l) => ({
+      product_id: l.product_id,
+      description: l.description,
+      quantity: l.quantity,
+      unit: l.unit,
+      unit_price: round2(num(l.unit_price)),
+      vat_rate: l.vat_rate,
+      net_amount: l.net_amount,
+      vat_amount: l.vat_amount,
+      total_amount: l.total_amount,
+    }));
+    const payload = {
+      direction,
+      document_type: documentType,
+      number,
+      issue_date: issueDate,
+      tax_event_date: taxEventDate || issueDate,
+      due_date: dueDate,
+      accounting_month: issueDate.slice(0, 7),
+      counterpart_id: counterpartId ? Number(counterpartId) : 0,
+      currency,
+      currency_rate: currency === "EUR" ? "1" : currencyRate,
+      payment_method: paymentMethod,
+      notes,
+      discount_percent: discountPercent || "0",
+      discount_amount: totals.discount,
+      vat_exemption_reason: vatExemption,
+      original_invoice_id: originalInvoiceId ? Number(originalInvoiceId) : 0,
+      location_id: Number(locationId) || 0,
+      exclude_vat:
+        direction === "in" && documentType !== "07" && documentType !== "09" && excludeVat
+          ? 1
+          : 0,
+      vat_article: documentType === "09" ? vatArticle : "",
+      customs_statistical: documentType === "07" ? customsStatistical : "",
+      customs_duty: documentType === "07" ? customsDuty : "",
+      customs_vat: documentType === "07" ? customsVat : "",
+      lines: payloadLines,
+    };
+    if (mode === "edit" && invoiceId) {
+      await api.patch(`/v1/invoices/${invoiceId}`, payload);
+      return invoiceId;
+    }
+    const created = await api.post<Invoice>("/v1/invoices", payload);
+    return created.id;
+  };
+
   const handleSave = async (e: FormEvent) => {
     e.preventDefault();
     setSaving(true);
-    setFormError("");
     try {
-      if (!counterpartId) {
-        setFormError(t("invoices.pick_counterpart"));
-        setSaving(false);
-        return;
-      }
-      if (direction === "in" && !number.trim()) {
-        setFormError(t("invoices.number_in_hint"));
-        setSaving(false);
-        return;
-      }
-      if (docTypeRequiresOriginal(documentType) && !originalInvoiceId) {
-        setFormError(t("invoices.need_original"));
-        setSaving(false);
-        return;
-      }
-      if (hasZeroVat && !vatExemption) {
-        setFormError(t("invoices.vat_exemption_pick"));
-        setSaving(false);
-        return;
-      }
-      const computed = pricedLines.map((l) =>
-        calcLine(l, pricesIncludeVat, isCredit)
-      );
-      const payloadLines = applyDiscountToLines(computed, discountPercent).map(
-        (l) => ({
-          product_id: l.product_id,
-          description: l.description,
-          quantity: l.quantity,
-          unit: l.unit,
-          unit_price: round2(num(l.unit_price)),
-          vat_rate: l.vat_rate,
-          net_amount: l.net_amount,
-          vat_amount: l.vat_amount,
-          total_amount: l.total_amount,
-        })
-      );
-      const payload = {
-        direction,
-        document_type: documentType,
-        number,
-        issue_date: issueDate,
-        tax_event_date: taxEventDate || issueDate,
-        due_date: dueDate,
-        accounting_month: issueDate.slice(0, 7),
-        counterpart_id: Number(counterpartId),
-        currency,
-        currency_rate: currency === "EUR" ? "1" : currencyRate,
-        payment_method: paymentMethod,
-        notes,
-        discount_percent: discountPercent || "0",
-        discount_amount: totals.discount,
-        vat_exemption_reason: vatExemption,
-        original_invoice_id: originalInvoiceId ? Number(originalInvoiceId) : 0,
-        location_id: Number(locationId) || 0,
-        lines: payloadLines,
-      };
-      if (mode === "edit" && invoiceId) {
-        await api.patch(`/v1/invoices/${invoiceId}`, payload);
-        router.push(`/invoices/${invoiceId}`);
-      } else {
-        const created = await api.post<Invoice>("/v1/invoices", payload);
-        router.push(`/invoices/${created.id}`);
-      }
+      const id = await saveUnderlyingInvoice();
+      if (id) router.push(`/invoices/${id}`);
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleIssueProtocol = async () => {
+    setSaving(true);
+    try {
+      const id = await saveUnderlyingInvoice();
+      if (!id) return;
+      const proto = await api.post<Invoice>(`/v1/invoices/${id}/issue-protocol`, {
+        vat_article: protoArticle,
+        vat_rate: protoRate,
+        issue_date: protoDate || issueDate,
+        number: protoNumber,
+      });
+      setProtoModal(false);
+      router.push(`/invoices/${proto.id}`);
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleIssueCustoms = async () => {
+    setSaving(true);
+    try {
+      const id = await saveUnderlyingInvoice();
+      if (!id) return;
+      const cust = await api.post<Invoice>(`/v1/invoices/${id}/issue-customs`, {
+        number: mrnNumber,
+        issue_date: mrnDate || issueDate,
+        customs_statistical: mrnStat || totals.taxable,
+        customs_duty: mrnDuty || "0.00",
+        customs_vat: mrnVat,
+      });
+      setCustomsModal(false);
+      router.push(`/invoices/${cust.id}`);
     } catch (err) {
       setFormError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -399,6 +465,16 @@ export function InvoiceForm({ mode, invoiceId }: Props) {
         selectedCp={selectedCp}
         setCpOpen={setCpOpen}
         setFormError={setFormError}
+        excludeVat={excludeVat}
+        setExcludeVat={setExcludeVat}
+        vatArticle={vatArticle}
+        setVatArticle={setVatArticle}
+        customsStatistical={customsStatistical}
+        setCustomsStatistical={setCustomsStatistical}
+        customsDuty={customsDuty}
+        setCustomsDuty={setCustomsDuty}
+        customsVat={customsVat}
+        setCustomsVat={setCustomsVat}
       />
       <InvoiceFormLines
         t={t}
@@ -448,7 +524,7 @@ export function InvoiceForm({ mode, invoiceId }: Props) {
               onChange={(e) => setNotes(e.target.value)}
             />
           </div>
-          {hasZeroVat && (
+          {hasZeroVat && !excludeVat && documentType !== "07" && documentType !== "09" && (
             <div className="field" style={{ gridColumn: "1 / -1" }}>
               <label className="label">{t("invoices.vat_exemption")} *</label>
               <input
@@ -514,14 +590,212 @@ export function InvoiceForm({ mode, invoiceId }: Props) {
       </section>
 
       {formError && <div className="error-text">{formError}</div>}
-      <div className="form-actions">
+      <div className="form-actions" style={{ flexWrap: "wrap", gap: 8 }}>
         <button type="button" className="btn" onClick={() => router.push("/invoices")}>
           {t("common.cancel")}
         </button>
+        {direction === "in" && documentType !== "07" && documentType !== "09" && excludeVat && (
+          <>
+            <button
+              type="button"
+              className="btn"
+              disabled={saving}
+              onClick={async () => {
+                setProtoDate(issueDate);
+                try {
+                  const r = await api.get<{ number: string }>(
+                    "/v1/invoices/next-number?document_type=09&direction=in"
+                  );
+                  setProtoNumber(r.number);
+                } catch {
+                  setProtoNumber("");
+                }
+                setProtoModal(true);
+              }}
+            >
+              {t("invoices.issue_protocol")}
+            </button>
+            <button
+              type="button"
+              className="btn"
+              disabled={saving}
+              onClick={() => {
+                setMrnDate(issueDate);
+                const st = totals.taxable;
+                setMrnStat(st);
+                setMrnDuty("0.00");
+                setMrnVat(round2(num(st) * 0.2));
+                setCustomsModal(true);
+              }}
+            >
+              {t("invoices.issue_customs")}
+            </button>
+          </>
+        )}
         <button className="btn btn-primary" disabled={saving}>
           {t("common.save")}
         </button>
       </div>
+
+      {protoModal && (
+        <div className="modal-backdrop" onClick={() => setProtoModal(false)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 520 }}>
+            <div className="modal-head">
+              <h3>{t("invoices.protocol_modal_title")}</h3>
+              <button type="button" className="btn-ghost" onClick={() => setProtoModal(false)}>
+                ✕
+              </button>
+            </div>
+            <div className="content">
+              <p className="muted" style={{ marginBottom: 12 }}>
+                {t("invoices.protocol_hint")}
+              </p>
+              <div className="form-grid">
+                <div className="field">
+                  <label className="label">{t("invoices.number")}</label>
+                  <input
+                    className="input"
+                    value={protoNumber}
+                    onChange={(e) => setProtoNumber(e.target.value)}
+                  />
+                </div>
+                <div className="field">
+                  <label className="label">{t("invoices.issue_date")}</label>
+                  <input
+                    className="input"
+                    type="date"
+                    value={protoDate}
+                    onChange={(e) => setProtoDate(e.target.value)}
+                  />
+                </div>
+                <div className="field">
+                  <label className="label">{t("invoices.vat_article")}</label>
+                  <select
+                    className="select"
+                    value={protoArticle}
+                    onChange={(e) => setProtoArticle(e.target.value)}
+                  >
+                    <option value="чл. 117">чл. 117 от ЗДДС (ВОП / чл. 82, ал. 2)</option>
+                    <option value="чл. 163а">чл. 163а от ЗДДС (обратно начисляване)</option>
+                    <option value="чл. 151в">чл. 151в от ЗДДС</option>
+                  </select>
+                </div>
+                <div className="field">
+                  <label className="label">{t("invoices.vat_rate_protocol")}</label>
+                  <select
+                    className="select"
+                    value={protoRate}
+                    onChange={(e) => setProtoRate(e.target.value)}
+                  >
+                    <option value="20">20%</option>
+                    <option value="9">9%</option>
+                  </select>
+                </div>
+              </div>
+              <div className="form-actions" style={{ marginTop: 16 }}>
+                <button type="button" className="btn" onClick={() => setProtoModal(false)}>
+                  {t("common.cancel")}
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  disabled={saving}
+                  onClick={() => void handleIssueProtocol()}
+                >
+                  {t("invoices.issue_protocol")}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {customsModal && (
+        <div className="modal-backdrop" onClick={() => setCustomsModal(false)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 560 }}>
+            <div className="modal-head">
+              <h3>{t("invoices.customs_modal_title")}</h3>
+              <button type="button" className="btn-ghost" onClick={() => setCustomsModal(false)}>
+                ✕
+              </button>
+            </div>
+            <div className="content">
+              <p className="muted" style={{ marginBottom: 12 }}>
+                {t("invoices.customs_hint")}
+              </p>
+              <div className="form-grid">
+                <div className="field">
+                  <label className="label">{t("invoices.customs_mrn")} *</label>
+                  <input
+                    className="input"
+                    value={mrnNumber}
+                    onChange={(e) => setMrnNumber(e.target.value)}
+                    placeholder="26BG005800..."
+                  />
+                </div>
+                <div className="field">
+                  <label className="label">{t("invoices.issue_date")}</label>
+                  <input
+                    className="input"
+                    type="date"
+                    value={mrnDate}
+                    onChange={(e) => setMrnDate(e.target.value)}
+                  />
+                </div>
+                <div className="field">
+                  <label className="label">{t("invoices.customs_statistical")}</label>
+                  <input
+                    className="input"
+                    value={mrnStat}
+                    onChange={(e) => {
+                      const st = e.target.value;
+                      setMrnStat(st);
+                      setMrnVat(round2((num(st) + num(mrnDuty)) * 0.2));
+                    }}
+                  />
+                </div>
+                <div className="field">
+                  <label className="label">{t("invoices.customs_duty")}</label>
+                  <input
+                    className="input"
+                    value={mrnDuty}
+                    onChange={(e) => {
+                      const du = e.target.value;
+                      setMrnDuty(du);
+                      setMrnVat(round2((num(mrnStat) + num(du)) * 0.2));
+                    }}
+                  />
+                </div>
+                <div className="field">
+                  <label className="label">{t("invoices.customs_vat")}</label>
+                  <input
+                    className="input"
+                    value={mrnVat}
+                    onChange={(e) => setMrnVat(e.target.value)}
+                  />
+                </div>
+                <div className="field">
+                  <label className="label">{t("invoices.counterpart")}</label>
+                  <input className="input" value={t("invoices.customs_agency")} disabled />
+                </div>
+              </div>
+              <div className="form-actions" style={{ marginTop: 16 }}>
+                <button type="button" className="btn" onClick={() => setCustomsModal(false)}>
+                  {t("common.cancel")}
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  disabled={saving || !mrnNumber.trim()}
+                  onClick={() => void handleIssueCustoms()}
+                >
+                  {t("invoices.issue_customs")}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       <InvoiceFormPickers
         t={t}

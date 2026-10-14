@@ -148,7 +148,9 @@ fn sums(rows: &[Row]) -> (i64, i64) {
 async fn overlay(st: &AppState, company: i32, ln: &mut Line, inv_id: i32) -> Result<(), ApiError> {
     let head = invoice_read::qry(
         &st.db,
-        &format!("SELECT issue_date FROM invoices WHERE id = {inv_id} AND company_id = {company}"),
+        &format!(
+            "SELECT issue_date, direction, document_type, net_amount, vat_amount FROM invoices WHERE id = {inv_id} AND company_id = {company}"
+        ),
     )
     .await?;
     let Some(head) = head.first() else {
@@ -157,6 +159,42 @@ async fn overlay(st: &AppState, company: i32, ln: &mut Line, inv_id: i32) -> Res
     let issue = cell_str(head, 0);
     if !issue.is_empty() {
         ln.doc_date = issue;
+    }
+    let dir = cell_str(head, 1);
+    let dtype = cell_str(head, 2);
+    let inv_net = cents(&cell_str(head, 3)).unwrap_or(0);
+    let inv_vat = cents(&cell_str(head, 4)).unwrap_or(0);
+    let flags = invoice_read::qry(
+        &st.db,
+        &format!(
+            "SELECT vat_article, customs_statistical, customs_duty, customs_vat FROM invoice_flags WHERE id = {inv_id}"
+        ),
+    )
+    .await?;
+    let (vat_art, c_stat, c_duty, c_vat) = match flags.first() {
+        Some(f) => (
+            cell_str(f, 0),
+            cents(&cell_str(f, 1)).unwrap_or(0),
+            cents(&cell_str(f, 2)).unwrap_or(0),
+            cents(&cell_str(f, 3)).unwrap_or(0),
+        ),
+        None => (String::new(), 0, 0, 0),
+    };
+    if dtype == "09" && !vat_art.trim().is_empty() {
+        ln.goods = format!("Протокол по {} от ЗДДС", vat_art.trim());
+    }
+    if dtype == "07" && (c_stat > 0 || c_duty > 0 || c_vat > 0) {
+        ln.reset_amounts();
+        let base = if c_stat + c_duty > 0 { c_stat + c_duty } else { inv_net };
+        let vat = if c_vat > 0 { c_vat } else { inv_vat };
+        if ln.cp_vat.is_empty() {
+            ln.cp_vat = "999999999".into();
+        }
+        if ln.goods.is_empty() {
+            ln.goods = "Внос по митническа декларация".into();
+        }
+        ln.add_purch(base, vat);
+        return Ok(());
     }
     let extra = invoice_read::qry(
         &st.db,
@@ -172,19 +210,31 @@ async fn overlay(st: &AppState, company: i32, ln: &mut Line, inv_id: i32) -> Res
     )
     .await?;
     if lines.is_empty() {
+        if dir == "in" && dtype == "09" {
+            ln.reset_amounts();
+            if ln.kind == "sales" {
+                ln.add_vop_sale(inv_net, inv_vat);
+            } else {
+                ln.add_purch(inv_net, inv_vat);
+            }
+        }
         return Ok(());
     }
     ln.reset_amounts();
     for (i, row) in lines.iter().enumerate() {
         let goods = cell_str(row, 0);
-        if i == 0 && !goods.is_empty() {
+        if i == 0 && !goods.is_empty() && (dtype != "09" || vat_art.trim().is_empty()) {
             ln.goods = goods;
         }
         let base = cents(&cell_str(row, 1)).unwrap_or(0);
         let vat = cents(&cell_str(row, 2)).unwrap_or(0);
         let rate = vat_fmt::rate_kind(&cell_str(row, 3));
         if ln.kind == "sales" {
-            ln.add_sale(base, vat, rate, &ex);
+            if dir == "in" && dtype == "09" {
+                ln.add_vop_sale(base, vat);
+            } else {
+                ln.add_sale(base, vat, rate, &ex);
+            }
         } else {
             ln.add_purch(base, vat);
         }
@@ -220,6 +270,8 @@ async fn one_line(st: &AppState, company: i32, row: &Row, kind: &str) -> Result<
         if let Some(c) = cps.first() {
             ln.cp_vat = vat_fmt::cp_ident(&cell_str(c, 0), &cell_str(c, 1));
         }
+    } else if ln.doc_type == "07" {
+        ln.cp_vat = "999999999".into();
     }
     let doc_id = cell_i32_at(row, 4);
     if doc_id > 0 {

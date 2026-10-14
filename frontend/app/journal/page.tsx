@@ -74,6 +74,7 @@ const emptyLine = (): LineDraft => ({
 const VAT_TYPE_LABEL: Record<string, string> = {
   purchase: "journal.tab.purchase",
   sales: "journal.tab.sales",
+  both: "journal.tab.both",
   no_vat: "journal.tab.no_vat",
 };
 

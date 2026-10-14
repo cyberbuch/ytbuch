@@ -67,7 +67,11 @@ export function PrintableInvoice({
       {cancelled && <div className="print-watermark">АНУЛИРАНА</div>}
       <div className="print-head">
         <div>
-          <div className="print-title">{docTypeTitle(invoice.document_type)}</div>
+          <div className="print-title">
+            {invoice.document_type === "09" && invoice.vat_article
+              ? `ПРОТОКОЛ ПО ${invoice.vat_article.toUpperCase()} ОТ ЗДДС`
+              : docTypeTitle(invoice.document_type)}
+          </div>
           <div className="print-copy">
             ( {isCopy ? t("invoices.copy") : t("invoices.original")} )
           </div>
@@ -160,6 +164,22 @@ export function PrintableInvoice({
           )}
         </div>
         <div className="print-totals">
+          {invoice.document_type === "07" && invoice.customs_statistical && (
+            <>
+              <div>
+                <span>{t("invoices.customs_statistical")}:</span>
+                <b>
+                  {fmt(invoice.customs_statistical)} {currency}
+                </b>
+              </div>
+              <div>
+                <span>{t("invoices.customs_duty")}:</span>
+                <b>
+                  {fmt(invoice.customs_duty || "0.00")} {currency}
+                </b>
+              </div>
+            </>
+          )}
           <div>
             <span>{t("invoices.taxable")}:</span>
             <b>

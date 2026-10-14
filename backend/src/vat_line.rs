@@ -79,6 +79,9 @@ impl Line {
         self.s_tv = 0;
         self.s_b20 = 0;
         self.s_v20 = 0;
+        self.s_vopb = 0;
+        self.s_82 = 0;
+        self.s_vopv = 0;
         self.s_b9 = 0;
         self.s_v9 = 0;
         self.s_ch3 = 0;
@@ -86,6 +89,13 @@ impl Line {
         self.s_art = 0;
         self.s_svc = 0;
         self.s_ex = 0;
+    }
+
+    pub fn add_vop_sale(&mut self, base: i64, vat: i64) {
+        self.s_tb += base;
+        self.s_tv += vat;
+        self.s_vopb += base;
+        self.s_vopv += vat;
     }
 
     pub fn add_sale(&mut self, base: i64, vat: i64, rate: &str, ex: &str) {
@@ -171,6 +181,8 @@ impl Line {
             "total_vat": money(self.s_tv),
             "base_20": money(self.s_b20),
             "vat_20": money(self.s_v20),
+            "vop_sales_base": money(self.s_vopb),
+            "vop_sales_vat": money(self.s_vopv),
             "base_9": money(self.s_b9),
             "vat_9": money(self.s_v9),
             "base_0": money(self.s_ch3),
@@ -353,5 +365,27 @@ mod tests {
         ln.add_sale(8_000, 0, "0", "VATEX-EU-IC");
         assert_eq!(ln.s_vod, 8_000);
         assert_eq!(ln.s_tv, 0);
+    }
+
+    #[test]
+    fn protocol_117_enters_both_registers_and_nets_to_zero() {
+        let mut cells = Cells::default();
+        let mut s_proto = Line::empty("sales");
+        s_proto.doc_type = "09".into();
+        s_proto.add_vop_sale(50_000, 10_000);
+        cells.add(&s_proto);
+
+        let mut p_proto = Line::empty("purchase");
+        p_proto.doc_type = "09".into();
+        p_proto.add_purch(50_000, 10_000);
+        cells.add(&p_proto);
+        cells.finish();
+
+        assert_eq!(money(cells.s12), "500.00");
+        assert_eq!(money(cells.s22), "100.00");
+        assert_eq!(money(cells.p31), "500.00");
+        assert_eq!(money(cells.p41), "100.00");
+        assert_eq!(cells.r50, 0);
+        assert_eq!(cells.r60, 0);
     }
 }

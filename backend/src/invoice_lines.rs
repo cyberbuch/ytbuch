@@ -222,5 +222,8 @@ pub(crate) async fn prepare(
 ) -> Result<String, ApiError> {
     ensure_location(st, company_id, head.location_id).await?;
     ensure_original(st, company_id, head.original_invoice_id, self_id).await?;
+    if head.counterpart_id <= 0 && head.document_type == "07" {
+        return Ok("Агенция Митници (Разчети с митници)".into());
+    }
     counterpart_name(st, head.counterpart_id, company_id).await
 }

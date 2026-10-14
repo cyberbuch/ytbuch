@@ -297,8 +297,15 @@ function InvoicesInner() {
                   </td>
                   <td>
                     <Link href={`/invoices/${inv.id}`}>
-                      {t(`invoices.document_type.${inv.document_type}`)}
+                      {inv.document_type === "09" && inv.vat_article
+                        ? `Протокол по ${inv.vat_article} от ЗДДС`
+                        : t(`invoices.document_type.${inv.document_type}`)}
                     </Link>
+                    {Number(inv.exclude_vat || 0) === 1 && (
+                      <span className="badge badge-warning" style={{ marginLeft: 6 }}>
+                        {t("invoices.exclude_vat_badge")}
+                      </span>
+                    )}
                   </td>
                   <td>
                     <Link href={`/invoices/${inv.id}`}>{inv.number}</Link>

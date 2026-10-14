@@ -56,10 +56,25 @@ fn blocks(doc: &print_load::Loaded, copy: bool) -> Vec<Block> {
     if inv.status == "cancelled" {
         out.push(Block::Line("АНУЛИРАНА".into()));
     }
-    out.push(Block::Head(print_sheet::doc_title(&inv.document_type).into()));
+    let head_title = if inv.document_type == "09" && !inv.vat_article.trim().is_empty() {
+        format!(
+            "ПРОТОКОЛ ПО {} ОТ ЗДДС",
+            inv.vat_article.trim().to_uppercase()
+        )
+    } else {
+        print_sheet::doc_title(&inv.document_type).to_string()
+    };
+    out.push(Block::Head(head_title));
     let label = if copy { "КОПИЕ" } else { "ОРИГИНАЛ" };
     out.push(Block::Line(format!("( {label} )")));
     out.push(Block::Line(format!("№ {number}")));
+    if !doc.original_number.trim().is_empty() {
+        out.push(Block::Line(format!(
+            "Към документ № {} / {}",
+            doc.original_number,
+            print_sheet::bg_date(&doc.original_date)
+        )));
+    }
     if !inv.issue_date.trim().is_empty() {
         out.push(Block::Line(format!("Дата: {}", print_sheet::bg_date(&inv.issue_date))));
     }
@@ -139,10 +154,25 @@ fn lines(doc: &print_load::Loaded) -> Vec<Vec<String>> {
 }
 
 fn totals(inv: &crate::invoice_read::Inv, currency: &str) -> Vec<Vec<String>> {
-    let mut rows = vec![
-        vec!["Данъчна основа".into(), format!("{} {currency}", money(dec::or0(&inv.net_amount)))],
-        vec!["ДДС".into(), format!("{} {currency}", money(dec::or0(&inv.vat_amount)))],
-    ];
+    let mut rows = Vec::new();
+    if inv.document_type == "07" && !inv.customs_statistical.trim().is_empty() {
+        rows.push(vec![
+            "Статистическа стойност".into(),
+            format!("{} {currency}", money(dec::or0(&inv.customs_statistical))),
+        ]);
+        rows.push(vec![
+            "Мито".into(),
+            format!("{} {currency}", money(dec::or0(&inv.customs_duty))),
+        ]);
+    }
+    rows.push(vec![
+        "Данъчна основа".into(),
+        format!("{} {currency}", money(dec::or0(&inv.net_amount))),
+    ]);
+    rows.push(vec![
+        "ДДС".into(),
+        format!("{} {currency}", money(dec::or0(&inv.vat_amount))),
+    ]);
     if dec::or0(&inv.discount_amount) > 0 {
         rows.push(vec![
             "Отстъпка".into(),
