@@ -11,6 +11,7 @@ import { useI18n } from "../../components/I18nProvider";
 import { RequireAuth } from "../../components/RequireAuth";
 import { IconButton } from "../../components/IconButton";
 import { Pagination } from "../../components/Pagination";
+import { unitSymbol } from "../../lib/units";
 
 const PAGE_SIZE = 50;
 
@@ -343,7 +344,7 @@ function ProductionInner() {
                   <tr key={l.id}>
                     <td>{l.product_name || pname(products, l.product_id)}</td>
                     <td className="num">{money(l.quantity)}</td>
-                    <td>{l.unit}</td>
+                    <td>{unitSymbol(l.unit)}</td>
                     <td className="num">{money(l.unit_cost)}</td>
                     <td className="num">{money(l.amount)}</td>
                   </tr>

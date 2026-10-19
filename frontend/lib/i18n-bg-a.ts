@@ -434,6 +434,7 @@ export const bgA = {
   "products.title": "Стоки и услуги",
   "products.name": "Наименование",
   "products.code": "Код",
+  "products.code_hint": "Оставете празно за автоматичен номер",
   "products.description": "Описание",
   "products.unit": "Мер. ед.",
   "products.unit_search": "Търси мерна единица (C62, кг, H87, UBL, SAF-T…)",

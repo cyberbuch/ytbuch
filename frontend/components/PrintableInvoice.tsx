@@ -11,6 +11,7 @@ import {
 } from "../lib/invoice";
 import { api, ListResponse } from "../lib/api";
 import { VatExemption, vatexDisplay } from "../lib/vatExemptions";
+import { unitSymbol } from "../lib/units";
 import { useI18n } from "./I18nProvider";
 
 function fmt(s: string | undefined): string {
@@ -124,7 +125,7 @@ export function PrintableInvoice({
               <td>{i + 1}</td>
               <td>{l.description}</td>
               <td className="r">{l.quantity}</td>
-              <td>{l.unit}</td>
+              <td>{unitSymbol(l.unit)}</td>
               <td className="r">{fmt(l.unit_price)}</td>
               <td className="r">{fmt(l.net_amount)}</td>
             </tr>

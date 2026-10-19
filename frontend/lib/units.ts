@@ -28,3 +28,54 @@ export function filterUnits(units: UnitOfMeasure[], q: string): UnitOfMeasure[] 
     return hay.includes(s);
   });
 }
+
+const UNIT_SYMBOL_MAP: Record<string, string> = {
+  C62: "бр.",
+  EA: "бр.",
+  PCE: "бр.",
+  H87: "бр.",
+  E48: "бр.",
+  NAR: "бр.",
+  SET: "к-т",
+  PR: "чифт",
+  DZN: "дуз.",
+  GRO: "грос",
+  MIL: "хил.",
+  CEN: "стотици",
+  KGM: "кг",
+  GRM: "г",
+  MGM: "мг",
+  TNE: "т",
+  DTN: "дт",
+  LBR: "lb",
+  ONZ: "oz",
+  CTM: "ct",
+  MTR: "м",
+  CMT: "см",
+  MMT: "мм",
+  KMT: "км",
+  DMT: "дм",
+  INH: "in",
+  FOT: "ft",
+  YRD: "yd",
+  NMI: "nmi",
+  MTK: "м²",
+  CMK: "см²",
+  MMK: "мм²",
+  LTR: "л",
+  LT: "л",
+  MLT: "мл",
+  HLT: "хл",
+  HUR: "час",
+  DAY: "ден",
+  MON: "месец",
+  WEE: "седм.",
+  PK: "пакет",
+};
+
+export function unitSymbol(code: string): string {
+  if (!code) return "";
+  const c = code.trim();
+  if (UNIT_SYMBOL_MAP[c]) return UNIT_SYMBOL_MAP[c];
+  return c;
+}

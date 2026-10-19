@@ -131,6 +131,48 @@ fn parties(rec: &Party, sup: &Party) -> Vec<Vec<String>> {
     rows
 }
 
+fn unit_display(code: &str) -> String {
+    match code.trim() {
+        "" | "C62" | "EA" | "PCE" | "H87" => "бр.".into(),
+        "SET" => "к-т".into(),
+        "PR" => "чифт".into(),
+        "DZN" => "дуз.".into(),
+        "GRO" => "грос".into(),
+        "MIL" => "хил.".into(),
+        "CEN" => "стотици".into(),
+        "KGM" => "кг".into(),
+        "GRM" => "г".into(),
+        "MGM" => "мг".into(),
+        "TNE" => "т".into(),
+        "DTN" => "дт".into(),
+        "LBR" => "lb".into(),
+        "ONZ" => "oz".into(),
+        "CTM" => "ct".into(),
+        "MTR" => "м".into(),
+        "CMT" => "см".into(),
+        "MMT" => "мм".into(),
+        "KMT" => "км".into(),
+        "DMT" => "дм".into(),
+        "INH" => "in".into(),
+        "FOT" => "ft".into(),
+        "YRD" => "yd".into(),
+        "NMI" => "nmi".into(),
+        "MTK" => "м²".into(),
+        "CMK" => "см²".into(),
+        "MMK" => "мм²".into(),
+        "LTR" | "LT" => "л".into(),
+        "MLT" => "мл".into(),
+        "HLT" => "хл".into(),
+        "HUR" => "час".into(),
+        "DAY" => "ден".into(),
+        "MON" => "месец".into(),
+        "WEE" => "седм.".into(),
+        "PK" => "пакет".into(),
+        "E48" | "NAR" => "бр.".into(),
+        other => other.to_string(),
+    }
+}
+
 fn lines(doc: &print_load::Loaded) -> Vec<Vec<String>> {
     let mut rows = vec![vec![
         "No".into(),
@@ -145,7 +187,7 @@ fn lines(doc: &print_load::Loaded) -> Vec<Vec<String>> {
             (i + 1).to_string(),
             line.description.clone(),
             line.quantity.clone(),
-            line.unit.clone(),
+            unit_display(&line.unit),
             money(dec::or0(&line.unit_price)),
             money(dec::or0(&line.net_amount)),
         ]);

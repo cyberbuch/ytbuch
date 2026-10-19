@@ -32,6 +32,7 @@ import { InvoiceFormHeader } from "./InvoiceFormHeader";
 import { InvoiceFormLines } from "./InvoiceFormLines";
 import { InvoiceFormPickers } from "./InvoiceFormPickers";
 import {
+  InvoiceFormAccount as Account,
   InvoiceFormCounterpart as Counterpart,
   InvoiceFormProduct as Product,
 } from "./invoiceFormTypes";
@@ -86,6 +87,7 @@ export function InvoiceForm({ mode, invoiceId }: Props) {
   const [cpOpen, setCpOpen] = useState(false);
 
   const [products, setProducts] = useState<Product[]>([]);
+  const [accounts, setAccounts] = useState<Account[]>([]);
   const [units, setUnits] = useState<UnitOfMeasure[]>([]);
   const [exemptions, setExemptions] = useState<VatExemption[]>([]);
   const [exQ, setExQ] = useState("");
@@ -100,9 +102,10 @@ export function InvoiceForm({ mode, invoiceId }: Props) {
 
   const loadLookups = useCallback(async () => {
     try {
-      const [cp, pr, inv, un, ex, co] = await Promise.all([
+      const [cp, pr, acc, inv, un, ex, co] = await Promise.all([
         fetchAll<Counterpart>("/v1/counterparts"),
         fetchAll<Product>("/v1/products"),
+        fetchAll<Account>("/v1/accounts"),
         fetchAll<Invoice>("/v1/invoices"),
         api.get<ListResponse<UnitOfMeasure>>("/v1/units"),
         api.get<ListResponse<VatExemption>>("/v1/vat-exemptions"),
@@ -110,6 +113,7 @@ export function InvoiceForm({ mode, invoiceId }: Props) {
       ]);
       setCounterparts(cp);
       setProducts(pr);
+      setAccounts(acc);
       setInvoices(inv);
       setUnits(un.items ?? []);
       setExemptions(ex.items ?? []);
@@ -812,6 +816,14 @@ export function InvoiceForm({ mode, invoiceId }: Props) {
         filteredProducts={filteredProducts}
         pickProduct={pickProduct}
         units={units}
+        accounts={accounts}
+        onProductCreated={(lineIdx, created) => {
+          setProducts((prev) => [...prev, created]);
+          pickProduct(lineIdx, created);
+        }}
+        initialDescription={
+          itemOpenFor !== null ? lines[itemOpenFor]?.description : ""
+        }
       />
     </form>
   );

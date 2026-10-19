@@ -264,6 +264,37 @@ async fn code_taken(st: &AppState, company_id: i32, code: &str, except: i32) -> 
     Ok(rows.iter().any(|r| cell_str(r, 1).trim().eq_ignore_ascii_case(t)))
 }
 
+async fn next_numeric_code(st: &AppState, company_id: i32) -> Result<String, ApiError> {
+    let rows = st
+        .db
+        .query(&format!(
+            "SELECT code FROM products WHERE company_id = {company_id}"
+        ))
+        .await
+        .map_err(db_err)?;
+    let mut max_num: i64 = 0;
+    for r in &rows {
+        let code = cell_str(r, 0);
+        let t = code.trim();
+        if t.is_empty() {
+            continue;
+        }
+        if let Ok(n) = t.parse::<i64>() {
+            if n > max_num {
+                max_num = n;
+            }
+        }
+    }
+    let mut candidate = max_num + 1;
+    loop {
+        let code_str = candidate.to_string();
+        if !code_taken(st, company_id, &code_str, 0).await? {
+            return Ok(code_str);
+        }
+        candidate += 1;
+    }
+}
+
 async fn product_load(st: &AppState, id: i32, company: i32) -> Result<Product, ApiError> {
     let rows = st
         .db
@@ -410,6 +441,9 @@ pub async fn product_create(
     apply_product(&mut p, obj)?;
     if p.name.trim().is_empty() {
         return Err(api_err(StatusCode::UNPROCESSABLE_ENTITY, "name е задължително"));
+    }
+    if p.code.trim().is_empty() {
+        p.code = next_numeric_code(&st, p.company_id).await?;
     }
     if code_taken(&st, p.company_id, &p.code, 0).await? {
         return Err(api_err(StatusCode::CONFLICT, "артикул с този код вече съществува"));

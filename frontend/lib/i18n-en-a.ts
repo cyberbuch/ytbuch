@@ -426,6 +426,7 @@ export const enA = {
   "products.title": "Products & services",
   "products.name": "Name",
   "products.code": "Code",
+  "products.code_hint": "Leave empty for auto-number",
   "products.description": "Description",
   "products.unit": "Unit",
   "products.unit_search": "Search unit (C62, kg, H87, UBL, SAF-T…)",

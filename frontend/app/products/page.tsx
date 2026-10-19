@@ -5,7 +5,7 @@ import { RequireAuth } from "../../components/RequireAuth";
 import { UnitPicker } from "../../components/UnitPicker";
 import { useI18n } from "../../components/I18nProvider";
 import { api, fetchAll, ListResponse } from "../../lib/api";
-import { UnitOfMeasure } from "../../lib/units";
+import { UnitOfMeasure, unitSymbol } from "../../lib/units";
 import { IconButton } from "../../components/IconButton";
 import { Pagination } from "../../components/Pagination";
 
@@ -235,7 +235,7 @@ function ProductsInner() {
                     ) : null}
                   </td>
                   <td>{p.code}</td>
-                  <td>{p.unit}</td>
+                  <td>{unitSymbol(p.unit)}</td>
                   <td>{p.price}</td>
                   <td>{accountName(p.inventory_account_id)}</td>
                   <td>{accountName(p.revenue_account_id)}</td>
@@ -295,6 +295,7 @@ function ProductsInner() {
                     className="input"
                     value={form.code}
                     onChange={(e) => setForm({ ...form, code: e.target.value })}
+                    placeholder={t("products.code_hint")}
                   />
                 </div>
                 <div className="field" style={{ gridColumn: "1 / -1" }}>

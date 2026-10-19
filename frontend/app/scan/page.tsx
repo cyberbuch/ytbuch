@@ -19,8 +19,11 @@ import {
   todayIso,
 } from "../../lib/invoice";
 import { VatExemption } from "../../lib/vatExemptions";
+import { UnitOfMeasure } from "../../lib/units";
+import { useStorageValue, writeStorage } from "../../lib/storage";
 import { ScanDraft } from "./ScanDraft";
 import {
+  Account,
   Counterpart,
   Product,
   QueuedFile,
@@ -30,6 +33,8 @@ import {
 } from "./types";
 
 const MAX_BYTES = 8 * 1024 * 1024;
+const SCAN_DIR_KEY = "bagabuch.scan.direction";
+const SCAN_PERIOD_KEY = "bagabuch.scan.period";
 
 function monthNow(): string {
   return todayIso().slice(0, 7);
@@ -78,8 +83,15 @@ function isXmlFile(file: File): boolean {
 function ScanInner() {
   const { t } = useI18n();
   const router = useRouter();
-  const [direction, setDirection] = useState<"in" | "out">("in");
-  const [period, setPeriod] = useState(monthNow);
+  const storedDir = useStorageValue(SCAN_DIR_KEY, "in");
+  const direction: "in" | "out" = storedDir === "out" ? "out" : "in";
+  const setDirection = useCallback((d: "in" | "out") => {
+    writeStorage(SCAN_DIR_KEY, d);
+  }, []);
+  const period = useStorageValue(SCAN_PERIOD_KEY, monthNow());
+  const setPeriod = useCallback((p: string) => {
+    writeStorage(SCAN_PERIOD_KEY, p);
+  }, []);
   const [queue, setQueue] = useState<QueuedFile[]>([]);
   const [dragging, setDragging] = useState(false);
   const [stage, setStage] = useState<0 | 1>(0);
@@ -96,6 +108,8 @@ function ScanInner() {
 
   const [counterparts, setCounterparts] = useState<Counterpart[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
+  const [accounts, setAccounts] = useState<Account[]>([]);
+  const [units, setUnits] = useState<UnitOfMeasure[]>([]);
   const [counterpartId, setCounterpartId] = useState("");
   const [ocrName, setOcrName] = useState("");
   const [ocrEik, setOcrEik] = useState("");
@@ -103,11 +117,6 @@ function ScanInner() {
   const [vies, setVies] = useState<ViesLookup | null>(null);
   const [itemOpenFor, setItemOpenFor] = useState<number | null>(null);
   const [itemQuery, setItemQuery] = useState("");
-  const [addingProduct, setAddingProduct] = useState(false);
-  const [newName, setNewName] = useState("");
-  const [newCode, setNewCode] = useState("");
-  const [creating, setCreating] = useState(false);
-  const [createError, setCreateError] = useState("");
   const [fromXml, setFromXml] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState("банков превод");
   const [paymentNote, setPaymentNote] = useState("");
@@ -123,12 +132,16 @@ function ScanInner() {
 
   const loadLookups = useCallback(async () => {
     try {
-      const [cp, pr] = await Promise.all([
+      const [cp, pr, acc, un] = await Promise.all([
         fetchAll<Counterpart>("/v1/counterparts"),
         fetchAll<Product>("/v1/products"),
+        fetchAll<Account>("/v1/accounts"),
+        api.get<ListResponse<UnitOfMeasure>>("/v1/units"),
       ]);
       setCounterparts(cp);
       setProducts(pr);
+      setAccounts(acc);
+      setUnits(un.items ?? []);
     } catch {
       /* non-fatal */
     }
@@ -237,17 +250,11 @@ function ScanInner() {
     const scanned = lines[i]?.description || "";
     setItemOpenFor(i);
     setItemQuery(scanned);
-    setAddingProduct(false);
-    setNewName(scanned);
-    setNewCode("");
-    setCreateError("");
   };
 
   const closeProductPicker = () => {
     setItemOpenFor(null);
     setItemQuery("");
-    setAddingProduct(false);
-    setCreateError("");
   };
 
   const pickProduct = (i: number, p: Product) => {
@@ -256,35 +263,6 @@ function ScanInner() {
       code: p.code || "",
     });
     closeProductPicker();
-  };
-
-  const createProduct = async () => {
-    if (itemOpenFor === null) return;
-    const name = newName.trim();
-    if (!name) {
-      setCreateError(t("scan.need_product_name"));
-      return;
-    }
-    const line = lines[itemOpenFor];
-    setCreating(true);
-    setCreateError("");
-    try {
-      const created = await api.post<Product>("/v1/products", {
-        name,
-        code: newCode.trim(),
-        description: line.description || name,
-        unit: line.unit || "C62",
-        price: line.unit_price || "0",
-        vat_rate: line.vat_rate || "20",
-        is_active: true,
-      });
-      setProducts((prev) => [...prev, created]);
-      pickProduct(itemOpenFor, created);
-    } catch (e) {
-      setCreateError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setCreating(false);
-    }
   };
 
   const clearProduct = (i: number) => {
@@ -305,7 +283,6 @@ function ScanInner() {
         content_base64,
         direction,
       });
-      if (data.direction === "in" || data.direction === "out") setDirection(data.direction);
       setNumber(data.invoice_number || "");
       setIssueDate(data.issue_date || todayIso());
       setDueDate(data.due_date || "");
@@ -627,20 +604,16 @@ function ScanInner() {
           itemOpenFor={itemOpenFor}
           closeProductPicker={closeProductPicker}
           lines={lines}
-          addingProduct={addingProduct}
           itemQuery={itemQuery}
           setItemQuery={setItemQuery}
           filteredProducts={filteredProducts}
           pickProduct={pickProduct}
-          setAddingProduct={setAddingProduct}
-          setNewName={setNewName}
-          setCreateError={setCreateError}
-          createError={createError}
-          newName={newName}
-          newCode={newCode}
-          setNewCode={setNewCode}
-          createProduct={createProduct}
-          creating={creating}
+          units={units}
+          accounts={accounts}
+          onProductCreated={(lineIdx, created) => {
+            setProducts((prev) => [...prev, created]);
+            pickProduct(lineIdx, created);
+          }}
         />
       )}
     </div>
