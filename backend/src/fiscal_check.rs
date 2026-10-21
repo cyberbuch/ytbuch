@@ -178,7 +178,17 @@ async fn purge(st: &AppState) {
                 let _ = invoice_read::wipe_journal(&st.db, entry_id).await;
             }
             let _ = invoice_read::wipe_invoice(&st.db, id).await;
+            let _ = invoice_read::exe(
+                &st.db,
+                &format!("DELETE FROM audit_logs WHERE entity_type = 'invoice' AND entity_id = {id}"),
+            )
+            .await;
         }
+        let _ = invoice_read::exe(
+            &st.db,
+            &format!("DELETE FROM audit_logs WHERE entity_number = {}", db::lit(number)),
+        )
+        .await;
     }
     let products = invoice_read::qry(
         &st.db,
@@ -320,6 +330,10 @@ async fn fiscal_post_and_unpost_wac() {
     let Some(f) = fixture().await else { return };
 
     let buy = create_invoice(&f, BUY_NO, "in", "11", "10", "5.00", "50.00", "10.00", "60.00", "2031-01-10").await;
+    let detail_buy = invoice_read::detail(&f.st, "superadmin", buy).await.expect("детайли на покупката");
+    assert!(!detail_buy["created_by"].as_str().unwrap_or("").is_empty(), "липсва съставил");
+    assert!(!detail_buy["created_at"].as_str().unwrap_or("").is_empty(), "липсва timestamp");
+    assert_eq!(detail_buy["audit_history"].as_array().map(|a| a.len()).unwrap_or(0), 1);
     let posted = invoice_post::post_one(&f.st, f.company, buy).await.expect("постът на покупката");
     assert_eq!(posted["document_number"].as_str(), Some(BUY_NO));
     assert_journal(
@@ -335,6 +349,28 @@ async fn fiscal_post_and_unpost_wac() {
     assert_stock(&f, "10", "50").await;
 
     let sell = create_invoice(&f, SELL_NO, "out", "01", "4", "10.00", "40.00", "8.00", "48.00", "2031-01-10").await;
+    let upd_body = json!({
+        "lines": [{
+            "product_id": f.product,
+            "quantity": "4",
+            "unit_price": "10.00",
+            "vat_rate": "20",
+            "net_amount": "40.00",
+            "vat_amount": "8.00",
+            "total_amount": "48.00",
+        }],
+        "notes": "редактирана чернова"
+    });
+    let Json(upd_val) = invoices::update(
+        State(f.st.clone()),
+        f.headers.clone(),
+        axum::extract::Path(sell),
+        Json(upd_body),
+    )
+    .await
+    .expect("редакция на чернова");
+    assert_eq!(upd_val["edit_count"].as_i64(), Some(1));
+    assert_eq!(upd_val["audit_history"].as_array().map(|a| a.len()), Some(2));
     invoice_post::post_one(&f.st, f.company, sell).await.expect("постът на продажбата");
     assert_journal(
         &f,

@@ -90,4 +90,21 @@ CREATE TABLE IF NOT EXISTS invoice_flags (
     customs_duty VARCHAR,
     customs_vat VARCHAR
 );
+CREATE TABLE IF NOT EXISTS audit_logs (
+    id INTEGER PRIMARY KEY,
+    company_id INTEGER,
+    user_id INTEGER,
+    user_login VARCHAR,
+    user_name VARCHAR,
+    entity_type VARCHAR,
+    entity_id INTEGER,
+    entity_number VARCHAR,
+    action VARCHAR,
+    summary VARCHAR,
+    old_amount VARCHAR,
+    new_amount VARCHAR,
+    old_data VARCHAR,
+    new_data VARCHAR,
+    created_at VARCHAR
+);
 ";

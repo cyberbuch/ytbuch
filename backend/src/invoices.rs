@@ -538,6 +538,33 @@ pub async fn create(
     check_in_duplicate(&st, company, &head, 0).await?;
     let name = invoice_lines::prepare(&st, company, &head, 0).await?;
     let id = insert_header(&st, company, &head, &name, &lines).await?;
+    let after = invoice_read::detail(&st, &sub, id).await?;
+    let total = after
+        .get("total_amount")
+        .and_then(|v| v.as_str())
+        .unwrap_or("0.00");
+    let curr = after.get("currency").and_then(|v| v.as_str()).unwrap_or("EUR");
+    let dir_bg = if head.direction == "in" { "входящ" } else { "изходящ" };
+    let summary = format!(
+        "Създаден {dir_bg} документ ({}) № {} — {name}, сума {total} {curr}",
+        invoice_money::title(&head.document_type),
+        head.number
+    );
+    crate::audit::record(
+        &st.db,
+        company,
+        &sub,
+        "invoice",
+        id,
+        &head.number,
+        "create",
+        &summary,
+        "",
+        &format!("{total} {curr}"),
+        None,
+        Some(&after),
+    )
+    .await;
     Ok((StatusCode::CREATED, Json(invoice_read::detail(&st, &sub, id).await?)))
 }
 
@@ -557,6 +584,8 @@ pub async fn update(
             "фактурата е осчетоводена — първо я върни към чернова",
         ));
     }
+    let before = invoice_read::invoice_value(&st.db, inv, true).await?;
+    let inv = invoice_read::load(&st.db, id).await?;
     let obj = form::object(&body)?;
     let mut head = head_of(&inv);
     let lines = overlay(&mut head, obj)?;
@@ -604,6 +633,52 @@ pub async fn update(
         )
         .await?;
     }
+    let after = invoice_read::detail(&st, &sub, id).await?;
+    let old_total = format!("{} {}", inv.total_amount, inv.currency);
+    let new_tot_raw = after
+        .get("total_amount")
+        .and_then(|v| v.as_str())
+        .unwrap_or("0.00");
+    let new_curr = after.get("currency").and_then(|v| v.as_str()).unwrap_or("EUR");
+    let new_total = format!("{new_tot_raw} {new_curr}");
+    let mut changes = Vec::new();
+    if inv.number != head.number {
+        changes.push(format!("№ {} → {}", inv.number, head.number));
+    }
+    if inv.counterpart_name != name {
+        changes.push(format!("контрагент: {} → {}", inv.counterpart_name, name));
+    }
+    if old_total != new_total {
+        changes.push(format!("сума: {old_total} → {new_total}"));
+    }
+    if inv.issue_date != head.issue_date {
+        changes.push(format!("дата: {} → {}", inv.issue_date, head.issue_date));
+    }
+    let diff_str = if changes.is_empty() {
+        format!("сума {new_total}")
+    } else {
+        changes.join(", ")
+    };
+    let summary = format!(
+        "Редактиран документ ({}) № {} — {name} ({diff_str})",
+        invoice_money::title(&head.document_type),
+        head.number
+    );
+    crate::audit::record(
+        &st.db,
+        company,
+        &sub,
+        "invoice",
+        id,
+        &head.number,
+        "update",
+        &summary,
+        &old_total,
+        &new_total,
+        Some(&before),
+        Some(&after),
+    )
+    .await;
     Ok(Json(invoice_read::detail(&st, &sub, id).await?))
 }
 
@@ -616,7 +691,31 @@ pub async fn delete(
     let company = active_or_one(&st, &sub).await?;
     let inv = invoice_read::load(&st.db, id).await?;
     invoice_read::belongs(&inv, company)?;
+    let num = inv.number.clone();
+    let cp = inv.counterpart_name.clone();
+    let doc_t = inv.document_type.clone();
+    let old_total = format!("{} {}", inv.total_amount, inv.currency);
+    let before = invoice_read::invoice_value(&st.db, inv, true).await?;
     invoice_read::delete_one(&st.db, id).await?;
+    let summary = format!(
+        "Изтрит документ ({}) № {num} — {cp}, сума {old_total}",
+        invoice_money::title(&doc_t)
+    );
+    crate::audit::record(
+        &st.db,
+        company,
+        &sub,
+        "invoice",
+        id,
+        &num,
+        "delete",
+        &summary,
+        &old_total,
+        "",
+        Some(&before),
+        None,
+    )
+    .await;
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -716,7 +815,32 @@ pub async fn bulk_delete(
         let res = async {
             let inv = invoice_read::load(&st.db, id).await?;
             invoice_read::belongs(&inv, company)?;
-            invoice_read::delete_one(&st.db, id).await
+            let num = inv.number.clone();
+            let cp = inv.counterpart_name.clone();
+            let doc_t = inv.document_type.clone();
+            let old_total = format!("{} {}", inv.total_amount, inv.currency);
+            let before = invoice_read::invoice_value(&st.db, inv, true).await?;
+            invoice_read::delete_one(&st.db, id).await?;
+            let summary = format!(
+                "Изтрит документ ({}) № {num} — {cp}, сума {old_total}",
+                invoice_money::title(&doc_t)
+            );
+            crate::audit::record(
+                &st.db,
+                company,
+                &sub,
+                "invoice",
+                id,
+                &num,
+                "delete",
+                &summary,
+                &old_total,
+                "",
+                Some(&before),
+                None,
+            )
+            .await;
+            Ok::<(), ApiError>(())
         }
         .await;
         match res {

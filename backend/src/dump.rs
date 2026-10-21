@@ -50,6 +50,8 @@ const TABLES: &[(&str, &str)] = &[
     ("exchange_rates", "id:i,currency_code,rate,rate_date,created_at"),
     ("saft_account_mappings", "id:i,company_id:i,kind,type_code,debit_account,credit_account,debit_analytical,credit_analytical,description,is_active:i"),
     ("product_name_mappings", "id:i,company_id:i,counterpart_id:i,scanned_name,product_id:i,created_at"),
+    ("invoice_flags", "id:i,exclude_vat:i,vat_article,customs_statistical,customs_duty,customs_vat"),
+    ("audit_logs", "id:i,company_id:i,user_id:i,user_login,user_name,entity_type,entity_id:i,entity_number,action,summary,old_amount,new_amount,old_data,new_data,created_at"),
 ];
 
 fn columns(spec: &str) -> Vec<(&str, bool)> {

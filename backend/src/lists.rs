@@ -110,6 +110,7 @@ pub async fn journal(
 ) -> Result<Json<Value>, ApiError> {
     let sub = auth::subject(&st.jwt_secret, &headers)?;
     let company = crate::form::active_or_one(&st, &sub).await?;
+    let stamps = crate::audit::stamps_for(&st.db, company, "journal").await?;
     let rows = rows(
         &st,
         &headers,
@@ -118,7 +119,15 @@ pub async fn journal(
         ),
     )
     .await?;
-    let items: Vec<Value> = rows.iter().map(entry_json).collect();
+    let items: Vec<Value> = rows
+        .iter()
+        .map(|r| {
+            let id = cell_i32_at(r, 0);
+            let mut v = entry_json(r);
+            crate::audit::attach_stamp(&mut v, stamps.get(&id));
+            v
+        })
+        .collect();
     Ok(paginate(items, &q))
 }
 
@@ -160,6 +169,9 @@ pub async fn journal_show(
             "account_name": cell_str(r, 6),
         }))
         .collect::<Vec<_>>());
+    let stamps = crate::audit::stamps_for(&st.db, company, "journal").await?;
+    crate::audit::attach_stamp(&mut value, stamps.get(&id));
+    value["audit_history"] = json!(crate::audit::history_for(&st.db, company, "journal", id).await?);
     Ok(Json(value))
 }
 

@@ -28,7 +28,33 @@ pub struct Body {
 pub async fn post(State(st): State<AppState>, headers: HeaderMap, Json(body): Json<Body>) -> Result<Json<Value>, ApiError> {
     let sub = auth_sub(&st, &headers)?;
     let company = active_or_one(&st, &sub).await?;
-    Ok(Json(run(&st.db, company, body.month.as_deref(), body.until.as_deref()).await?))
+    let res = run(&st.db, company, body.month.as_deref(), body.until.as_deref()).await?;
+    let amt = res.get("amount").and_then(|v| v.as_str()).unwrap_or("0.00");
+    if let Some(entries) = res.get("entries").and_then(|v| v.as_array()) {
+        for eid in entries {
+            let entry_id = eid.as_i64().unwrap_or(0) as i32;
+            if entry_id > 0 {
+                let m = body.month.as_deref().or(body.until.as_deref()).unwrap_or("");
+                let summary = format!("Осчетоводено изписване на стоки/продукция ({m}), сума {amt}");
+                crate::audit::record(
+                    &st.db,
+                    company,
+                    &sub,
+                    "journal",
+                    entry_id,
+                    m,
+                    "create",
+                    &summary,
+                    "",
+                    amt,
+                    None,
+                    Some(&res),
+                )
+                .await;
+            }
+        }
+    }
+    Ok(Json(res))
 }
 
 pub async fn run(db: &crate::db::Db, company: i32, month: Option<&str>, until: Option<&str>) -> Result<Value, ApiError> {

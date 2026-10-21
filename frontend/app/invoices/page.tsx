@@ -8,6 +8,7 @@ import { useI18n } from "../../components/I18nProvider";
 import { RequireAuth } from "../../components/RequireAuth";
 import { IconButton } from "../../components/IconButton";
 import { Pagination } from "../../components/Pagination";
+import { AuditStampBadge } from "../../components/AuditHistory";
 
 const PAGE_SIZE = 50;
 
@@ -282,6 +283,7 @@ function InvoicesInner() {
                 <th>{t("invoices.counterpart")}</th>
                 <th>{t("invoices.total")}</th>
                 <th>{t("invoices.status")}</th>
+                <th>{t("audit.col_stamp")}</th>
                 <th>{t("common.actions")}</th>
               </tr>
             </thead>
@@ -319,6 +321,15 @@ function InvoicesInner() {
                     <span className={`badge ${statusClass(inv.status)}`}>
                       {t(`invoices.status.${inv.status}`)}
                     </span>
+                  </td>
+                  <td>
+                    <AuditStampBadge
+                      createdBy={inv.created_by}
+                      createdAt={inv.created_at}
+                      updatedBy={inv.updated_by}
+                      updatedAt={inv.updated_at}
+                      editCount={inv.edit_count}
+                    />
                   </td>
                   <td>
                     <div className="icon-actions">

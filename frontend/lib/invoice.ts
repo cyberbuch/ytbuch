@@ -89,6 +89,25 @@ export interface InvoiceParty {
   contact_person?: string;
 }
 
+export interface AuditEntry {
+  id: number;
+  company_id: number;
+  user_id: number;
+  user_login: string;
+  user_name: string;
+  entity_type: string;
+  entity_id: number;
+  entity_number: string;
+  action: string;
+  summary: string;
+  old_amount: string;
+  new_amount: string;
+  amount_changed?: boolean;
+  old_data?: unknown;
+  new_data?: unknown;
+  created_at: string;
+}
+
 export interface Invoice {
   id: number;
   direction: string;
@@ -122,6 +141,12 @@ export interface Invoice {
   lines?: InvoiceLine[];
   counterpart?: InvoiceParty;
   company?: InvoiceParty;
+  created_by?: string;
+  created_at?: string;
+  updated_by?: string;
+  updated_at?: string;
+  edit_count?: number;
+  audit_history?: AuditEntry[];
 }
 
 export function emptyLine(): InvoiceLine {
@@ -138,7 +163,7 @@ export function emptyLine(): InvoiceLine {
   };
 }
 
-export { todayIso, formatBgDate, toDateInput } from "./dates";
+export { todayIso, formatBgDate, formatBgDateTime, toDateInput } from "./dates";
 
 export function normVatRate(s: string | undefined | null): string {
   const n = num(String(s ?? ""));

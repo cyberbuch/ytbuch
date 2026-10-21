@@ -9,6 +9,7 @@ mod access;
 mod addr;
 mod asset_ops;
 mod assets;
+mod audit;
 mod auth;
 mod auth_flow;
 mod bank_csv;
@@ -415,6 +416,11 @@ async fn main() {
         .route("/v1/dividends/{id}/pay", post(dividends::pay))
         .route("/v1/reports", get(reports::index))
         .route("/v1/reports/export", get(reports::export))
+        .route("/v1/audit-logs", get(audit::index))
+        .route(
+            "/v1/audit-logs/{entity_type}/{entity_id}",
+            get(audit::entity_history),
+        )
         .route("/v1/fs/lines", get(fsform::lines))
         .route("/v1/fs/formulas", get(fsform::index).put(fsform::put))
         .route("/v1/fs/formulas/defaults", post(fsform::defaults))

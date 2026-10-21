@@ -1,3 +1,5 @@
+import { AuditEntry } from "./invoice";
+
 export interface InternalDocLine {
   id?: number;
   line_kind: "product" | "fixed_asset";
@@ -20,6 +22,12 @@ export interface InternalDoc {
   handed_by?: string;
   received_by?: string;
   lines?: InternalDocLine[];
+  created_by?: string;
+  created_at?: string;
+  updated_by?: string;
+  updated_at?: string;
+  edit_count?: number;
+  audit_history?: AuditEntry[];
 }
 
 export function emptyIdocLine(): InternalDocLine {

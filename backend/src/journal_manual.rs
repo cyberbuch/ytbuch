@@ -115,6 +115,40 @@ fn check_balanced(lines: &[Line]) -> Result<(), ApiError> {
     Ok(())
 }
 
+fn entry_debit_total(v: &Value) -> String {
+    let mut debit = 0i64;
+    if let Some(arr) = v.get("lines").and_then(|x| x.as_array()) {
+        for l in arr {
+            if l.get("direction").and_then(|d| d.as_str()) == Some("debit") {
+                let raw = l.get("amount").and_then(|a| a.as_str()).unwrap_or("0");
+                debit += crate::invoice_money::cents(raw).unwrap_or(0);
+            }
+        }
+    }
+    crate::invoice_money::money(debit)
+}
+
+fn entry_accounts_summary(v: &Value) -> String {
+    let mut debits = Vec::new();
+    let mut credits = Vec::new();
+    if let Some(arr) = v.get("lines").and_then(|x| x.as_array()) {
+        for l in arr {
+            let num = l.get("account_number").and_then(|a| a.as_str()).unwrap_or("");
+            if num.is_empty() {
+                continue;
+            }
+            if l.get("direction").and_then(|d| d.as_str()) == Some("debit") {
+                if !debits.contains(&num.to_string()) {
+                    debits.push(num.to_string());
+                }
+            } else if !credits.contains(&num.to_string()) {
+                credits.push(num.to_string());
+            }
+        }
+    }
+    format!("Дт {} / Кт {}", debits.join(","), credits.join(","))
+}
+
 async fn write_lines(db: &crate::db::Db, entry_id: i32, lines: &[Line], company: i32) -> Result<(), ApiError> {
     for l in lines {
         form::ensure_row(db, "accounts", l.account_id, company, "сметката").await?;
@@ -177,6 +211,9 @@ async fn entry_json_full(st: &AppState, id: i32, company: i32) -> Result<Value, 
         "account_number": cell_str(r, 5),
         "account_name": cell_str(r, 6),
     })).collect::<Vec<_>>());
+    let stamps = crate::audit::stamps_for(&st.db, company, "journal").await?;
+    crate::audit::attach_stamp(&mut value, stamps.get(&id));
+    value["audit_history"] = json!(crate::audit::history_for(&st.db, company, "journal", id).await?);
     Ok(value)
 }
 
@@ -251,6 +288,27 @@ pub async fn create(
     }
 
     let value = entry_json_full(&st, entry_id, company).await?;
+    let amt = entry_debit_total(&value);
+    let accts = entry_accounts_summary(&value);
+    let summary = format!(
+        "Създадена ръчна статия {document_number} ({entry_date}) — {description} [{accts}], оборот {amt}"
+    );
+    crate::audit::record(
+        &st.db,
+        company,
+        &sub,
+        "journal",
+        entry_id,
+        &document_number,
+        "create",
+        &summary,
+        "",
+        &amt,
+        None,
+        Some(&value),
+    )
+    .await;
+    let value = entry_json_full(&st, entry_id, company).await?;
     Ok((StatusCode::CREATED, Json(value)))
 }
 
@@ -268,6 +326,7 @@ pub async fn update(
     if !is_manual(&doc_type) {
         return Err(api_err(StatusCode::FORBIDDEN, "само ръчни записи могат да се редактират"));
     }
+    let before = entry_json_full(&st, id, company).await?;
 
     let entry_date = form::required(form::str_field(obj, "entry_date")?, "entry_date")?;
     periods::assert_open(&st.db, company, &entry_date).await?;
@@ -324,13 +383,52 @@ pub async fn update(
     write_lines(&st.db, id, &lines, company).await?;
 
     let value = entry_json_full(&st, id, company).await?;
+    let old_amt = entry_debit_total(&before);
+    let new_amt = entry_debit_total(&value);
+    let old_accts = entry_accounts_summary(&before);
+    let new_accts = entry_accounts_summary(&value);
+    let mut changes = Vec::new();
+    if old_amt != new_amt {
+        changes.push(format!("оборот: {old_amt} → {new_amt}"));
+    }
+    if old_accts != new_accts {
+        changes.push(format!("сметки: {old_accts} → {new_accts}"));
+    }
+    let old_desc = before.get("description").and_then(|v| v.as_str()).unwrap_or("");
+    if old_desc != description {
+        changes.push(format!("описание: {old_desc} → {description}"));
+    }
+    let diff = if changes.is_empty() {
+        format!("{new_accts}, оборот {new_amt}")
+    } else {
+        changes.join(", ")
+    };
+    let summary = format!(
+        "Редактирана счетоводна статия {document_number} ({entry_date}) — {description} ({diff})"
+    );
+    crate::audit::record(
+        &st.db,
+        company,
+        &sub,
+        "journal",
+        id,
+        &document_number,
+        "update",
+        &summary,
+        &old_amt,
+        &new_amt,
+        Some(&before),
+        Some(&value),
+    )
+    .await;
+    let value = entry_json_full(&st, id, company).await?;
     Ok(Json(value))
 }
 
-async fn delete_one(db: &crate::db::Db, id: i32, company: i32) -> Result<(), ApiError> {
+async fn delete_one(st: &AppState, sub: &str, id: i32, company: i32) -> Result<(), ApiError> {
     let rows = invoice_read::qry(
-        db,
-        &format!("SELECT document_type, entry_date FROM journal_entries WHERE id = {id} AND company_id = {company}"),
+        &st.db,
+        &format!("SELECT document_type, entry_date, document_number, description FROM journal_entries WHERE id = {id} AND company_id = {company}"),
     )
     .await?;
     let Some(row) = rows.first() else {
@@ -341,8 +439,28 @@ async fn delete_one(db: &crate::db::Db, id: i32, company: i32) -> Result<(), Api
         return Err(api_err(StatusCode::FORBIDDEN, "само ръчни записи могат да се изтриват"));
     }
     let entry_date = cell_str(row, 1);
-    periods::assert_open(db, company, &entry_date).await?;
-    invoice_read::wipe_journal(db, id).await?;
+    let doc_no = cell_str(row, 2);
+    let desc = cell_str(row, 3);
+    periods::assert_open(&st.db, company, &entry_date).await?;
+    let before = entry_json_full(st, id, company).await.ok();
+    let old_amt = before.as_ref().map(entry_debit_total).unwrap_or_default();
+    invoice_read::wipe_journal(&st.db, id).await?;
+    let summary = format!("Изтрита счетоводна статия {doc_no} ({entry_date}) — {desc}, оборот {old_amt}");
+    crate::audit::record(
+        &st.db,
+        company,
+        sub,
+        "journal",
+        id,
+        &doc_no,
+        "delete",
+        &summary,
+        &old_amt,
+        "",
+        before.as_ref(),
+        None,
+    )
+    .await;
     Ok(())
 }
 
@@ -353,7 +471,7 @@ pub async fn delete(
 ) -> Result<StatusCode, ApiError> {
     let sub = auth_sub(&st, &headers)?;
     let company = active_or_one(&st, &sub).await?;
-    delete_one(&st.db, id, company).await?;
+    delete_one(&st, &sub, id, company).await?;
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -369,7 +487,7 @@ pub async fn bulk_delete(
     let mut failed = 0;
     let mut results = Vec::new();
     for id in ids {
-        match delete_one(&st.db, id, company).await {
+        match delete_one(&st, &sub, id, company).await {
             Ok(()) => {
                 done += 1;
                 results.push(json!({ "id": id, "ok": 1 }));

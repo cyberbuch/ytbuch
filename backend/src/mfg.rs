@@ -26,10 +26,14 @@ pub async fn index(
     Query(q): Query<PageQuery>,
 ) -> Result<Json<Value>, ApiError> {
     let company = company(&st, &headers).await?;
+    let stamps = crate::audit::stamps_for(&st.db, company, "production_order").await?;
     let rows = invoice_read::qry(&st.db, &format!("{SEL} WHERE company_id = {company} ORDER BY id")).await?;
     let mut items: Vec<Value> = Vec::new();
     for row in &rows {
-        items.push(one(&st, row, false).await?);
+        let mut item = one(&st, row, false).await?;
+        let id = cell_i32_at(row, 0);
+        crate::audit::attach_stamp(&mut item, stamps.get(&id));
+        items.push(item);
     }
     Ok(paginate(items, &q))
 }
@@ -40,7 +44,15 @@ pub async fn show(
     Path(id): Path<i32>,
 ) -> Result<Json<Value>, ApiError> {
     let company = company(&st, &headers).await?;
-    Ok(Json(load(&st, id, company).await?))
+    Ok(Json(load_with_audit(&st, id, company).await?))
+}
+
+async fn load_with_audit(st: &AppState, id: i32, company: i32) -> Result<Value, ApiError> {
+    let mut v = load(st, id, company).await?;
+    let stamps = crate::audit::stamps_for(&st.db, company, "production_order").await?;
+    crate::audit::attach_stamp(&mut v, stamps.get(&id));
+    v["audit_history"] = json!(crate::audit::history_for(&st.db, company, "production_order", id).await?);
+    Ok(v)
 }
 
 pub async fn create(
@@ -48,6 +60,7 @@ pub async fn create(
     headers: HeaderMap,
     Json(body): Json<Value>,
 ) -> Result<(StatusCode, Json<Value>), ApiError> {
+    let sub = auth_sub(&st, &headers)?;
     let company = company(&st, &headers).await?;
     let obj = form::object(&body)?;
     let recipe_id = form::i32_field(obj, "recipe_id")?.unwrap_or(0);
@@ -82,7 +95,24 @@ pub async fn create(
         let _ = wipe(&st, id).await;
         return Err(e);
     }
-    Ok((StatusCode::CREATED, Json(load(&st, id, company).await?)))
+    let after = load(&st, id, company).await?;
+    let summary = format!("Създадена поръчка за производство {number} ({order_date}), к-во {quantity}");
+    crate::audit::record(
+        &st.db,
+        company,
+        &sub,
+        "production_order",
+        id,
+        &number,
+        "create",
+        &summary,
+        "",
+        "0.00",
+        None,
+        Some(&after),
+    )
+    .await;
+    Ok((StatusCode::CREATED, Json(load_with_audit(&st, id, company).await?)))
 }
 
 pub async fn delete(
@@ -90,12 +120,30 @@ pub async fn delete(
     headers: HeaderMap,
     Path(id): Path<i32>,
 ) -> Result<StatusCode, ApiError> {
+    let sub = auth_sub(&st, &headers)?;
     let company = company(&st, &headers).await?;
     let cur = load(&st, id, company).await?;
     if cur.get("status").and_then(|v| v.as_str()) != Some("draft") {
         return Err(api_err(StatusCode::UNPROCESSABLE_ENTITY, "завършена поръчка не се изтрива"));
     }
+    let number = text(&cur, "number");
     wipe(&st, id).await?;
+    let summary = format!("Изтрита поръчка за производство {number}");
+    crate::audit::record(
+        &st.db,
+        company,
+        &sub,
+        "production_order",
+        id,
+        &number,
+        "delete",
+        &summary,
+        &text(&cur, "material_cost"),
+        "",
+        Some(&cur),
+        None,
+    )
+    .await;
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -104,6 +152,7 @@ pub async fn confirm(
     headers: HeaderMap,
     Path(id): Path<i32>,
 ) -> Result<Json<Value>, ApiError> {
+    let sub = auth_sub(&st, &headers)?;
     let company = company(&st, &headers).await?;
     let cur = load(&st, id, company).await?;
     if cur.get("status").and_then(|v| v.as_str()) == Some("completed") {
@@ -133,7 +182,26 @@ pub async fn confirm(
         let _ = invoice_read::exe(&st.db, &format!("UPDATE production_orders SET status = 'draft' WHERE id = {id}")).await;
         return Err(e);
     }
-    Ok(Json(load(&st, id, company).await?))
+    let after = load(&st, id, company).await?;
+    let number = text(&after, "number");
+    let cost = text(&after, "material_cost");
+    let summary = format!("Потвърдена поръчка за производство {number} ({order_date}), себестойност {cost}");
+    crate::audit::record(
+        &st.db,
+        company,
+        &sub,
+        "production_order",
+        id,
+        &number,
+        "post",
+        &summary,
+        "0.00",
+        &cost,
+        Some(&cur),
+        Some(&after),
+    )
+    .await;
+    Ok(Json(load_with_audit(&st, id, company).await?))
 }
 
 async fn product_name(st: &AppState, id: i32, company: i32) -> Result<String, ApiError> {

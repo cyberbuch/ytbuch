@@ -9,6 +9,7 @@ import { CompanyLocation, fetchCompanyLocations } from "../../../lib/locations";
 import { useI18n } from "../../../components/I18nProvider";
 import { RequireAuth } from "../../../components/RequireAuth";
 import { IconButton } from "../../../components/IconButton";
+import { AuditHistoryPanel } from "../../../components/AuditHistory";
 
 function Inner() {
   const { t } = useI18n();
@@ -151,6 +152,14 @@ function Inner() {
           </tbody>
         </table>
       </section>
+      <AuditHistoryPanel
+        history={doc.audit_history}
+        createdBy={doc.created_by}
+        createdAt={doc.created_at}
+        updatedBy={doc.updated_by}
+        updatedAt={doc.updated_at}
+        editCount={doc.edit_count}
+      />
     </div>
   );
 }

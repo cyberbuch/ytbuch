@@ -445,6 +445,48 @@ pub async fn post(
     let sub = auth_sub(&st, &headers)?;
     let company = active_or_one(&st, &sub).await?;
     let body = post_one(&st, company, id).await?;
+    if let Ok(inv) = invoice_read::load(&st.db, id).await {
+        let tot = format!("{} {}", inv.total_amount, inv.currency);
+        let jid = body.get("id").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
+        let summary = format!(
+            "Осчетоводен документ ({}) № {} — {}, сума {tot} (статия #{jid})",
+            invoice_money::title(&inv.document_type),
+            inv.number,
+            inv.counterpart_name
+        );
+        crate::audit::record(
+            &st.db,
+            company,
+            &sub,
+            "invoice",
+            id,
+            &inv.number,
+            "post",
+            &summary,
+            &tot,
+            &tot,
+            None,
+            Some(&body),
+        )
+        .await;
+        if jid > 0 {
+            crate::audit::record(
+                &st.db,
+                company,
+                &sub,
+                "journal",
+                jid,
+                &inv.number,
+                "create",
+                &summary,
+                "",
+                &tot,
+                None,
+                Some(&body),
+            )
+            .await;
+        }
+    }
     Ok((StatusCode::CREATED, Json(body)))
 }
 
@@ -461,7 +503,49 @@ pub async fn bulk_post(
     let mut results = Vec::new();
     for id in ids {
         match post_one(&st, company, id).await {
-            Ok(_) => {
+            Ok(jbody) => {
+                if let Ok(inv) = invoice_read::load(&st.db, id).await {
+                    let tot = format!("{} {}", inv.total_amount, inv.currency);
+                    let jid = jbody.get("id").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
+                    let summary = format!(
+                        "Осчетоводен документ ({}) № {} — {}, сума {tot} (статия #{jid})",
+                        invoice_money::title(&inv.document_type),
+                        inv.number,
+                        inv.counterpart_name
+                    );
+                    crate::audit::record(
+                        &st.db,
+                        company,
+                        &sub,
+                        "invoice",
+                        id,
+                        &inv.number,
+                        "post",
+                        &summary,
+                        &tot,
+                        &tot,
+                        None,
+                        Some(&jbody),
+                    )
+                    .await;
+                    if jid > 0 {
+                        crate::audit::record(
+                            &st.db,
+                            company,
+                            &sub,
+                            "journal",
+                            jid,
+                            &inv.number,
+                            "create",
+                            &summary,
+                            "",
+                            &tot,
+                            None,
+                            Some(&jbody),
+                        )
+                        .await;
+                    }
+                }
                 done += 1;
                 results.push(json!({ "id": id, "ok": 1 }));
             }
@@ -486,8 +570,33 @@ pub async fn bulk_unpost(
     let mut failed = 0;
     let mut results = Vec::new();
     for id in ids {
+        let before = invoice_read::load(&st.db, id).await.ok();
         match unpost_one(&st, company, id).await {
             Ok(()) => {
+                if let Some(inv) = before {
+                    let tot = format!("{} {}", inv.total_amount, inv.currency);
+                    let summary = format!(
+                        "Върнат в чернова (отпостнат) документ ({}) № {} — {}, сума {tot}",
+                        invoice_money::title(&inv.document_type),
+                        inv.number,
+                        inv.counterpart_name
+                    );
+                    crate::audit::record(
+                        &st.db,
+                        company,
+                        &sub,
+                        "invoice",
+                        id,
+                        &inv.number,
+                        "unpost",
+                        &summary,
+                        &tot,
+                        &tot,
+                        None,
+                        None,
+                    )
+                    .await;
+                }
                 done += 1;
                 results.push(json!({ "id": id, "ok": 1 }));
             }

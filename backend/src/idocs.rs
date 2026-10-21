@@ -28,10 +28,14 @@ pub async fn index(
     Query(q): Query<PageQuery>,
 ) -> Result<Json<Value>, ApiError> {
     let company = company(&st, &headers).await?;
+    let stamps = crate::audit::stamps_for(&st.db, company, "internal_doc").await?;
     let rows = invoice_read::qry(&st.db, &format!("{DOC_SEL} WHERE company_id = {company} ORDER BY id")).await?;
     let mut items: Vec<Value> = Vec::new();
     for row in &rows {
-        items.push(one(&st, row).await?);
+        let mut item = one(&st, row).await?;
+        let id = cell_i32_at(row, 0);
+        crate::audit::attach_stamp(&mut item, stamps.get(&id));
+        items.push(item);
     }
     Ok(paginate(items, &q))
 }
@@ -42,7 +46,26 @@ pub async fn show(
     Path(id): Path<i32>,
 ) -> Result<Json<Value>, ApiError> {
     let company = company(&st, &headers).await?;
-    Ok(Json(load(&st, id, company).await?))
+    Ok(Json(load_with_audit(&st, id, company).await?))
+}
+
+async fn load_with_audit(st: &AppState, id: i32, company: i32) -> Result<Value, ApiError> {
+    let mut v = load(st, id, company).await?;
+    let stamps = crate::audit::stamps_for(&st.db, company, "internal_doc").await?;
+    crate::audit::attach_stamp(&mut v, stamps.get(&id));
+    v["audit_history"] = json!(crate::audit::history_for(&st.db, company, "internal_doc", id).await?);
+    Ok(v)
+}
+
+fn idoc_total(doc: &Value) -> String {
+    let mut sum = 0i128;
+    if let Some(arr) = doc.get("lines").and_then(|v| v.as_array()) {
+        for l in arr {
+            let amt = l.get("amount").and_then(|v| v.as_str()).unwrap_or("0");
+            sum = dec::add(sum, dec::or0(amt)).unwrap_or(sum);
+        }
+    }
+    money(sum)
 }
 
 pub async fn create(
@@ -50,6 +73,7 @@ pub async fn create(
     headers: HeaderMap,
     Json(body): Json<Value>,
 ) -> Result<(StatusCode, Json<Value>), ApiError> {
+    let sub = auth_sub(&st, &headers)?;
     let company = company(&st, &headers).await?;
     let obj = form::object(&body)?;
     let lines = parse_lines(&st, company, obj).await?;
@@ -67,7 +91,25 @@ pub async fn create(
         let _ = wipe(&st, id).await;
         return Err(e);
     }
-    Ok((StatusCode::CREATED, Json(load(&st, id, company).await?)))
+    let after = load(&st, id, company).await?;
+    let tot = idoc_total(&after);
+    let summary = format!("Създаден вътрешен протокол № {number}, сума {tot}");
+    crate::audit::record(
+        &st.db,
+        company,
+        &sub,
+        "internal_doc",
+        id,
+        &number,
+        "create",
+        &summary,
+        "",
+        &tot,
+        None,
+        Some(&after),
+    )
+    .await;
+    Ok((StatusCode::CREATED, Json(load_with_audit(&st, id, company).await?)))
 }
 
 pub async fn update(
@@ -76,6 +118,7 @@ pub async fn update(
     Path(id): Path<i32>,
     Json(body): Json<Value>,
 ) -> Result<Json<Value>, ApiError> {
+    let sub = auth_sub(&st, &headers)?;
     let company = company(&st, &headers).await?;
     need(id)?;
     let cur = load(&st, id, company).await?;
@@ -105,7 +148,26 @@ pub async fn update(
         invoice_read::exe(&st.db, &format!("DELETE FROM internal_doc_lines WHERE doc_id = {id}")).await?;
         insert_lines(&st, id, &lines).await?;
     }
-    Ok(Json(load(&st, id, company).await?))
+    let after = load(&st, id, company).await?;
+    let old_tot = idoc_total(&cur);
+    let new_tot = idoc_total(&after);
+    let summary = format!("Редактиран вътрешен протокол № {number}, сума {old_tot} → {new_tot}");
+    crate::audit::record(
+        &st.db,
+        company,
+        &sub,
+        "internal_doc",
+        id,
+        &number,
+        "update",
+        &summary,
+        &old_tot,
+        &new_tot,
+        Some(&cur),
+        Some(&after),
+    )
+    .await;
+    Ok(Json(load_with_audit(&st, id, company).await?))
 }
 
 pub async fn delete(
@@ -113,13 +175,32 @@ pub async fn delete(
     headers: HeaderMap,
     Path(id): Path<i32>,
 ) -> Result<StatusCode, ApiError> {
+    let sub = auth_sub(&st, &headers)?;
     let company = company(&st, &headers).await?;
     need(id)?;
     let cur = load(&st, id, company).await?;
     if cur.get("status").and_then(|v| v.as_str()) == Some("confirmed") {
         return Err(api_err(StatusCode::CONFLICT, "потвърденият протокол не се трие"));
     }
+    let number = text(&cur, "number");
+    let old_tot = idoc_total(&cur);
     wipe(&st, id).await?;
+    let summary = format!("Изтрит вътрешен протокол № {number}, сума {old_tot}");
+    crate::audit::record(
+        &st.db,
+        company,
+        &sub,
+        "internal_doc",
+        id,
+        &number,
+        "delete",
+        &summary,
+        &old_tot,
+        "",
+        Some(&cur),
+        None,
+    )
+    .await;
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -128,6 +209,7 @@ pub async fn confirm(
     headers: HeaderMap,
     Path(id): Path<i32>,
 ) -> Result<Json<Value>, ApiError> {
+    let sub = auth_sub(&st, &headers)?;
     let company = company(&st, &headers).await?;
     need(id)?;
     let cur = load(&st, id, company).await?;
@@ -161,7 +243,26 @@ pub async fn confirm(
         }
         return Err(e);
     }
-    Ok(Json(load(&st, id, company).await?))
+    let after = load(&st, id, company).await?;
+    let number = text(&after, "number");
+    let tot = idoc_total(&after);
+    let summary = format!("Потвърден вътрешен протокол № {number} ({from_name} → {to_name})");
+    crate::audit::record(
+        &st.db,
+        company,
+        &sub,
+        "internal_doc",
+        id,
+        &number,
+        "post",
+        &summary,
+        &tot,
+        &tot,
+        Some(&cur),
+        Some(&after),
+    )
+    .await;
+    Ok(Json(load_with_audit(&st, id, company).await?))
 }
 
 async fn apply_line(

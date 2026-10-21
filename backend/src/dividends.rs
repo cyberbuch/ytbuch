@@ -66,6 +66,7 @@ pub async fn create(
     headers: HeaderMap,
     Json(body): Json<Value>,
 ) -> Result<(StatusCode, Json<Value>), ApiError> {
+    let sub = auth_sub(&st, &headers)?;
     let company = company(&st, &headers).await?;
     let obj = form::object(&body)?;
     let year = year_of(form::i32_field(obj, "year")?)?;
@@ -90,7 +91,25 @@ pub async fn create(
         let _ = wipe(&st, id).await;
         return Err(e);
     }
-    Ok((StatusCode::CREATED, Json(load(&st, id, company).await?)))
+    let after = load(&st, id, company).await?;
+    let tot_m = money(total);
+    let summary = format!("Създаден протокол за дивидент № {number} ({year}), сума {tot_m}");
+    crate::audit::record(
+        &st.db,
+        company,
+        &sub,
+        "dividend",
+        id,
+        &number,
+        "create",
+        &summary,
+        "",
+        &tot_m,
+        None,
+        Some(&after),
+    )
+    .await;
+    Ok((StatusCode::CREATED, Json(after)))
 }
 
 pub async fn update(
@@ -99,6 +118,7 @@ pub async fn update(
     Path(id): Path<i32>,
     Json(body): Json<Value>,
 ) -> Result<Json<Value>, ApiError> {
+    let sub = auth_sub(&st, &headers)?;
     let company = company(&st, &headers).await?;
     let cur = load(&st, id, company).await?;
     let obj = form::object(&body)?;
@@ -146,7 +166,27 @@ pub async fn update(
             invoice_read::exe(&st.db, &format!("UPDATE dividend_distributions SET notes = {} WHERE id = {id}", lit(&notes))).await?;
         }
     }
-    Ok(Json(load(&st, id, company).await?))
+    let after = load(&st, id, company).await?;
+    let old_tot = cur.get("total_amount").and_then(|v| v.as_str()).unwrap_or("0.00");
+    let new_tot = after.get("total_amount").and_then(|v| v.as_str()).unwrap_or("0.00");
+    let num = after.get("decision_number").and_then(|v| v.as_str()).unwrap_or("");
+    let summary = format!("Редактиран протокол за дивидент № {num}, сума {old_tot} → {new_tot}");
+    crate::audit::record(
+        &st.db,
+        company,
+        &sub,
+        "dividend",
+        id,
+        num,
+        "update",
+        &summary,
+        old_tot,
+        new_tot,
+        Some(&cur),
+        Some(&after),
+    )
+    .await;
+    Ok(Json(after))
 }
 
 pub async fn delete(
@@ -154,6 +194,7 @@ pub async fn delete(
     headers: HeaderMap,
     Path(id): Path<i32>,
 ) -> Result<StatusCode, ApiError> {
+    let sub = auth_sub(&st, &headers)?;
     let company = company(&st, &headers).await?;
     let cur = load(&st, id, company).await?;
     if any_paid(&cur) {
@@ -165,7 +206,25 @@ pub async fn delete(
             "Може да се изтрие само чернова. Първо върнете разпределението в чернова.",
         ));
     }
+    let old_tot = cur.get("total_amount").and_then(|v| v.as_str()).unwrap_or("0.00").to_string();
+    let num = cur.get("decision_number").and_then(|v| v.as_str()).unwrap_or("").to_string();
     wipe(&st, id).await?;
+    let summary = format!("Изтрит протокол за дивидент № {num}, сума {old_tot}");
+    crate::audit::record(
+        &st.db,
+        company,
+        &sub,
+        "dividend",
+        id,
+        &num,
+        "delete",
+        &summary,
+        &old_tot,
+        "",
+        Some(&cur),
+        None,
+    )
+    .await;
     Ok(StatusCode::NO_CONTENT)
 }
 

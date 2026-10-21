@@ -43,6 +43,7 @@ pub async fn post_dep(
     headers: HeaderMap,
     Json(body): Json<Value>,
 ) -> Result<(StatusCode, Json<Value>), ApiError> {
+    let sub = form::auth_sub(&st, &headers)?;
     let company = assets::company(&st, &headers).await?;
     let obj = form::object(&body)?;
     let period = form::required(form::str_field(obj, "period")?, "period")?;
@@ -90,6 +91,22 @@ pub async fn post_dep(
             return Err(e);
         }
     }
+    let summary = format!("Осчетоводена месечна амортизация на ДМА ({period}), сума {total_s}");
+    crate::audit::record(
+        &st.db,
+        company,
+        &sub,
+        "journal",
+        entry,
+        &period,
+        "create",
+        &summary,
+        "",
+        &total_s,
+        None,
+        None,
+    )
+    .await;
     Ok((
         StatusCode::CREATED,
         Json(json!({

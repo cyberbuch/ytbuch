@@ -424,6 +424,80 @@ pub async fn migrate(db: &Client) -> DbResult<()> {
     )
     .await?;
     seed_demo(db).await?;
+    seed_audit_backfill(db).await?;
+    Ok(())
+}
+
+async fn seed_audit_backfill(db: &Client) -> DbResult<()> {
+    let rows = query(db, "SELECT id FROM audit_logs").await?;
+    if !rows.is_empty() {
+        return Ok(());
+    }
+    let invs = query(
+        db,
+        "SELECT id, company_id, direction, number, counterpart_name, currency, total_amount, issue_date FROM invoices ORDER BY id",
+    )
+    .await?;
+    for r in &invs {
+        let id = cell_i32_at(r, 0);
+        let co = cell_i32_at(r, 1);
+        let dir = cell_str(r, 2);
+        let num = cell_str(r, 3);
+        let cp = cell_str(r, 4);
+        let cur = cell_str(r, 5);
+        let tot = cell_str(r, 6);
+        let dt = cell_str(r, 7);
+        let stamp = if dt.len() >= 10 {
+            format!("{}T09:00:00Z", &dt[..10])
+        } else {
+            now_stamp()
+        };
+        let dir_bg = if dir == "in" { "входящ" } else { "изходящ" };
+        let sum = format!("Създаден {dir_bg} документ № {num} — {cp}, сума {tot} {cur}");
+        let aid = next_id(db, "audit_logs").await?;
+        exec(
+            db,
+            &format!(
+                "INSERT INTO audit_logs (id, company_id, user_id, user_login, user_name, entity_type, entity_id, entity_number, action, summary, old_amount, new_amount, old_data, new_data, created_at) \
+                 VALUES ({aid}, {co}, 1, 'superadmin', 'Superadmin (superadmin)', 'invoice', {id}, {}, 'create', {}, '', {}, '', '', {})",
+                lit(&num),
+                lit(&sum),
+                lit(&format!("{tot} {cur}")),
+                lit(&stamp),
+            ),
+        )
+        .await?;
+    }
+    let jrows = query(
+        db,
+        "SELECT id, company_id, entry_date, document_number, description FROM journal_entries ORDER BY id",
+    )
+    .await?;
+    for r in &jrows {
+        let id = cell_i32_at(r, 0);
+        let co = cell_i32_at(r, 1);
+        let dt = cell_str(r, 2);
+        let num = cell_str(r, 3);
+        let desc = cell_str(r, 4);
+        let stamp = if dt.len() >= 10 {
+            format!("{}T09:05:00Z", &dt[..10])
+        } else {
+            now_stamp()
+        };
+        let sum = format!("Създадена счетоводна статия #{id} ({num}) — {desc}");
+        let aid = next_id(db, "audit_logs").await?;
+        exec(
+            db,
+            &format!(
+                "INSERT INTO audit_logs (id, company_id, user_id, user_login, user_name, entity_type, entity_id, entity_number, action, summary, old_amount, new_amount, old_data, new_data, created_at) \
+                 VALUES ({aid}, {co}, 1, 'superadmin', 'Superadmin (superadmin)', 'journal', {id}, {}, 'create', {}, '', '', '', '', {})",
+                lit(&num),
+                lit(&sum),
+                lit(&stamp),
+            ),
+        )
+        .await?;
+    }
     Ok(())
 }
 
@@ -596,6 +670,18 @@ async fn seed_demo(db: &Client) -> DbResult<()> {
             (4, "4, 2, 6, '601', 'Разходи за материали', 'debit', '250.00', '0.00'"),
             (5, "5, 2, 4, '4531', 'Начислен ДДС', 'debit', '50.00', '50.00'"),
             (6, "6, 2, 2, '401', 'Доставчици', 'credit', '300.00', '0.00'"),
+        ],
+    )
+    .await?;
+    insert_missing(
+        db,
+        "audit_logs",
+        "id, company_id, user_id, user_login, user_name, entity_type, entity_id, entity_number, action, summary, old_amount, new_amount, old_data, new_data, created_at",
+        &[
+            (1, "1, 1, 1, 'superadmin', 'Superadmin (superadmin)', 'invoice', 1, '0000000001', 'create', 'Създаден изходящ документ (Фактура) № 0000000001 — Клиент Демо ЕООД, сума 1200.00 EUR', '', '1200.00 EUR', '', '', '2026-10-01T09:00:00Z'"),
+            (2, "2, 1, 1, 'superadmin', 'Superadmin (superadmin)', 'journal', 1, '0000000001', 'create', 'Осчетоводен документ (Фактура) № 0000000001 — Клиент Демо ЕООД, сума 1200.00 EUR (статия #1)', '', '1200.00 EUR', '', '', '2026-10-01T09:05:00Z'"),
+            (3, "3, 1, 1, 'superadmin', 'Superadmin (superadmin)', 'invoice', 2, '0000000042', 'create', 'Създаден входящ документ (Фактура) № 0000000042 — Доставчик Демо ООД, сума 300.00 EUR', '', '300.00 EUR', '', '', '2026-10-02T10:15:00Z'"),
+            (4, "4, 1, 1, 'superadmin', 'Superadmin (superadmin)', 'journal', 2, '0000000042', 'create', 'Осчетоводен документ (Фактура) № 0000000042 — Доставчик Демо ООД, сума 300.00 EUR (статия #2)', '', '300.00 EUR', '', '', '2026-10-02T10:20:00Z'"),
         ],
     )
     .await?;

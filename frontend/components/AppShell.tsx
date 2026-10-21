@@ -38,6 +38,7 @@ const NAV_ITEMS = [
   { href: "/production", key: "nav.production", perm: "production" },
   { href: "/journal", key: "nav.journal", perm: "journal" },
   { href: "/reports", key: "nav.reports", perm: "reports" },
+  { href: "/audit", key: "nav.audit", perm: "reports" },
   { href: "/opening-balances", key: "nav.opening_balances", perm: "periods" },
   { href: "/accounting-periods", key: "nav.periods", perm: "periods" },
   { href: "/vat", key: "nav.vat", perm: "vat" },

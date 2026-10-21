@@ -168,6 +168,28 @@ pub async fn issue_protocol(
     };
     let name = invoice_lines::prepare(&st, company, &head, 0).await?;
     let new_id = invoices::insert_header(&st, company, &head, &name, &new_lines).await?;
+    let after = invoice_read::detail(&st, &sub, new_id).await?;
+    let tot = after.get("total_amount").and_then(|v| v.as_str()).unwrap_or("0.00");
+    let curr = after.get("currency").and_then(|v| v.as_str()).unwrap_or("EUR");
+    let summary = format!(
+        "Създаден Протокол по {} № {} към фактура № {}, сума {tot} {curr}",
+        head.vat_article, head.number, inv.number
+    );
+    crate::audit::record(
+        &st.db,
+        company,
+        &sub,
+        "invoice",
+        new_id,
+        &head.number,
+        "create",
+        &summary,
+        "",
+        &format!("{tot} {curr}"),
+        None,
+        Some(&after),
+    )
+    .await;
     Ok((
         StatusCode::CREATED,
         Json(invoice_read::detail(&st, &sub, new_id).await?),
@@ -280,6 +302,27 @@ pub async fn issue_customs(
     };
     let name = invoice_lines::prepare(&st, company, &head, 0).await?;
     let new_id = invoices::insert_header(&st, company, &head, &name, &[line]).await?;
+    let after = invoice_read::detail(&st, &sub, new_id).await?;
+    let tot = after.get("total_amount").and_then(|v| v.as_str()).unwrap_or("0.00");
+    let summary = format!(
+        "Създадена Митническа декларация № {} към фактура № {}, сума {tot} EUR",
+        head.number, inv.number
+    );
+    crate::audit::record(
+        &st.db,
+        company,
+        &sub,
+        "invoice",
+        new_id,
+        &head.number,
+        "create",
+        &summary,
+        "",
+        &format!("{tot} EUR"),
+        None,
+        Some(&after),
+    )
+    .await;
     Ok((
         StatusCode::CREATED,
         Json(invoice_read::detail(&st, &sub, new_id).await?),

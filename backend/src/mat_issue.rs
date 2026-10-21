@@ -27,17 +27,40 @@ struct LineIn {
 
 pub async fn index(State(st): State<AppState>, headers: HeaderMap, Query(q): Query<PageQuery>) -> Result<Json<Value>, ApiError> {
     let company = company(&st, &headers).await?;
+    let stamps = crate::audit::stamps_for(&st.db, company, "material_issue").await?;
     let rows = invoice_read::qry(&st.db, &format!("{SEL} WHERE company_id = {company} ORDER BY id")).await?;
     let mut items = Vec::new();
     for row in &rows {
-        items.push(one(&st, row, false).await?);
+        let mut item = one(&st, row, false).await?;
+        let id = cell_i32_at(row, 0);
+        crate::audit::attach_stamp(&mut item, stamps.get(&id));
+        items.push(item);
     }
     Ok(paginate(items, &q))
 }
 
 pub async fn show(State(st): State<AppState>, headers: HeaderMap, Path(id): Path<i32>) -> Result<Json<Value>, ApiError> {
     let company = company(&st, &headers).await?;
-    Ok(Json(load(&st, id, company).await?))
+    Ok(Json(load_with_audit(&st, id, company).await?))
+}
+
+async fn load_with_audit(st: &AppState, id: i32, company: i32) -> Result<Value, ApiError> {
+    let mut v = load(st, id, company).await?;
+    let stamps = crate::audit::stamps_for(&st.db, company, "material_issue").await?;
+    crate::audit::attach_stamp(&mut v, stamps.get(&id));
+    v["audit_history"] = json!(crate::audit::history_for(&st.db, company, "material_issue", id).await?);
+    Ok(v)
+}
+
+fn mat_total(doc: &Value) -> String {
+    let mut sum = 0i128;
+    if let Some(arr) = doc.get("lines").and_then(|v| v.as_array()) {
+        for l in arr {
+            let amt = l.get("amount").and_then(|v| v.as_str()).unwrap_or("0");
+            sum = dec::add(sum, dec::or0(amt)).unwrap_or(sum);
+        }
+    }
+    dec::money(sum)
 }
 
 pub async fn create(
@@ -45,6 +68,7 @@ pub async fn create(
     headers: HeaderMap,
     Json(body): Json<Value>,
 ) -> Result<(StatusCode, Json<Value>), ApiError> {
+    let sub = auth_sub(&st, &headers)?;
     let company = company(&st, &headers).await?;
     let obj = form::object(&body)?;
     let lines = parse_lines(&st, company, obj).await?;
@@ -72,7 +96,24 @@ pub async fn create(
         let _ = wipe(&st, id).await;
         return Err(e);
     }
-    Ok((StatusCode::CREATED, Json(load(&st, id, company).await?)))
+    let after = load(&st, id, company).await?;
+    let summary = format!("Създаден документ за изписване на материали {number} ({date})");
+    crate::audit::record(
+        &st.db,
+        company,
+        &sub,
+        "material_issue",
+        id,
+        &number,
+        "create",
+        &summary,
+        "",
+        "0.00",
+        None,
+        Some(&after),
+    )
+    .await;
+    Ok((StatusCode::CREATED, Json(load_with_audit(&st, id, company).await?)))
 }
 
 pub async fn update(
@@ -81,6 +122,7 @@ pub async fn update(
     Path(id): Path<i32>,
     Json(body): Json<Value>,
 ) -> Result<Json<Value>, ApiError> {
+    let sub = auth_sub(&st, &headers)?;
     let company = company(&st, &headers).await?;
     let cur = load(&st, id, company).await?;
     draft(&cur)?;
@@ -103,18 +145,55 @@ pub async fn update(
         invoice_read::exe(&st.db, &format!("DELETE FROM material_issue_lines WHERE doc_id = {id}")).await?;
         insert_lines(&st, id, &lines).await?;
     }
-    Ok(Json(load(&st, id, company).await?))
+    let after = load(&st, id, company).await?;
+    let number = text(&after, "number");
+    let summary = format!("Редактиран документ за изписване на материали {number} ({date})");
+    crate::audit::record(
+        &st.db,
+        company,
+        &sub,
+        "material_issue",
+        id,
+        &number,
+        "update",
+        &summary,
+        &mat_total(&cur),
+        &mat_total(&after),
+        Some(&cur),
+        Some(&after),
+    )
+    .await;
+    Ok(Json(load_with_audit(&st, id, company).await?))
 }
 
 pub async fn delete(State(st): State<AppState>, headers: HeaderMap, Path(id): Path<i32>) -> Result<StatusCode, ApiError> {
+    let sub = auth_sub(&st, &headers)?;
     let company = company(&st, &headers).await?;
     let cur = load(&st, id, company).await?;
     draft(&cur)?;
+    let number = text(&cur, "number");
     wipe(&st, id).await?;
+    let summary = format!("Изтрит документ за изписване на материали {number}");
+    crate::audit::record(
+        &st.db,
+        company,
+        &sub,
+        "material_issue",
+        id,
+        &number,
+        "delete",
+        &summary,
+        &mat_total(&cur),
+        "",
+        Some(&cur),
+        None,
+    )
+    .await;
     Ok(StatusCode::NO_CONTENT)
 }
 
 pub async fn confirm(State(st): State<AppState>, headers: HeaderMap, Path(id): Path<i32>) -> Result<Json<Value>, ApiError> {
+    let sub = auth_sub(&st, &headers)?;
     let company = company(&st, &headers).await?;
     let cur = load(&st, id, company).await?;
     draft(&cur)?;
@@ -144,18 +223,39 @@ pub async fn confirm(State(st): State<AppState>, headers: HeaderMap, Path(id): P
             return Err(e);
         }
     };
-    let mut body = load(&st, id, company).await?;
+    let after = load(&st, id, company).await?;
+    let number = text(&after, "number");
+    let tot = mat_total(&after);
+    let summary = format!("Потвърдено изписване на материали {number} ({date}), сума {tot}");
+    crate::audit::record(
+        &st.db,
+        company,
+        &sub,
+        "material_issue",
+        id,
+        &number,
+        "post",
+        &summary,
+        "0.00",
+        &tot,
+        Some(&cur),
+        Some(&after),
+    )
+    .await;
+    let mut body = load_with_audit(&st, id, company).await?;
     body["warnings"] = json!(out.warnings);
     Ok(Json(body))
 }
 
 pub async fn unpost(State(st): State<AppState>, headers: HeaderMap, Path(id): Path<i32>) -> Result<Json<Value>, ApiError> {
+    let sub = auth_sub(&st, &headers)?;
     let company = company(&st, &headers).await?;
     let cur = load(&st, id, company).await?;
     if text(&cur, "status") != "confirmed" {
         return Err(api_err(StatusCode::UNPROCESSABLE_ENTITY, "документът не е потвърден"));
     }
     periods::assert_open(&st.db, company, &text(&cur, "doc_date")).await?;
+    let old_tot = mat_total(&cur);
     let entry = int_of(&cur, "journal_entry_id");
     invoice_read::wipe_journal(&st.db, entry).await?;
     invoice_read::exe(
@@ -165,7 +265,25 @@ pub async fn unpost(State(st): State<AppState>, headers: HeaderMap, Path(id): Pa
     .await?;
     invoice_read::exe(&st.db, &format!("UPDATE material_issues SET status = 'draft', journal_entry_id = 0 WHERE id = {id}")).await?;
     let out = stock_replay::rebuild(&st.db, company, "9999-12-31").await?;
-    let mut body = load(&st, id, company).await?;
+    let after = load(&st, id, company).await?;
+    let number = text(&after, "number");
+    let summary = format!("Върнато в чернова изписване на материали {number}, стара сума {old_tot}");
+    crate::audit::record(
+        &st.db,
+        company,
+        &sub,
+        "material_issue",
+        id,
+        &number,
+        "unpost",
+        &summary,
+        &old_tot,
+        "0.00",
+        Some(&cur),
+        Some(&after),
+    )
+    .await;
+    let mut body = load_with_audit(&st, id, company).await?;
     body["warnings"] = json!(out.warnings);
     Ok(Json(body))
 }

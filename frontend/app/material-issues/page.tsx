@@ -6,6 +6,8 @@ import { useI18n } from "../../components/I18nProvider";
 import { ACTIVE_COMPANY_EVENT, api, fetchAll, ListResponse } from "../../lib/api";
 import { CompanyLocation, fetchCompanyLocations } from "../../lib/locations";
 import { Pagination } from "../../components/Pagination";
+import { AuditHistoryPanel, AuditStampBadge } from "../../components/AuditHistory";
+import { AuditEntry } from "../../lib/invoice";
 
 const PAGE_SIZE = 50;
 
@@ -47,6 +49,12 @@ interface Doc {
   status: string;
   notes: string;
   lines?: Line[];
+  created_by?: string;
+  created_at?: string;
+  updated_by?: string;
+  updated_at?: string;
+  edit_count?: number;
+  audit_history?: AuditEntry[];
 }
 
 function isoDay(): string {
@@ -210,6 +218,7 @@ function Inner() {
                     <th>{t("mat.date")}</th>
                     <th>{t("mat.location")}</th>
                     <th>{t("mat.status")}</th>
+                    <th>{t("audit.col_stamp")}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -226,6 +235,15 @@ function Inner() {
                         <span className={`badge ${d.status === "confirmed" ? "badge-success" : "badge-warning"}`}>
                           {t(`mat.status.${d.status}`)}
                         </span>
+                      </td>
+                      <td>
+                        <AuditStampBadge
+                          createdBy={d.created_by}
+                          createdAt={d.created_at}
+                          updatedBy={d.updated_by}
+                          updatedAt={d.updated_at}
+                          editCount={d.edit_count}
+                        />
                       </td>
                     </tr>
                   ))}
@@ -462,6 +480,16 @@ function Editor({
           </button>
         )}
       </div>
+      {!creating && (
+        <AuditHistoryPanel
+          history={doc.audit_history}
+          createdBy={doc.created_by}
+          createdAt={doc.created_at}
+          updatedBy={doc.updated_by}
+          updatedAt={doc.updated_at}
+          editCount={doc.edit_count}
+        />
+      )}
     </form>
   );
 }

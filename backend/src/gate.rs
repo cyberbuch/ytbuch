@@ -61,6 +61,14 @@ pub fn required_permission(method: &Method, path: &str) -> Option<&'static str> 
         Some("recipes") | Some("production-orders") => Some("production"),
         Some("dividend-distributions") | Some("dividends") => Some("dividends"),
         Some("reports") | Some("fs") => Some("reports"),
+        Some("audit-logs") => match s.get(2).copied() {
+            Some("invoice") => Some("invoices"),
+            Some("journal") => Some("journal"),
+            Some("internal_doc") | Some("material_issue") => Some("stock"),
+            Some("production_order") => Some("production"),
+            Some("bank_tx") => Some("banking"),
+            _ => Some("reports"),
+        },
         Some("saft") => match s.get(2).copied() {
             Some("export") | Some("movement-mappings") => Some("saft"),
             // Номенклатурите са статичен каталог, четат ги много екрана.
@@ -174,6 +182,9 @@ mod tests {
         assert_eq!(perm("PUT", "/v1/recipes/1"), Some("production"));
         assert_eq!(perm("POST", "/v1/dividends/3/pay"), Some("dividends"));
         assert_eq!(perm("GET", "/v1/reports"), Some("reports"));
+        assert_eq!(perm("GET", "/v1/audit-logs"), Some("reports"));
+        assert_eq!(perm("GET", "/v1/audit-logs/invoice/1"), Some("invoices"));
+        assert_eq!(perm("GET", "/v1/audit-logs/journal/1"), Some("journal"));
         assert_eq!(perm("PUT", "/v1/fs/formulas"), Some("reports"));
         assert_eq!(perm("GET", "/v1/saft/export"), Some("saft"));
         assert_eq!(perm("POST", "/v1/saft/movement-mappings/defaults"), Some("saft"));

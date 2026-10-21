@@ -47,3 +47,16 @@ export function formatBgPeriod(raw: string | undefined | null): string {
   if (fin) return `${fin[2]}.${fin[1]}`;
   return s;
 }
+
+export function formatBgDateTime(raw: string | undefined | null): string {
+  if (!raw) return "";
+  const s = String(raw).trim();
+  if (!s) return "";
+  const m = s.match(/^(\d{4})-(\d{2})-(\d{2})[T\s](\d{2}):(\d{2})(?::(\d{2}))?/);
+  if (m) {
+    const sec = m[6] ? `:${m[6]}` : "";
+    return `${m[3]}.${m[2]}.${m[1]} ${m[4]}:${m[5]}${sec}`;
+  }
+  return formatBgDate(s);
+}
+

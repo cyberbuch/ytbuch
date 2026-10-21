@@ -8,6 +8,7 @@ import { CompanyLocation, fetchCompanyLocations } from "../../lib/locations";
 import { useI18n } from "../../components/I18nProvider";
 import { RequireAuth } from "../../components/RequireAuth";
 import { Pagination } from "../../components/Pagination";
+import { AuditStampBadge } from "../../components/AuditHistory";
 
 const PAGE_SIZE = 50;
 
@@ -88,6 +89,7 @@ function Inner() {
                 <th>{t("idoc.from")}</th>
                 <th>{t("idoc.to")}</th>
                 <th>{t("idoc.status")}</th>
+                <th>{t("audit.col_stamp")}</th>
               </tr>
             </thead>
             <tbody>
@@ -105,6 +107,15 @@ function Inner() {
                     >
                       {t(`idoc.status.${d.status}`)}
                     </span>
+                  </td>
+                  <td>
+                    <AuditStampBadge
+                      createdBy={d.created_by}
+                      createdAt={d.created_at}
+                      updatedBy={d.updated_by}
+                      updatedAt={d.updated_at}
+                      editCount={d.edit_count}
+                    />
                   </td>
                 </tr>
               ))}

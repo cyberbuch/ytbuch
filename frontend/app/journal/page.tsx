@@ -10,6 +10,8 @@ import { useI18n } from "../../components/I18nProvider";
 import { RequireAuth } from "../../components/RequireAuth";
 import { IconButton } from "../../components/IconButton";
 import { Pagination } from "../../components/Pagination";
+import { AuditHistoryPanel, AuditStampBadge } from "../../components/AuditHistory";
+import { AuditEntry } from "../../lib/invoice";
 
 const PAGE_SIZE = 50;
 
@@ -25,6 +27,12 @@ interface JournalEntry {
   document_number?: string;
   document_date?: string;
   vat_period?: string;
+  created_by?: string;
+  created_at?: string;
+  updated_by?: string;
+  updated_at?: string;
+  edit_count?: number;
+  audit_history?: AuditEntry[];
 }
 
 interface JournalLine {
@@ -135,6 +143,7 @@ function JournalInner() {
   const [lines, setLines] = useState<LineDraft[]>([emptyLine()]);
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState("");
+  const [activeEntryMeta, setActiveEntryMeta] = useState<JournalEntry | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -179,6 +188,7 @@ function JournalInner() {
 
   const openCreate = () => {
     setEditingId(null);
+    setActiveEntryMeta(null);
     setReadOnly(false);
     setLoadingEntry(false);
     resetForm(todayIso());
@@ -186,6 +196,7 @@ function JournalInner() {
   };
 
   const applyEntry = (data: JournalEntry & { lines?: JournalLine[] }) => {
+    setActiveEntryMeta(data);
     const vt = data.vat_type;
     setTab(vt === "purchase" || vt === "sales" || vt === "no_vat" ? vt : "no_vat");
     setEntryDate(toDateInput(data.entry_date));
@@ -443,6 +454,7 @@ function JournalInner() {
                   <th>{t("journal.description")}</th>
                   <th>{t("journal.counterpart")}</th>
                   <th>{t("journal.vat_type")}</th>
+                  <th>{t("audit.col_stamp")}</th>
                   <th>{t("common.actions")}</th>
                 </tr>
               </thead>
@@ -480,6 +492,15 @@ function JournalInner() {
                         >
                           {t(VAT_TYPE_LABEL[en.vat_type] ?? "journal.tab.no_vat")}
                         </span>
+                      </td>
+                      <td>
+                        <AuditStampBadge
+                          createdBy={en.created_by}
+                          createdAt={en.created_at}
+                          updatedBy={en.updated_by}
+                          updatedAt={en.updated_at}
+                          editCount={en.edit_count}
+                        />
                       </td>
                       <td onClick={(e) => e.stopPropagation()}>
                         <div className="icon-actions">
@@ -734,6 +755,16 @@ function JournalInner() {
                 )}
               </div>
             </form>
+            {editingId && activeEntryMeta && (
+              <AuditHistoryPanel
+                history={activeEntryMeta.audit_history}
+                createdBy={activeEntryMeta.created_by}
+                createdAt={activeEntryMeta.created_at}
+                updatedBy={activeEntryMeta.updated_by}
+                updatedAt={activeEntryMeta.updated_at}
+                editCount={activeEntryMeta.edit_count}
+              />
+            )}
           </div>
         </div>
       )}

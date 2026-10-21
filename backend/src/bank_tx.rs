@@ -88,6 +88,7 @@ pub async fn import(
     headers: HeaderMap,
     Json(body): Json<Value>,
 ) -> Result<Json<Value>, ApiError> {
+    let sub = auth_sub(&st, &headers)?;
     let company = company(&st, &headers).await?;
     let obj = form::object(&body)?;
     let ba_id = req_i32(obj, "bank_account_id")?;
@@ -141,6 +142,26 @@ pub async fn import(
                     }
                     if let Some(last) = made.last_mut() { last.1 = entry; }
                     journal_count += 1;
+                    let abs_s = money(dec::abs(amount));
+                    let summary = format!(
+                        "Импортирана банкова транзакция ({}) — {}, сума {abs_s}",
+                        tx.reference, tx.contra_name
+                    );
+                    crate::audit::record(
+                        &st.db,
+                        company,
+                        &sub,
+                        "journal",
+                        entry,
+                        &tx.reference,
+                        "create",
+                        &summary,
+                        "",
+                        &abs_s,
+                        None,
+                        None,
+                    )
+                    .await;
                 }
                 Err(e) => {
                     let _ = rollback(&st, &made).await;
@@ -158,6 +179,7 @@ pub async fn book(
     Path(id): Path<i32>,
     Json(body): Json<Value>,
 ) -> Result<Json<Value>, ApiError> {
+    let sub = auth_sub(&st, &headers)?;
     let company = company(&st, &headers).await?;
     need(id)?;
     let obj = form::object(&body)?;
@@ -198,12 +220,14 @@ pub async fn book(
     }
     let debit = posting::by_id(&st.db, debit_id).await?;
     let credit = posting::by_id(&st.db, credit_id).await?;
+    let debit_num = debit.number.clone();
+    let credit_num = credit.number.clone();
     let entry = posting::write_entry(
         &st.db, company, &cell_str(&row, 2), "bank", 0, &cell_str(&row, 8), &desc, cp, &shown,
         &posting::month_of(&cell_str(&row, 2)),
         &[
             Side { account: debit, direction: "debit", amount: abs_s.clone() },
-            Side { account: credit, direction: "credit", amount: abs_s },
+            Side { account: credit, direction: "credit", amount: abs_s.clone() },
         ],
     )
     .await?;
@@ -216,6 +240,25 @@ pub async fn book(
         let _ = invoice_read::wipe_journal(&st.db, entry).await;
         return Err(e);
     }
+    let ref_no = cell_str(&row, 8);
+    let summary = format!(
+        "Осчетоводена банкова транзакция #{id} ({ref_no}) — {shown}, Дт {debit_num} / Кт {credit_num}, сума {abs_s}"
+    );
+    crate::audit::record(
+        &st.db,
+        company,
+        &sub,
+        "journal",
+        entry,
+        &ref_no,
+        "create",
+        &summary,
+        "",
+        &abs_s,
+        None,
+        None,
+    )
+    .await;
     let mut o = json!({ "message": "транзакцията е осчетоводена", "journal_entry_id": entry });
     if cp > 0 { o["counterpart_id"] = json!(cp); }
     Ok(Json(o))
@@ -227,6 +270,7 @@ pub async fn reallocate(
     Path(id): Path<i32>,
     Json(body): Json<Value>,
 ) -> Result<Json<Value>, ApiError> {
+    let sub = auth_sub(&st, &headers)?;
     let company = company(&st, &headers).await?;
     need(id)?;
     let obj = form::object(&body)?;
@@ -275,6 +319,26 @@ pub async fn reallocate(
     }
     invoice_read::exe(&st.db, &format!("UPDATE bank_transactions SET is_allocated = 1 WHERE id = {id}")).await?;
     let acc_name = if acct.name.is_empty() { acct.number.clone() } else { format!("{} {}", acct.number, acct.name) };
+    let amt_raw = cell_str(&row, 3);
+    let ref_no = cell_str(&row, 8);
+    let summary = format!(
+        "Разнесена банкова транзакция #{id} ({ref_no}) към сметка {acc_name} ({cp_name}), сума {amt_raw}"
+    );
+    crate::audit::record(
+        &st.db,
+        company,
+        &sub,
+        "journal",
+        entry,
+        &ref_no,
+        "update",
+        &summary,
+        &amt_raw,
+        &amt_raw,
+        None,
+        None,
+    )
+    .await;
     Ok(Json(json!({
         "message": format!("Транзакцията е разнесена към {acc_name}"),
         "account_name": acc_name,
@@ -287,12 +351,31 @@ pub async fn delete(
     headers: HeaderMap,
     Path(id): Path<i32>,
 ) -> Result<StatusCode, ApiError> {
+    let sub = auth_sub(&st, &headers)?;
     let company = company(&st, &headers).await?;
     need(id)?;
     let row = tx_row(&st, id, company).await?;
     let entry = cell_i32_at(&row, 12);
+    let amt_raw = cell_str(&row, 3);
+    let ref_no = cell_str(&row, 8);
     if entry > 0 {
         invoice_read::wipe_journal(&st.db, entry).await?;
+        let summary = format!("Изтрита банкова транзакция #{id} ({ref_no}) и статия #{entry}, сума {amt_raw}");
+        crate::audit::record(
+            &st.db,
+            company,
+            &sub,
+            "journal",
+            entry,
+            &ref_no,
+            "delete",
+            &summary,
+            &amt_raw,
+            "",
+            None,
+            None,
+        )
+        .await;
     }
     invoice_read::exe(&st.db, &format!("DELETE FROM bank_transactions WHERE id = {id}")).await?;
     Ok(StatusCode::NO_CONTENT)

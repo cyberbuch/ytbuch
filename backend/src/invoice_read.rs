@@ -293,6 +293,9 @@ pub(crate) async fn detail(st: &AppState, sub: &str, id: i32) -> Result<Value, A
     if let Some(co) = companies::json_by_id(&st.db, company).await? {
         v["company"] = co;
     }
+    let stamps = crate::audit::stamps_for(&st.db, company, "invoice").await?;
+    crate::audit::attach_stamp(&mut v, stamps.get(&id));
+    v["audit_history"] = json!(crate::audit::history_for(&st.db, company, "invoice", id).await?);
     Ok(v)
 }
 
@@ -303,10 +306,15 @@ pub async fn invoices(
 ) -> Result<Json<Value>, ApiError> {
     let sub = auth_sub(&st, &headers)?;
     let company = active_or_one(&st, &sub).await?;
+    let stamps = crate::audit::stamps_for(&st.db, company, "invoice").await?;
     let rows = qry(&st.db, &format!("{SEL} WHERE i.company_id = {company} ORDER BY i.id")).await?;
     let mut items = Vec::new();
     for row in &rows {
-        items.push(invoice_value(&st.db, from_row(row), false).await?);
+        let inv = from_row(row);
+        let id = inv.id;
+        let mut v = invoice_value(&st.db, inv, false).await?;
+        crate::audit::attach_stamp(&mut v, stamps.get(&id));
+        items.push(v);
     }
     Ok(paginate(items, &q))
 }

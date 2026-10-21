@@ -9,6 +9,7 @@ import { PrintableInvoice } from "../../../components/PrintableInvoice";
 import { RequireAuth } from "../../../components/RequireAuth";
 import { useI18n } from "../../../components/I18nProvider";
 import { IconButton } from "../../../components/IconButton";
+import { AuditHistoryPanel } from "../../../components/AuditHistory";
 
 function DetailInner() {
   const { t } = useI18n();
@@ -438,6 +439,15 @@ function DetailInner() {
       )}
 
       <PrintableInvoice invoice={inv} isCopy={isCopy} />
+
+      <AuditHistoryPanel
+        history={inv.audit_history}
+        createdBy={inv.created_by}
+        createdAt={inv.created_at}
+        updatedBy={inv.updated_by}
+        updatedAt={inv.updated_at}
+        editCount={inv.edit_count}
+      />
     </div>
   );
 }
