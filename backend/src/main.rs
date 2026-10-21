@@ -316,9 +316,11 @@ async fn main() {
         .route("/v1/invoices/{id}/print", get(invoice_print::print))
         .route("/v1/invoices/{id}/ubl", get(invoice_ubl::export))
         .route("/v1/journal", get(lists::journal).post(journal_manual::create))
+        .route("/v1/journal/bulk/delete", post(journal_manual::bulk_delete))
         .route(
             "/v1/journal/{id}",
             get(lists::journal_show)
+                .put(journal_manual::update)
                 .patch(journal_manual::update)
                 .delete(journal_manual::delete),
         )

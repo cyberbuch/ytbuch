@@ -51,7 +51,16 @@ interface Counterpart {
   counterpart_type: string;
 }
 
+interface BulkResult {
+  deleted?: number;
+  failed: number;
+}
+
 type Tab = "purchase" | "sales" | "no_vat";
+
+function isManualEntry(en: JournalEntry): boolean {
+  return (en.document_type === "manual" || !en.document_type) && (!en.document_id || en.document_id === 0);
+}
 
 interface LineDraft {
   accountId: string;
@@ -105,12 +114,16 @@ function JournalInner() {
   const [counterparts, setCounterparts] = useState<Counterpart[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
   const [q, setQ] = useState("");
   const [offset, setOffset] = useState(0);
+  const [selected, setSelected] = useState<number[]>([]);
+  const [busy, setBusy] = useState(false);
 
   // модал
   const [modalOpen, setModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
+  const [readOnly, setReadOnly] = useState(false);
   const [loadingEntry, setLoadingEntry] = useState(false);
   const [tab, setTab] = useState<Tab>("purchase");
   const [entryDate, setEntryDate] = useState("");
@@ -128,6 +141,7 @@ function JournalInner() {
     setError("");
     try {
       setEntries(await fetchAll<JournalEntry>("/v1/journal"));
+      setSelected([]);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -152,7 +166,7 @@ function JournalInner() {
   }, [load, loadRefs]);
 
   const resetForm = (date: string) => {
-    setTab("purchase");
+    setTab("no_vat");
     setEntryDate(date);
     setDescription("");
     setCounterpartId("");
@@ -165,6 +179,7 @@ function JournalInner() {
 
   const openCreate = () => {
     setEditingId(null);
+    setReadOnly(false);
     setLoadingEntry(false);
     resetForm(todayIso());
     setModalOpen(true);
@@ -193,6 +208,7 @@ function JournalInner() {
   const openEdit = async (entry: JournalEntry, e?: MouseEvent) => {
     e?.stopPropagation();
     setEditingId(entry.id);
+    setReadOnly(!isManualEntry(entry));
     setFormError("");
     setLoadingEntry(true);
     setModalOpen(true);
@@ -201,6 +217,7 @@ function JournalInner() {
       const data = await api.get<JournalEntry & { lines: JournalLine[] }>(
         `/v1/journal/${entry.id}`
       );
+      setReadOnly(!isManualEntry(data));
       applyEntry(data);
     } catch (err) {
       setFormError(err instanceof Error ? err.message : String(err));
@@ -245,6 +262,66 @@ function JournalInner() {
   const page = Math.min(Math.floor(offset / PAGE_SIZE), pageCount - 1);
   const start = page * PAGE_SIZE;
   const pagedEntries = filteredEntries.slice(start, start + PAGE_SIZE);
+
+  const selectableFiltered = useMemo(
+    () => filteredEntries.filter(isManualEntry),
+    [filteredEntries]
+  );
+
+  const allSelected =
+    selectableFiltered.length > 0 &&
+    selectableFiltered.every((en) => selected.includes(en.id));
+
+  const toggleOne = (id: number) => {
+    setSelected((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+    );
+  };
+
+  const toggleAll = () => {
+    setSelected(allSelected ? [] : selectableFiltered.map((en) => en.id));
+  };
+
+  const handleDelete = async (en: JournalEntry, e?: MouseEvent) => {
+    e?.stopPropagation();
+    if (!isManualEntry(en)) return;
+    if (!window.confirm(t("common.confirmDelete"))) return;
+    setError("");
+    setNotice("");
+    try {
+      await api.del(`/v1/journal/${en.id}`);
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    if (selected.length === 0) {
+      setError(t("journal.bulk.none"));
+      return;
+    }
+    if (!window.confirm(t("journal.bulk.confirm_delete"))) {
+      return;
+    }
+    setBusy(true);
+    setError("");
+    setNotice("");
+    try {
+      const res = await api.post<BulkResult>("/v1/journal/bulk/delete", {
+        ids: selected,
+      });
+      const ok = res.deleted ?? 0;
+      setNotice(
+        `${t("journal.bulk.result")}: ${ok}, ${t("journal.bulk.failed")}: ${res.failed}`
+      );
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const filteredCounterparts = counterparts.filter((c) => {
     if (String(c.id) === counterpartId) return true;
@@ -308,6 +385,7 @@ function JournalInner() {
       </div>
 
       {error && <div className="error-text">{error}</div>}
+      {notice && <div className="muted" style={{ marginBottom: 8 }}>{notice}</div>}
       <div className="card" style={{ marginBottom: 12 }}>
         <input
           className="input"
@@ -316,6 +394,30 @@ function JournalInner() {
           placeholder={t("common.search")}
         />
       </div>
+
+      {selected.length > 0 && (
+        <div className="card" style={{ padding: 12, marginBottom: 12 }}>
+          <div className="btn-row wrap">
+            <strong>
+              {selected.length} {t("journal.bulk.selected")}
+            </strong>
+            <button
+              className="btn btn-danger btn-sm"
+              disabled={busy}
+              onClick={() => void handleBulkDelete()}
+            >
+              {t("journal.bulk.delete")}
+            </button>
+            <button
+              className="btn btn-ghost btn-sm"
+              disabled={busy}
+              onClick={() => setSelected([])}
+            >
+              {t("journal.bulk.clear")}
+            </button>
+          </div>
+        </div>
+      )}
 
       <div className="card">
         {loading ? (
@@ -327,6 +429,15 @@ function JournalInner() {
             <table className="table">
               <thead>
                 <tr>
+                  <th style={{ width: 32 }}>
+                    <input
+                      type="checkbox"
+                      checked={allSelected}
+                      disabled={selectableFiltered.length === 0}
+                      onChange={toggleAll}
+                      title={t("journal.bulk.select_all")}
+                    />
+                  </th>
                   <th>{t("journal.entry_date")}</th>
                   <th>{t("journal.document")}</th>
                   <th>{t("journal.description")}</th>
@@ -336,40 +447,60 @@ function JournalInner() {
                 </tr>
               </thead>
               <tbody>
-                {pagedEntries.map((en) => (
-                  <tr
-                    key={en.id}
-                    onClick={() => void openEdit(en)}
-                    style={{ cursor: "pointer" }}
-                  >
-                    <td>{formatBgDate(en.entry_date)}</td>
-                    <td>{docLabel(en)}</td>
-                    <td>{en.description}</td>
-                    <td>{en.counterpart_name}</td>
-                    <td>
-                      <span
-                        className={`badge ${
-                          en.vat_type === "no_vat"
-                            ? "badge-muted"
-                            : en.vat_type === "sales"
-                              ? "badge-success"
-                              : "badge-warning"
-                        }`}
-                      >
-                        {t(VAT_TYPE_LABEL[en.vat_type] ?? "journal.tab.no_vat")}
-                      </span>
-                    </td>
-                    <td onClick={(e) => e.stopPropagation()}>
-                      <div className="icon-actions">
-                        <IconButton
-                          icon="edit"
-                          title={t("common.edit")}
-                          onClick={(e) => void openEdit(en, e)}
-                        />
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+                {pagedEntries.map((en) => {
+                  const manual = isManualEntry(en);
+                  return (
+                    <tr
+                      key={en.id}
+                      onClick={() => void openEdit(en)}
+                      style={{ cursor: "pointer" }}
+                    >
+                      <td onClick={(e) => e.stopPropagation()}>
+                        {manual && (
+                          <input
+                            type="checkbox"
+                            checked={selected.includes(en.id)}
+                            onChange={() => toggleOne(en.id)}
+                          />
+                        )}
+                      </td>
+                      <td>{formatBgDate(en.entry_date)}</td>
+                      <td>{docLabel(en)}</td>
+                      <td>{en.description}</td>
+                      <td>{en.counterpart_name}</td>
+                      <td>
+                        <span
+                          className={`badge ${
+                            en.vat_type === "no_vat"
+                              ? "badge-muted"
+                              : en.vat_type === "sales"
+                                ? "badge-success"
+                                : "badge-warning"
+                          }`}
+                        >
+                          {t(VAT_TYPE_LABEL[en.vat_type] ?? "journal.tab.no_vat")}
+                        </span>
+                      </td>
+                      <td onClick={(e) => e.stopPropagation()}>
+                        <div className="icon-actions">
+                          <IconButton
+                            icon={manual ? "edit" : "view"}
+                            title={manual ? t("common.edit") : t("common.view")}
+                            onClick={(e) => void openEdit(en, e)}
+                          />
+                          {manual && (
+                            <IconButton
+                              icon="delete"
+                              title={t("common.delete")}
+                              danger
+                              onClick={(e) => void handleDelete(en, e)}
+                            />
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -396,6 +527,12 @@ function JournalInner() {
               <div className="content muted">{t("journal.loading_entry")}</div>
             ) : null}
 
+            {readOnly ? (
+              <div className="muted" style={{ marginBottom: 14 }}>
+                {t("journal.manual_only_hint")}
+              </div>
+            ) : null}
+
             <div style={{ display: "flex", gap: 8, marginBottom: 18, flexWrap: "wrap" }}>
               {(
                 [
@@ -409,7 +546,7 @@ function JournalInner() {
                   type="button"
                   className={`btn btn-sm ${tab === value ? "btn-primary" : ""}`}
                   onClick={() => setTab(value)}
-                  disabled={loadingEntry}
+                  disabled={loadingEntry || readOnly}
                 >
                   {t(key)}
                 </button>
@@ -426,7 +563,7 @@ function JournalInner() {
                     value={entryDate}
                     onChange={(e) => setEntryDate(e.target.value)}
                     required
-                    disabled={loadingEntry}
+                    disabled={loadingEntry || readOnly}
                   />
                 </div>
                 <div className="field">
@@ -436,7 +573,7 @@ function JournalInner() {
                     value={description}
                     onChange={(e) => setDescription(e.target.value)}
                     required
-                    disabled={loadingEntry}
+                    disabled={loadingEntry || readOnly}
                   />
                 </div>
                 <div className="field">
@@ -445,7 +582,7 @@ function JournalInner() {
                     className="select"
                     value={counterpartId}
                     onChange={(e) => setCounterpartId(e.target.value)}
-                    disabled={loadingEntry}
+                    disabled={loadingEntry || readOnly}
                   >
                     <option value="">—</option>
                     {filteredCounterparts.map((c) => (
@@ -463,7 +600,7 @@ function JournalInner() {
                       type="month"
                       value={vatPeriod}
                       onChange={(e) => setVatPeriod(e.target.value)}
-                      disabled={loadingEntry}
+                      disabled={loadingEntry || readOnly}
                     />
                   </div>
                 )}
@@ -473,7 +610,7 @@ function JournalInner() {
                     className="input"
                     value={documentNumber}
                     onChange={(e) => setDocumentNumber(e.target.value)}
-                    disabled={loadingEntry}
+                    disabled={loadingEntry || readOnly}
                   />
                 </div>
                 <div className="field">
@@ -483,7 +620,7 @@ function JournalInner() {
                     type="date"
                     value={documentDate}
                     onChange={(e) => setDocumentDate(e.target.value)}
-                    disabled={loadingEntry}
+                    disabled={loadingEntry || readOnly}
                   />
                 </div>
               </div>
@@ -507,7 +644,7 @@ function JournalInner() {
                       value={l.accountId}
                       onChange={(e) => setLine(i, "accountId", e.target.value)}
                       required
-                      disabled={loadingEntry}
+                      disabled={loadingEntry || readOnly}
                     >
                       <option value="" disabled>
                         {t("journal.account")}…
@@ -524,7 +661,7 @@ function JournalInner() {
                       onChange={(e) =>
                         setLine(i, "direction", e.target.value as "debit" | "credit")
                       }
-                      disabled={loadingEntry}
+                      disabled={loadingEntry || readOnly}
                     >
                       <option value="debit">{t("journal.debit")}</option>
                       <option value="credit">{t("journal.credit")}</option>
@@ -537,7 +674,7 @@ function JournalInner() {
                       value={l.amount}
                       onChange={(e) => setLine(i, "amount", e.target.value)}
                       required
-                      disabled={loadingEntry}
+                      disabled={loadingEntry || readOnly}
                     />
                     {tab !== "no_vat" && (
                       <input
@@ -547,28 +684,30 @@ function JournalInner() {
                         title={t("journal.sign_hint")}
                         value={l.vatAmount}
                         onChange={(e) => setLine(i, "vatAmount", e.target.value)}
-                        disabled={loadingEntry}
+                        disabled={loadingEntry || readOnly}
                       />
                     )}
                     <button
                       type="button"
                       className="btn btn-danger btn-sm"
                       onClick={() => removeLine(i)}
-                      disabled={loadingEntry || lines.length < 2}
+                      disabled={loadingEntry || readOnly || lines.length < 2}
                     >
                       ✕
                     </button>
                   </div>
                 ))}
               </div>
-              <button
-                type="button"
-                className="btn btn-sm"
-                onClick={addLine}
-                disabled={loadingEntry}
-              >
-                + {t("journal.add_line")}
-              </button>
+              {!readOnly && (
+                <button
+                  type="button"
+                  className="btn btn-sm"
+                  onClick={addLine}
+                  disabled={loadingEntry}
+                >
+                  + {t("journal.add_line")}
+                </button>
+              )}
 
               <div className="muted" style={{ marginTop: 12 }}>
                 {t("journal.balance")}: {debitSum.toFixed(2)} /{" "}
@@ -585,12 +724,14 @@ function JournalInner() {
                 >
                   {t("common.cancel")}
                 </button>
-                <button
-                  className="btn btn-primary"
-                  disabled={saving || !balanced || loadingEntry}
-                >
-                  {t("common.save")}
-                </button>
+                {!readOnly && (
+                  <button
+                    className="btn btn-primary"
+                    disabled={saving || !balanced || loadingEntry}
+                  >
+                    {t("common.save")}
+                  </button>
+                )}
               </div>
             </form>
           </div>
