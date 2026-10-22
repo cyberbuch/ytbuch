@@ -123,7 +123,16 @@ export function SettingsCompanyTab({
           </h3>
           <div className="form-grid-3">
             <SettingsField label={t("companies.is_vat_registered")}>
-              <select className="select" value={companyForm.is_vat_registered ?? "0"} onChange={(e) => setC("is_vat_registered", e.target.value)}>
+              <select
+                className="select"
+                value={
+                  (companyForm.vat_number ?? "").trim().length === 0
+                    ? "0"
+                    : (companyForm.is_vat_registered ?? "0")
+                }
+                disabled={(companyForm.vat_number ?? "").trim().length === 0}
+                onChange={(e) => setC("is_vat_registered", e.target.value)}
+              >
                 <option value="1">{t("common.yes")}</option>
                 <option value="0">{t("common.no")}</option>
               </select>

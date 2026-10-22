@@ -117,23 +117,19 @@ fn opt_money(obj: &Map<String, Value>, key: &str, default: &str) -> Result<Strin
     if t.is_empty() {
         return Ok(default.to_string());
     }
-    let Some(c) = invoice_money::cents(t) else {
-        return Err(api_err(
-            StatusCode::UNPROCESSABLE_ENTITY,
-            format!("{key} е невалидна сума"),
-        ));
-    };
-    Ok(invoice_money::money(c))
+    invoice_money::cents(t)
+        .map(invoice_money::money)
+        .ok_or_else(|| api_err(StatusCode::UNPROCESSABLE_ENTITY, format!("{key} е невалидна сума")))
 }
 
 fn flag_int(obj: &Map<String, Value>, key: &str) -> Result<Option<i32>, ApiError> {
     match obj.get(key) {
         None | Some(Value::Null) => Ok(None),
-        Some(Value::Bool(b)) => Ok(Some(if *b { 1 } else { 0 })),
-        Some(Value::Number(n)) => Ok(Some(if n.as_i64().unwrap_or(0) != 0 { 1 } else { 0 })),
+        Some(Value::Bool(b)) => Ok(Some(i32::from(*b))),
+        Some(Value::Number(n)) => Ok(Some(i32::from(n.as_i64().unwrap_or(0) != 0))),
         Some(Value::String(s)) => {
             let t = s.trim();
-            Ok(Some(if t == "1" || t.eq_ignore_ascii_case("true") { 1 } else { 0 }))
+            Ok(Some(i32::from(t == "1" || t.eq_ignore_ascii_case("true"))))
         }
         _ => Err(api_err(StatusCode::UNPROCESSABLE_ENTITY, format!("{key} е невалиден флаг"))),
     }
@@ -141,22 +137,13 @@ fn flag_int(obj: &Map<String, Value>, key: &str) -> Result<Option<i32>, ApiError
 
 fn check_head(head: &Head) -> Result<(), ApiError> {
     if head.direction != "in" && head.direction != "out" {
-        return Err(api_err(
-            StatusCode::UNPROCESSABLE_ENTITY,
-            "direction must be 'in' or 'out'",
-        ));
+        return Err(api_err(StatusCode::UNPROCESSABLE_ENTITY, "direction must be 'in' or 'out'"));
     }
     if head.issue_date.trim().is_empty() {
-        return Err(api_err(
-            StatusCode::UNPROCESSABLE_ENTITY,
-            "issue_date е задължително",
-        ));
+        return Err(api_err(StatusCode::UNPROCESSABLE_ENTITY, "issue_date е задължително"));
     }
     if head.counterpart_id <= 0 && head.document_type != "07" {
-        return Err(api_err(
-            StatusCode::UNPROCESSABLE_ENTITY,
-            "counterpart_id е задължително",
-        ));
+        return Err(api_err(StatusCode::UNPROCESSABLE_ENTITY, "counterpart_id е задължително"));
     }
     if !invoice_money::valid_for(&head.direction, &head.document_type) {
         return Err(api_err(
@@ -185,10 +172,7 @@ fn check_head(head: &Head) -> Result<(), ApiError> {
         ("customs_vat", head.customs_vat.as_str()),
     ] {
         if !value.trim().is_empty() && invoice_money::cents(value).is_none() {
-            return Err(api_err(
-                StatusCode::UNPROCESSABLE_ENTITY,
-                format!("{key} е невалидна сума"),
-            ));
+            return Err(api_err(StatusCode::UNPROCESSABLE_ENTITY, format!("{key} е невалидна сума")));
         }
     }
     Ok(())
@@ -248,65 +232,27 @@ fn head_from_create(obj: &Map<String, Value>) -> Result<(Head, Vec<NewLine>), Ap
 }
 
 fn overlay(head: &mut Head, obj: &Map<String, Value>) -> Result<Option<Vec<NewLine>>, ApiError> {
-    if let Some(v) = form::str_field(obj, "direction")? {
-        head.direction = v.trim().to_string();
-    }
+    if let Some(v) = form::str_field(obj, "direction")? { head.direction = v.trim().to_string(); }
     if let Some(v) = form::str_field(obj, "document_type")? {
-        if !v.trim().is_empty() {
-            head.document_type = v.trim().to_string();
-        }
+        if !v.trim().is_empty() { head.document_type = v.trim().to_string(); }
     }
-    if let Some(v) = form::str_field(obj, "number")? {
-        head.number = v.trim().to_string();
-    }
-    if let Some(v) = form::str_field(obj, "issue_date")? {
-        head.issue_date = v.trim().to_string();
-    }
-    if let Some(v) = form::str_field(obj, "due_date")? {
-        head.due_date = v;
-    }
-    if let Some(v) = form::str_field(obj, "tax_event_date")? {
-        head.tax_event_date = v;
-    }
-    if let Some(v) = form::str_field(obj, "accounting_month")? {
-        head.accounting_month = v;
-    }
-    if let Some(v) = form::i32_field(obj, "counterpart_id")? {
-        head.counterpart_id = v;
-    }
-    if let Some(v) = form::str_field(obj, "currency")? {
-        head.currency = v;
-    }
-    if let Some(v) = form::str_field(obj, "currency_rate")? {
-        head.currency_rate = v;
-    }
-    if let Some(v) = form::str_field(obj, "payment_method")? {
-        head.payment_method = v;
-    }
-    if let Some(v) = form::str_field(obj, "notes")? {
-        head.notes = v;
-    }
-    if let Some(v) = form::str_field(obj, "discount_percent")? {
-        head.discount_percent = v;
-    }
-    if let Some(v) = form::str_field(obj, "discount_amount")? {
-        head.discount_amount = v;
-    }
-    if let Some(v) = form::str_field(obj, "vat_exemption_reason")? {
-        head.vat_exemption_reason = v;
-    }
-    if let Some(v) = form::i32_field(obj, "original_invoice_id")? {
-        head.original_invoice_id = v;
-    }
-    if let Some(v) = form::i32_field(obj, "location_id")? {
-        head.location_id = v;
-    }
-    if let Some(v) = flag_int(obj, "exclude_vat")? {
-        head.exclude_vat = v;
-    }
-    if let Some(v) = form::str_field(obj, "vat_article")? {
-        head.vat_article = v;
-    }
+    if let Some(v) = form::str_field(obj, "number")? { head.number = v.trim().to_string(); }
+    if let Some(v) = form::str_field(obj, "issue_date")? { head.issue_date = v.trim().to_string(); }
+    if let Some(v) = form::str_field(obj, "due_date")? { head.due_date = v; }
+    if let Some(v) = form::str_field(obj, "tax_event_date")? { head.tax_event_date = v; }
+    if let Some(v) = form::str_field(obj, "accounting_month")? { head.accounting_month = v; }
+    if let Some(v) = form::i32_field(obj, "counterpart_id")? { head.counterpart_id = v; }
+    if let Some(v) = form::str_field(obj, "currency")? { head.currency = v; }
+    if let Some(v) = form::str_field(obj, "currency_rate")? { head.currency_rate = v; }
+    if let Some(v) = form::str_field(obj, "payment_method")? { head.payment_method = v; }
+    if let Some(v) = form::str_field(obj, "notes")? { head.notes = v; }
+    if let Some(v) = form::str_field(obj, "discount_percent")? { head.discount_percent = v; }
+    if let Some(v) = form::str_field(obj, "discount_amount")? { head.discount_amount = v; }
+    if let Some(v) = form::str_field(obj, "vat_exemption_reason")? { head.vat_exemption_reason = v; }
+    if let Some(v) = form::i32_field(obj, "original_invoice_id")? { head.original_invoice_id = v; }
+    if let Some(v) = form::i32_field(obj, "location_id")? { head.location_id = v; }
+    if let Some(v) = flag_int(obj, "exclude_vat")? { head.exclude_vat = v; }
+    if let Some(v) = form::str_field(obj, "vat_article")? { head.vat_article = v; }
     if obj.contains_key("customs_statistical") {
         head.customs_statistical = opt_money(obj, "customs_statistical", "")?;
     }
@@ -539,10 +485,7 @@ pub async fn create(
     let name = invoice_lines::prepare(&st, company, &head, 0).await?;
     let id = insert_header(&st, company, &head, &name, &lines).await?;
     let after = invoice_read::detail(&st, &sub, id).await?;
-    let total = after
-        .get("total_amount")
-        .and_then(|v| v.as_str())
-        .unwrap_or("0.00");
+    let total = after.get("total_amount").and_then(|v| v.as_str()).unwrap_or("0.00");
     let curr = after.get("currency").and_then(|v| v.as_str()).unwrap_or("EUR");
     let dir_bg = if head.direction == "in" { "входящ" } else { "изходящ" };
     let summary = format!(
@@ -551,18 +494,8 @@ pub async fn create(
         head.number
     );
     crate::audit::record(
-        &st.db,
-        company,
-        &sub,
-        "invoice",
-        id,
-        &head.number,
-        "create",
-        &summary,
-        "",
-        &format!("{total} {curr}"),
-        None,
-        Some(&after),
+        &st.db, company, &sub, "invoice", id, &head.number, "create",
+        &summary, "", &format!("{total} {curr}"), None, Some(&after),
     )
     .await;
     Ok((StatusCode::CREATED, Json(invoice_read::detail(&st, &sub, id).await?)))
@@ -665,18 +598,8 @@ pub async fn update(
         head.number
     );
     crate::audit::record(
-        &st.db,
-        company,
-        &sub,
-        "invoice",
-        id,
-        &head.number,
-        "update",
-        &summary,
-        &old_total,
-        &new_total,
-        Some(&before),
-        Some(&after),
+        &st.db, company, &sub, "invoice", id, &head.number, "update",
+        &summary, &old_total, &new_total, Some(&before), Some(&after),
     )
     .await;
     Ok(Json(invoice_read::detail(&st, &sub, id).await?))
@@ -702,18 +625,8 @@ pub async fn delete(
         invoice_money::title(&doc_t)
     );
     crate::audit::record(
-        &st.db,
-        company,
-        &sub,
-        "invoice",
-        id,
-        &num,
-        "delete",
-        &summary,
-        &old_total,
-        "",
-        Some(&before),
-        None,
+        &st.db, company, &sub, "invoice", id, &num, "delete",
+        &summary, &old_total, "", Some(&before), None,
     )
     .await;
     Ok(StatusCode::NO_CONTENT)

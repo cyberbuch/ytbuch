@@ -116,7 +116,8 @@ function SettingsInner() {
       nap_office: str(c.nap_office),
       iban: str(c.iban),
       bic: str(c.bic),
-      is_vat_registered: Number(c.is_vat_registered) ? "1" : "0",
+      is_vat_registered:
+        Number(c.is_vat_registered) && str(c.vat_number).trim().length > 0 ? "1" : "0",
       vat_period: str(c.vat_period, "monthly"),
       currency: str(c.currency, "EUR"),
       vat_branch_number: str(c.vat_branch_number),
@@ -218,7 +219,9 @@ function SettingsInner() {
         nap_office: companyForm.nap_office,
         iban: companyForm.iban,
         bic: companyForm.bic,
-        is_vat_registered: companyForm.is_vat_registered === "1",
+        is_vat_registered:
+          companyForm.is_vat_registered === "1" &&
+          (companyForm.vat_number ?? "").trim().length > 0,
         vat_period: companyForm.vat_period,
         currency: companyForm.currency,
         vat_branch_number: companyForm.vat_branch_number,

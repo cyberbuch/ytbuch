@@ -411,6 +411,6 @@ QR е SVG картинка. Резервните кодове се показв�
 | GET, POST | `/v1/saft/movement-mappings` | `kind=stock\|asset\|cash` |
 | POST | `/v1/saft/movement-mappings/defaults` | отказва, ако за вида вече има редове |
 | PATCH, DELETE | `/v1/saft/movement-mappings/{id}` | |
-| POST | `/v1/scans/ubl` | UBL → чернова. Не записва фактура |
-| POST | `/v1/scans/extract` | OCR. Без Mistral ключ е `422` |
+| POST | `/v1/scans/ubl` | UBL → чернова. Не записва фактура. За фирма без ДДС регистрация включва ДДС в стойността на артикулите (0% ДДС) |
+| POST | `/v1/scans/extract` | OCR. Без Mistral ключ е `422`. По подразбиране сканира само 1-ва страница (`multipage=true` сканира всички страници и игнорира копия, гаранционни карти и протоколи). За фирма без ДДС регистрация разпределя ДДС в артикулите без разлика от закръгляне |
 | GET, POST | `/v1/product-name-mappings` | `counterpart_id` и `items` |

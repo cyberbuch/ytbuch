@@ -191,11 +191,9 @@ pub async fn stamps_for(
         let action = cell_str(r, 3);
         let when = cell_str(r, 4);
         let entry = map.entry(eid).or_default();
-        if entry.created_at.is_empty() || action == "create" {
-            if entry.created_at.is_empty() {
-                entry.created_by = who.clone();
-                entry.created_at = when.clone();
-            }
+        if entry.created_at.is_empty() {
+            entry.created_by = who.clone();
+            entry.created_at = when.clone();
         }
         entry.updated_by = who;
         entry.updated_at = when;

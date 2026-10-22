@@ -44,6 +44,9 @@ export interface ScanLine {
 export interface ScanExtract {
   direction: string;
   filename: string;
+  multipage?: boolean;
+  pages_scanned?: number;
+  vat_registered?: boolean;
   invoice_number: string;
   issue_date: string;
   due_date: string;
@@ -76,4 +79,5 @@ export interface ViesLookup {
 export interface QueuedFile {
   id: string;
   file: File;
+  multipage?: boolean;
 }

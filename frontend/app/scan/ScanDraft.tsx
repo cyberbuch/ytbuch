@@ -2,7 +2,7 @@
 
 import { FormEvent, useState } from "react";
 import { api } from "../../lib/api";
-import { CURRENCIES, Invoice, InvoiceLine, PAY_METHODS, VAT_RATES, docTypeRequiresOriginal, docTypesFor, emptyLine } from "../../lib/invoice";
+import { CURRENCIES, Invoice, InvoiceLine, PAY_METHODS, VAT_RATES, docTypeRequiresOriginal, docTypesFor, emptyLine, num, round2 } from "../../lib/invoice";
 import { unitLabel, UnitOfMeasure } from "../../lib/units";
 import { IconButton } from "../../components/IconButton";
 import { useI18n } from "../../components/I18nProvider";
@@ -32,6 +32,8 @@ function accLabel(a: Account): string {
 export function ScanDraft(props: {
   t: (k: string) => string;
   direction: "in" | "out";
+  vatRegistered: boolean;
+  absorbVat: () => void;
   documentType: string;
   setDocumentType: (v: string) => void;
   number: string;
@@ -84,7 +86,7 @@ export function ScanDraft(props: {
   onProductCreated: (lineIdx: number, p: Product) => void;
 }) {
   const {
-    t, direction, documentType, setDocumentType, number, setNumber, issueDate, setIssueDate,
+    t, direction, vatRegistered, absorbVat, documentType, setDocumentType, number, setNumber, issueDate, setIssueDate,
     dueDate, setDueDate, currency, setCurrency, paymentMethod, setPaymentMethod,
     vatExemption, setVatExemption, exemptions, showExemption, originalInvoiceId,
     setOriginalInvoiceId, origNumber, invoiceChoices, ocrName, setOcrName, ocrEik, setOcrEik,
@@ -115,7 +117,7 @@ export function ScanDraft(props: {
       unit: line?.unit || "C62",
       price: direction === "out" ? line?.unit_price || "0" : "0",
       cost_price: direction === "in" ? line?.unit_price || "0" : "0",
-      vat_rate: line?.vat_rate || "20",
+      vat_rate: !vatRegistered ? "0" : line?.vat_rate || "20",
     });
     setCreateError("");
     setAddingProduct(true);
@@ -347,7 +349,23 @@ export function ScanDraft(props: {
           </section>
 
           <section className="card invoice-section">
-            <h2 className="invoice-section-title">{t("scan.lines")}</h2>
+            <div className="invoice-section-head" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
+              <h2 className="invoice-section-title" style={{ margin: 0 }}>{t("scan.lines")}</h2>
+              {priced.some((l) => num(l.vat_rate) > 0) && (
+                <button
+                  type="button"
+                  className="btn btn-sm"
+                  onClick={absorbVat}
+                >
+                  {t("scan.absorb_vat_btn")}
+                </button>
+              )}
+            </div>
+            {!vatRegistered && direction === "in" && (
+              <div className="flash-ok" style={{ marginBottom: 12 }}>
+                {t("scan.non_vat_company_notice")}
+              </div>
+            )}
             <div className="lines-wrap">
               <table className="table lines-table">
                 <thead>
@@ -435,8 +453,31 @@ export function ScanDraft(props: {
                             ))}
                           </select>
                         </td>
-                        <td className="num">
-                          {l.total_amount} {currency}
+                        <td className="num" style={{ minWidth: 130 }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 4, justifyContent: "flex-end" }}>
+                            <input
+                              className="input"
+                              style={{ textAlign: "right", width: 100 }}
+                              value={lines[i]?.keep_amounts ? lines[i].total_amount : l.total_amount}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                const tot = num(val);
+                                const rate = num(l.vat_rate) / 100;
+                                const net = rate > 0 ? tot / (1 + rate) : tot;
+                                const vat = tot - net;
+                                const q = num(l.quantity);
+                                const up = q > 0 ? round2(net / q) : round2(net);
+                                setLine(i, {
+                                  unit_price: up,
+                                  net_amount: round2(net),
+                                  vat_amount: round2(vat),
+                                  total_amount: val,
+                                  keep_amounts: true,
+                                });
+                              }}
+                            />
+                            <span>{currency}</span>
+                          </div>
                         </td>
                         <td>
                           <IconButton

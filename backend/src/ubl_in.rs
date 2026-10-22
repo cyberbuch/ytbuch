@@ -110,6 +110,7 @@ pub async fn import(
     let doc = ubl_xml::parse(&xml).map_err(|e| api_err(StatusCode::UNPROCESSABLE_ENTITY, e))?;
     let company = active_or_one(&st, &sub).await?;
     let (cvat, ceik) = company_ids(&st.db, company).await?;
+    let vat_registered = pnmap::company_vat_registered(&st.db, company).await?;
     let (party, direction) = choose(&doc, direction, &cvat, &ceik);
     let party_name = party.name.clone();
     let party_eik = party.eik.clone();
@@ -140,10 +141,34 @@ pub async fn import(
         }
         lines.push(item);
     }
+    let mut tot_net = doc.net.clone();
+    let mut tot_vat = doc.vat.clone();
+    let mut tot_all = doc.total.clone();
+    let mut vatex = ubl_xml::exemption(&doc.exemption, &doc.tax_cat);
+    if !vat_registered {
+        if direction == "in" {
+            let (n, t) = pnmap::absorb_vat_into_lines(&mut lines, &tot_net, &tot_vat, &tot_all);
+            tot_net = n;
+            tot_vat = "0.00".into();
+            tot_all = t;
+        } else {
+            for line in &mut lines {
+                line["vat_rate"] = json!("0");
+                line["vat_amount"] = json!("0.00");
+                line["total_amount"] = line["net_amount"].clone();
+            }
+            tot_vat = "0.00".into();
+            tot_all = tot_net.clone();
+        }
+        if vatex.trim().is_empty() {
+            vatex = "VATEX-EU-SM".into();
+        }
+    }
     let original_id = pnmap::invoice_by_number(&st.db, company, &doc.original).await?;
     let mut out = json!({
         "direction": direction,
         "filename": filename,
+        "vat_registered": vat_registered,
         "invoice_number": doc.number,
         "issue_date": doc.issue_date,
         "due_date": doc.due_date,
@@ -156,11 +181,11 @@ pub async fn import(
         "currency_rate": if doc.currency_rate.is_empty() { "1".into() } else { doc.currency_rate.clone() },
         "payment_method": ubl_xml::pay_method(&doc.pay_code),
         "payment_note": doc.note,
-        "vat_exemption_reason": ubl_xml::exemption(&doc.exemption, &doc.tax_cat),
+        "vat_exemption_reason": vatex,
         "original_invoice_number": doc.original,
-        "total_net_amount": doc.net,
-        "total_vat_amount": doc.vat,
-        "total_amount": doc.total,
+        "total_net_amount": tot_net,
+        "total_vat_amount": tot_vat,
+        "total_amount": tot_all,
         "lines": lines,
     });
     if original_id > 0 {

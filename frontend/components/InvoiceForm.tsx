@@ -14,6 +14,7 @@ import {
   docTypeRequiresOriginal,
   docTypesFor,
   emptyLine,
+  isCompanyVatRegistered,
   normVatRate,
   num,
   round2,
@@ -117,7 +118,7 @@ export function InvoiceForm({ mode, invoiceId }: Props) {
       setInvoices(inv);
       setUnits(un.items ?? []);
       setExemptions(ex.items ?? []);
-      setVatRegistered(Number((co as { is_vat_registered?: number }).is_vat_registered ?? 1) === 1);
+      setVatRegistered(isCompanyVatRegistered(co));
       const locs = await fetchCompanyLocations();
       setLocations(locs);
       if (mode === "create" && locs.length > 0) {

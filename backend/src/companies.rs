@@ -69,12 +69,18 @@ struct Company {
 
 fn from_row(row: &db::Row) -> Company {
     let s = |i| cell_str(row, i);
+    let vat_number = s(3);
+    let is_vat_registered = if vat_number.trim().is_empty() {
+        0
+    } else {
+        cell_i32_at(row, 4)
+    };
     Company {
         id: cell_i32_at(row, 0),
         name: s(1),
         eik: s(2),
-        vat_number: s(3),
-        is_vat_registered: cell_i32_at(row, 4),
+        vat_number,
+        is_vat_registered,
         vat_period: s(5),
         currency: s(6),
         address: s(7),
@@ -234,6 +240,9 @@ fn apply_body(c: &mut Company, body: &Value) -> Result<(), ApiError> {
             _ => return Err(api_err(StatusCode::UNPROCESSABLE_ENTITY, "is_vat_registered е невалидно")),
         };
     }
+    if c.vat_number.trim().is_empty() {
+        c.is_vat_registered = 0;
+    }
     if let Some(v) = obj.get("fiscal_year_start_month") {
         let n = v.as_i64().ok_or_else(|| {
             api_err(StatusCode::UNPROCESSABLE_ENTITY, "fiscal_year_start_month е невалидно")
@@ -391,6 +400,7 @@ pub(crate) async fn create_for_register(
     c.name = name.to_string();
     c.eik = eik.to_string();
     c.vat_number = vat.to_string();
+    c.is_vat_registered = i32::from(!vat.trim().is_empty());
     c.address = address.to_string();
     c.city = city.to_string();
     c.email = email.to_string();

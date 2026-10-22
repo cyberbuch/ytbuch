@@ -5,15 +5,17 @@ import { ChangeEvent, DragEvent, useCallback, useEffect, useMemo, useState } fro
 import { RequireAuth } from "../../components/RequireAuth";
 import { useI18n } from "../../components/I18nProvider";
 import { IconButton } from "../../components/IconButton";
-import { api, fetchAll, ListResponse } from "../../lib/api";
+import { api, fetchAll, getActiveCompany, ListResponse } from "../../lib/api";
 import {
   Invoice,
   InvoiceLine,
+  absorbVatIntoLines,
   calcLine,
   calcTotals,
   docTypeIsCredit,
   docTypeRequiresOriginal,
   emptyLine,
+  isCompanyVatRegistered,
   num,
   round2,
   todayIso,
@@ -63,13 +65,13 @@ function lineFromScan(s: ScanLine): InvoiceLine {
     vat_rate: s.vat_rate || "20",
     product_id: s.product_id,
     seller_code: s.seller_code || "",
-    keep_amounts: Boolean(s.net_amount && s.vat_amount && s.total_amount),
+    keep_amounts: Boolean(s.net_amount && s.total_amount),
   };
-  if (s.net_amount && s.vat_amount && s.total_amount) {
+  if (s.net_amount && s.total_amount) {
     return {
       ...base,
       net_amount: s.net_amount,
-      vat_amount: s.vat_amount,
+      vat_amount: s.vat_amount || "0.00",
       total_amount: s.total_amount,
     };
   }
@@ -93,6 +95,8 @@ function ScanInner() {
     writeStorage(SCAN_PERIOD_KEY, p);
   }, []);
   const [queue, setQueue] = useState<QueuedFile[]>([]);
+  const [multipageDefault, setMultipageDefault] = useState(false);
+  const [vatRegistered, setVatRegistered] = useState(true);
   const [dragging, setDragging] = useState(false);
   const [stage, setStage] = useState<0 | 1>(0);
   const [busy, setBusy] = useState("");
@@ -132,16 +136,18 @@ function ScanInner() {
 
   const loadLookups = useCallback(async () => {
     try {
-      const [cp, pr, acc, un] = await Promise.all([
+      const [cp, pr, acc, un, co] = await Promise.all([
         fetchAll<Counterpart>("/v1/counterparts"),
         fetchAll<Product>("/v1/products"),
         fetchAll<Account>("/v1/accounts"),
         api.get<ListResponse<UnitOfMeasure>>("/v1/units"),
+        getActiveCompany(),
       ]);
       setCounterparts(cp);
       setProducts(pr);
       setAccounts(acc);
       setUnits(un.items ?? []);
+      setVatRegistered(isCompanyVatRegistered(co));
     } catch {
       /* non-fatal */
     }
@@ -190,7 +196,11 @@ function ScanInner() {
         setError(t("scan.too_big"));
         continue;
       }
-      next.push({ id: `${file.name}-${file.size}-${file.lastModified}`, file });
+      next.push({
+        id: `${file.name}-${file.size}-${file.lastModified}`,
+        file,
+        multipage: multipageDefault,
+      });
     }
     if (next.length) {
       setQueue((prev) => {
@@ -239,7 +249,10 @@ function ScanInner() {
       prev.map((l, idx) => {
         if (idx !== i) return l;
         const next = { ...l, ...patch };
-        if ("quantity" in patch || "unit_price" in patch || "vat_rate" in patch) {
+        if (
+          !("keep_amounts" in patch) &&
+          ("quantity" in patch || "unit_price" in patch || "vat_rate" in patch)
+        ) {
           next.keep_amounts = false;
         }
         return next;
@@ -282,7 +295,11 @@ function ScanInner() {
         mime: item.file.type || (xml ? "application/xml" : ""),
         content_base64,
         direction,
+        multipage: Boolean(item.multipage),
       });
+      if (typeof data.vat_registered === "boolean") {
+        setVatRegistered(data.vat_registered);
+      }
       setNumber(data.invoice_number || "");
       setIssueDate(data.issue_date || todayIso());
       setDueDate(data.due_date || "");
@@ -292,14 +309,21 @@ function ScanInner() {
       setCurrencyRate(data.currency_rate || "1");
       setPaymentMethod(data.payment_method || "банков превод");
       setPaymentNote(data.payment_note || "");
-      setVatExemption(data.vat_exemption_reason || "");
+      const isVatReg =
+        typeof data.vat_registered === "boolean" ? data.vat_registered : vatRegistered;
+      setVatExemption(
+        data.vat_exemption_reason || (!isVatReg ? "VATEX-EU-SM" : "")
+      );
       setOrigNumber(data.original_invoice_number || "");
       setOriginalInvoiceId(data.original_invoice_id ? String(data.original_invoice_id) : "");
       setOcrName(data.counterpart_name || "");
       setOcrEik(data.counterpart_eik || "");
       setOcrVat(data.counterpart_vat_number || "");
       setCounterpartId(data.counterpart_id ? String(data.counterpart_id) : "");
-      const mapped = (data.lines ?? []).map(lineFromScan);
+      let mapped = (data.lines ?? []).map(lineFromScan);
+      if (!isVatReg && direction === "in" && mapped.some((l) => num(l.vat_rate) > 0)) {
+        mapped = absorbVatIntoLines(mapped, data.total_amount);
+      }
       setLines(mapped.length ? mapped : [emptyLine()]);
       setVies(null);
       const vat = (data.counterpart_vat_number || "").replace(/\s/g, "");
@@ -492,6 +516,23 @@ function ScanInner() {
                 onChange={(e) => setPeriod(e.target.value)}
               />
             </div>
+            <div className="field">
+              <label className="check-inline" style={{ fontWeight: 500, cursor: "pointer" }}>
+                <input
+                  type="checkbox"
+                  checked={multipageDefault}
+                  onChange={(e) => {
+                    const checked = e.target.checked;
+                    setMultipageDefault(checked);
+                    setQueue((prev) => prev.map((q) => ({ ...q, multipage: checked })));
+                  }}
+                />
+                {t("scan.multipage")}
+              </label>
+              <p className="muted" style={{ fontSize: 12, marginTop: 4, marginBottom: 0 }}>
+                {t("scan.multipage_hint")}
+              </p>
+            </div>
             <label
               className={`drop-zone${dragging ? " drop-zone-active" : ""}`}
               onDragOver={(e) => {
@@ -528,7 +569,29 @@ function ScanInner() {
                 <tbody>
                   {queue.map((q) => (
                     <tr key={q.id}>
-                      <td>{q.file.name}</td>
+                      <td>
+                        <div>{q.file.name}</div>
+                        {!isXmlFile(q.file) && (
+                          <label
+                            className="check-inline muted"
+                            style={{ fontSize: 12, marginTop: 4, cursor: "pointer" }}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={Boolean(q.multipage)}
+                              onChange={(e) => {
+                                const checked = e.target.checked;
+                                setQueue((prev) =>
+                                  prev.map((x) =>
+                                    x.id === q.id ? { ...x, multipage: checked } : x
+                                  )
+                                );
+                              }}
+                            />
+                            {t("scan.multipage_short")}
+                          </label>
+                        )}
+                      </td>
                       <td className="icon-actions" style={{ textAlign: "right" }}>
                         <button
                           className="btn btn-primary btn-sm"
@@ -558,6 +621,11 @@ function ScanInner() {
         <ScanDraft
           t={t}
           direction={direction}
+          vatRegistered={vatRegistered}
+          absorbVat={() => {
+            setLines((prev) => absorbVatIntoLines(prev, totals.total));
+            if (!vatExemption) setVatExemption("VATEX-EU-SM");
+          }}
           documentType={documentType}
           setDocumentType={setDocumentType}
           number={number}

@@ -165,6 +165,14 @@ export function emptyLine(): InvoiceLine {
 
 export { todayIso, formatBgDate, formatBgDateTime, toDateInput } from "./dates";
 
+export function isCompanyVatRegistered(co: unknown): boolean {
+  if (!co || typeof co !== "object") return true;
+  const rec = co as { is_vat_registered?: unknown; vat_number?: unknown };
+  const flag = Number(rec.is_vat_registered ?? 0) === 1 || rec.is_vat_registered === true;
+  const vat = String(rec.vat_number ?? "").trim();
+  return flag && vat.length > 0;
+}
+
 export function normVatRate(s: string | undefined | null): string {
   const n = num(String(s ?? ""));
   const asStr = String(n);
@@ -198,11 +206,17 @@ export function calcLine(
   pricesIncludeVat: boolean,
   credit = false
 ): InvoiceLine {
-  if (l.keep_amounts && l.net_amount && l.vat_amount && l.total_amount && !pricesIncludeVat) {
+  if (
+    l.keep_amounts &&
+    l.net_amount &&
+    l.total_amount &&
+    (l.vat_amount || num(l.vat_rate) === 0) &&
+    !pricesIncludeVat
+  ) {
     return {
       ...l,
       net_amount: signedText(l.net_amount, credit),
-      vat_amount: signedText(l.vat_amount, credit),
+      vat_amount: signedText(l.vat_amount || "0.00", credit),
       total_amount: signedText(l.total_amount, credit),
     };
   }
@@ -236,6 +250,69 @@ export function calcTotals(lines: InvoiceLine[], discountPercent: string) {
     vat: round2(vat),
     total: round2(taxable + vat),
   };
+}
+
+export function absorbVatIntoLines(
+  lines: InvoiceLine[],
+  targetTotal?: string
+): InvoiceLine[] {
+  if (!lines.length) return lines;
+  const nets: number[] = [];
+  const gross: number[] = [];
+  for (const l of lines) {
+    const q = num(l.quantity) || 1;
+    const up = num(l.unit_price);
+    const rate = num(l.vat_rate) / 100;
+    const netC = l.net_amount && num(l.net_amount) !== 0
+      ? Math.round(num(l.net_amount) * 100)
+      : Math.round(q * up * 100);
+    const vatC = l.vat_amount && num(l.vat_amount) !== 0
+      ? Math.round(num(l.vat_amount) * 100)
+      : Math.round(netC * rate);
+    const totC = l.total_amount && num(l.total_amount) !== 0
+      ? Math.round(num(l.total_amount) * 100)
+      : netC + vatC;
+    nets.push(netC);
+    gross.push(totC);
+  }
+  const sumNet = nets.reduce((a, b) => a + b, 0);
+  let sumGross = gross.reduce((a, b) => a + b, 0);
+  const targetC = targetTotal && num(targetTotal) !== 0 ? Math.round(num(targetTotal) * 100) : sumGross;
+  if (sumGross === sumNet && targetC > sumNet && sumNet !== 0) {
+    const extra = targetC - sumNet;
+    let acc = 0;
+    for (let i = 0; i < gross.length; i++) {
+      const share =
+        i + 1 === gross.length
+          ? extra - acc
+          : Math.round((extra * nets[i]) / sumNet);
+      if (i + 1 < gross.length) acc += share;
+      gross[i] = nets[i] + share;
+    }
+    sumGross = gross.reduce((a, b) => a + b, 0);
+  }
+  if (targetC !== 0 && sumGross !== targetC && gross.length > 0) {
+    const diff = targetC - sumGross;
+    const lastIdx = gross.length - 1;
+    if (gross[lastIdx] + diff >= 0) {
+      gross[lastIdx] += diff;
+    }
+  }
+  return lines.map((l, i) => {
+    const g = gross[i] / 100;
+    const gStr = round2(g);
+    const q = num(l.quantity);
+    const upStr = q > 0 ? round2(g / q) : gStr;
+    return {
+      ...l,
+      unit_price: upStr,
+      vat_rate: "0",
+      net_amount: gStr,
+      vat_amount: "0.00",
+      total_amount: gStr,
+      keep_amounts: true,
+    };
+  });
 }
 
 export function applyDiscountToLines(lines: InvoiceLine[], discountPercent: string): InvoiceLine[] {
