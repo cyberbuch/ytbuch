@@ -1,33 +1,19 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { useState } from "react";
 import { api } from "../../lib/api";
 import { CURRENCIES, Invoice, InvoiceLine, PAY_METHODS, VAT_RATES, docTypeRequiresOriginal, docTypesFor, emptyLine, num, round2 } from "../../lib/invoice";
 import { unitLabel, UnitOfMeasure } from "../../lib/units";
 import { IconButton } from "../../components/IconButton";
 import { useI18n } from "../../components/I18nProvider";
-import { UnitPicker } from "../../components/UnitPicker";
 import { VatExemption, vatexLabel } from "../../lib/vatExemptions";
 import { Account, Counterpart, Product, ViesLookup } from "./types";
-
-const emptyNewProduct = {
-  name: "",
-  code: "",
-  description: "",
-  unit: "C62",
-  price: "0",
-  cost_price: "0",
-  vat_rate: "20",
-  is_service: false,
-  is_inventory: false,
-  inventory_account_id: 0,
-  revenue_account_id: 0,
-  is_active: true,
-};
-
-function accLabel(a: Account): string {
-  return `${a.number} ${a.name}`;
-}
+import {
+  ProductForm,
+  ProductFormValues,
+  emptyProductForm,
+  productPayload,
+} from "../../components/ProductForm";
 
 export function ScanDraft(props: {
   t: (k: string) => string;
@@ -97,21 +83,18 @@ export function ScanDraft(props: {
   } = props;
   const { lang } = useI18n();
   const [addingProduct, setAddingProduct] = useState(false);
-  const [form, setForm] = useState(emptyNewProduct);
-  const [creating, setCreating] = useState(false);
-  const [createError, setCreateError] = useState("");
+  const [initial, setInitial] = useState<ProductFormValues>(emptyProductForm);
 
   const handleCloseModal = () => {
     setAddingProduct(false);
-    setCreateError("");
     closeProductPicker();
   };
 
   const openAddForm = () => {
     const line = itemOpenFor !== null ? lines[itemOpenFor] : undefined;
     const scannedName = itemQuery.trim() || line?.description || "";
-    setForm({
-      ...emptyNewProduct,
+    setInitial({
+      ...emptyProductForm,
       name: scannedName,
       description: line?.description || scannedName,
       unit: line?.unit || "C62",
@@ -119,42 +102,14 @@ export function ScanDraft(props: {
       cost_price: direction === "in" ? line?.unit_price || "0" : "0",
       vat_rate: !vatRegistered ? "0" : line?.vat_rate || "20",
     });
-    setCreateError("");
     setAddingProduct(true);
   };
 
-  const handleCreateProduct = async (e: FormEvent) => {
-    e.preventDefault();
+  const submitProduct = async (values: ProductFormValues) => {
     if (itemOpenFor === null) return;
-    if (!form.name.trim()) {
-      setCreateError(t("scan.need_product_name"));
-      return;
-    }
-    setCreating(true);
-    setCreateError("");
-    try {
-      const created = await api.post<Product>("/v1/products", {
-        name: form.name.trim(),
-        code: form.code.trim(),
-        description: form.description,
-        unit: form.unit || "C62",
-        price: form.price || "0",
-        cost_price: form.cost_price || "0",
-        vat_rate: form.vat_rate || "20",
-        is_service: form.is_service,
-        is_inventory: form.is_service ? false : form.is_inventory,
-        inventory_account_id: form.inventory_account_id,
-        revenue_account_id: form.revenue_account_id,
-        stock_quantity: "0",
-        is_active: form.is_active,
-      });
-      setAddingProduct(false);
-      onProductCreated(itemOpenFor, created);
-    } catch (err) {
-      setCreateError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setCreating(false);
-    }
+    const created = await api.post<Product>("/v1/products", productPayload(values));
+    setAddingProduct(false);
+    onProductCreated(itemOpenFor, created);
   };
 
   return (
@@ -519,7 +474,7 @@ export function ScanDraft(props: {
             <div className="modal-backdrop" onClick={handleCloseModal}>
               <div
                 className="card modal picker-modal"
-                style={addingProduct ? { maxWidth: 720 } : undefined}
+                style={addingProduct ? { maxWidth: 900 } : undefined}
                 onClick={(e) => e.stopPropagation()}
               >
                 <h2 className="modal-title">
@@ -578,181 +533,14 @@ export function ScanDraft(props: {
                     </div>
                   </>
                 ) : (
-                  <form onSubmit={handleCreateProduct}>
-                    <div className="form-grid">
-                      <div className="field">
-                        <label className="label">{t("products.name")} *</label>
-                        <input
-                          className="input"
-                          required
-                          autoFocus
-                          value={form.name}
-                          onChange={(e) => setForm({ ...form, name: e.target.value })}
-                        />
-                      </div>
-                      <div className="field">
-                        <label className="label">{t("products.code")}</label>
-                        <input
-                          className="input"
-                          value={form.code}
-                          onChange={(e) => setForm({ ...form, code: e.target.value })}
-                          placeholder={t("products.code_hint")}
-                        />
-                      </div>
-                      <div className="field" style={{ gridColumn: "1 / -1" }}>
-                        <label className="label">{t("products.description")}</label>
-                        <textarea
-                          className="input"
-                          rows={2}
-                          value={form.description}
-                          onChange={(e) =>
-                            setForm({ ...form, description: e.target.value })
-                          }
-                        />
-                      </div>
-                      <div className="field" style={{ gridColumn: "1 / -1" }}>
-                        <label className="label">{t("products.unit")}</label>
-                        <UnitPicker
-                          value={form.unit}
-                          onChange={(unit) => setForm({ ...form, unit })}
-                          units={units}
-                        />
-                      </div>
-                      <div className="field">
-                        <label className="label">{t("products.price")}</label>
-                        <input
-                          className="input"
-                          value={form.price}
-                          onChange={(e) => setForm({ ...form, price: e.target.value })}
-                        />
-                      </div>
-                      <div className="field">
-                        <label className="label">{t("products.cost_price")}</label>
-                        <input
-                          className="input"
-                          value={form.cost_price}
-                          onChange={(e) =>
-                            setForm({ ...form, cost_price: e.target.value })
-                          }
-                        />
-                      </div>
-                      <div className="field">
-                        <label className="label">{t("products.vat_rate")}</label>
-                        <input
-                          className="input"
-                          value={form.vat_rate}
-                          onChange={(e) =>
-                            setForm({ ...form, vat_rate: e.target.value })
-                          }
-                        />
-                      </div>
-                      <div className="field">
-                        <label className="label">{t("products.revenue_account")}</label>
-                        <select
-                          className="select"
-                          value={String(form.revenue_account_id)}
-                          onChange={(e) =>
-                            setForm({
-                              ...form,
-                              revenue_account_id: Number(e.target.value) || 0,
-                            })
-                          }
-                        >
-                          <option value="0">{t("products.account_required")}</option>
-                          {accounts.map((a) => (
-                            <option key={a.id} value={a.id}>
-                              {accLabel(a)}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                      <div className="field">
-                        <label className="label">{t("products.purchase_account")}</label>
-                        <select
-                          className="select"
-                          value={String(form.inventory_account_id)}
-                          onChange={(e) =>
-                            setForm({
-                              ...form,
-                              inventory_account_id: Number(e.target.value) || 0,
-                            })
-                          }
-                        >
-                          <option value="0">{t("products.account_required")}</option>
-                          {accounts.map((a) => (
-                            <option key={a.id} value={a.id}>
-                              {accLabel(a)}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                      <div className="field">
-                        <label className="check-inline">
-                          <input
-                            type="checkbox"
-                            checked={form.is_service}
-                            onChange={(e) =>
-                              setForm({
-                                ...form,
-                                is_service: e.target.checked,
-                                is_inventory: e.target.checked
-                                  ? false
-                                  : form.is_inventory,
-                              })
-                            }
-                          />
-                          {t("products.is_service")}
-                        </label>
-                      </div>
-                      <div className="field">
-                        <label className="check-inline">
-                          <input
-                            type="checkbox"
-                            checked={form.is_inventory}
-                            disabled={form.is_service}
-                            onChange={(e) =>
-                              setForm({ ...form, is_inventory: e.target.checked })
-                            }
-                          />
-                          {t("products.is_inventory")}
-                        </label>
-                      </div>
-                      <div className="field">
-                        <label className="check-inline">
-                          <input
-                            type="checkbox"
-                            checked={form.is_active}
-                            onChange={(e) =>
-                              setForm({ ...form, is_active: e.target.checked })
-                            }
-                          />
-                          {t("products.is_active")}
-                        </label>
-                      </div>
-                    </div>
-                    {createError && (
-                      <div className="error-text" style={{ marginTop: 8 }}>
-                        {createError}
-                      </div>
-                    )}
-                    <div className="form-actions" style={{ marginTop: 12 }}>
-                      <button
-                        type="button"
-                        className="btn"
-                        onClick={() => setAddingProduct(false)}
-                        disabled={creating}
-                      >
-                        {t("common.back")}
-                      </button>
-                      <button
-                        type="submit"
-                        className="btn btn-primary"
-                        disabled={creating}
-                      >
-                        {creating ? t("scan.creating") : t("common.create")}
-                      </button>
-                    </div>
-                  </form>
+                  <ProductForm
+                    accounts={accounts}
+                    units={units}
+                    initial={initial}
+                    onSubmit={submitProduct}
+                    onCancel={() => setAddingProduct(false)}
+                    cancelLabel={t("common.back")}
+                  />
                 )}
               </div>
             </div>
