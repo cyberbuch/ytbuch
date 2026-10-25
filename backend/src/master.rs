@@ -202,6 +202,11 @@ struct Product {
     stock_quantity: String,
     stock_value: String,
     is_active: i32,
+    product_type: String,
+    cn8_code: String,
+    cn8_name: String,
+    expense_account_id: i32,
+    auto_write_off: i32,
 }
 
 fn product_json(p: &Product) -> Value {
@@ -221,6 +226,11 @@ fn product_json(p: &Product) -> Value {
         "stock_quantity": p.stock_quantity,
         "stock_value": p.stock_value,
         "is_active": p.is_active,
+        "product_type": p.product_type,
+        "cn8_code": p.cn8_code,
+        "cn8_name": p.cn8_name,
+        "expense_account_id": p.expense_account_id,
+        "auto_write_off": p.auto_write_off,
     })
 }
 
@@ -242,12 +252,17 @@ fn product_from(r: &Row) -> Product {
         stock_quantity: cell_str(r, 13),
         stock_value: cell_str(r, 14),
         is_active: cell_i32_at(r, 15),
+        product_type: cell_str(r, 16),
+        cn8_code: cell_str(r, 17),
+        cn8_name: cell_str(r, 18),
+        expense_account_id: cell_i32_at(r, 19),
+        auto_write_off: cell_i32_at(r, 20),
     }
 }
 
-const PROD_SEL: &str = "SELECT id, company_id, name, code, description, unit, price, cost_price, \
-vat_rate, is_service, is_inventory, inventory_account_id, revenue_account_id, stock_quantity, \
-stock_value, is_active FROM products";
+const PROD_SEL: &str = "SELECT p.id, p.company_id, p.name, p.code, p.description, p.unit, p.price, p.cost_price, \
+p.vat_rate, p.is_service, p.is_inventory, p.inventory_account_id, p.revenue_account_id, p.stock_quantity, \
+p.stock_value, p.is_active, e.product_type, e.cn8_code, e.cn8_name, e.expense_account_id, e.auto_write_off FROM products p LEFT JOIN product_extra e ON p.id = e.id";
 
 async fn code_taken(st: &AppState, company_id: i32, code: &str, except: i32) -> Result<bool, ApiError> {
     let t = code.trim();
@@ -298,7 +313,7 @@ async fn next_numeric_code(st: &AppState, company_id: i32) -> Result<String, Api
 async fn product_load(st: &AppState, id: i32, company: i32) -> Result<Product, ApiError> {
     let rows = st
         .db
-        .query(&format!("{PROD_SEL} WHERE id = {id} AND company_id = {company}"))
+        .query(&format!("{PROD_SEL} WHERE p.id = {id} AND p.company_id = {company}"))
         .await
         .map_err(db_err)?;
     rows.into_iter()
@@ -307,7 +322,7 @@ async fn product_load(st: &AppState, id: i32, company: i32) -> Result<Product, A
         .ok_or_else(|| api_err(StatusCode::NOT_FOUND, "стоката не е намерена"))
 }
 
-fn finish_product(p: &mut Product) {
+fn finish_product(p: &mut Product) -> Result<(), ApiError> {
     if p.unit.trim().is_empty() {
         p.unit = "C62".into();
     }
@@ -323,12 +338,111 @@ fn finish_product(p: &mut Product) {
     if p.stock_quantity.trim().is_empty() {
         p.stock_quantity = "0".into();
     }
+    p.product_type = p.product_type.trim().to_string();
+    p.cn8_code = p.cn8_code.trim().to_string();
+    p.cn8_name = p.cn8_name.trim().to_string();
+    p.auto_write_off = if p.auto_write_off != 0 { 1 } else { 0 };
     if p.is_service != 0 {
         p.is_service = 1;
         p.is_inventory = 0;
         p.stock_quantity = "0".into();
         p.stock_value = "0".into();
+        p.product_type = String::new();
+        p.expense_account_id = 0;
+        p.auto_write_off = 0;
+        if p.cn8_code.is_empty() {
+            p.cn8_code = "00000000".into();
+        }
+    } else {
+        if p.product_type == "10" {
+            p.is_inventory = 1;
+        }
+        if p.is_inventory != 0 {
+            p.is_inventory = 1;
+            if !matches!(p.product_type.as_str(), "10" | "20" | "30" | "40" | "50") {
+                p.product_type = "30".into();
+            }
+        } else if !p.product_type.is_empty()
+            && !matches!(p.product_type.as_str(), "10" | "20" | "30" | "40" | "50")
+        {
+            p.product_type = String::new();
+        }
+        if p.product_type != "10" || p.is_inventory == 0 {
+            p.auto_write_off = 0;
+        }
     }
+    if p.auto_write_off == 1 && (p.expense_account_id <= 0 || p.inventory_account_id <= 0) {
+        return Err(api_err(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "за автоматично изписване са нужни сметка на материалите и сметка за изписване",
+        ));
+    }
+    if !p.cn8_code.is_empty() && p.cn8_name.is_empty() {
+        if let Some(name) = crate::cn8::name_of(&p.cn8_code) {
+            p.cn8_name = name;
+        }
+    }
+    Ok(())
+}
+
+async fn default_account_id(st: &AppState, company: i32, number: &str) -> Result<i32, ApiError> {
+    let rows = st
+        .db
+        .query(&format!(
+            "SELECT id FROM accounts WHERE company_id = {company} AND number = {}",
+            lit(number)
+        ))
+        .await
+        .map_err(db_err)?;
+    if let Some(row) = rows.first() {
+        return Ok(cell_i32_at(row, 0));
+    }
+    let name = crate::saft::catalog()
+        .get("accounts")
+        .and_then(|rows| {
+            rows.iter().find_map(|line| {
+                let mut parts = line.split('|');
+                if parts.next() == Some(number) {
+                    parts.next().map(str::to_string)
+                } else {
+                    None
+                }
+            })
+        })
+        .unwrap_or_else(|| number.to_string());
+    let id = st.db.next_id("accounts").await.map_err(db_err)?;
+    st.db
+        .exec(&format!(
+            "INSERT INTO accounts (id, company_id, number, name, saft_account_type, analytic_type) VALUES ({id}, {company}, {}, {}, {}, 'none')",
+            lit(number),
+            lit(&name),
+            lit(number),
+        ))
+        .await
+        .map_err(db_err)?;
+    Ok(id)
+}
+
+async fn product_account_defaults(st: &AppState, p: &mut Product) -> Result<(), ApiError> {
+    if p.is_service == 0 && p.product_type.trim() == "10" {
+        for (field, number) in [("inventory", "302"), ("revenue", "706"), ("expense", "601")] {
+            let current = match field {
+                "inventory" => p.inventory_account_id,
+                "revenue" => p.revenue_account_id,
+                _ => p.expense_account_id,
+            };
+            if current > 0 {
+                continue;
+            }
+            let id = default_account_id(st, p.company_id, number).await?;
+            match field {
+                "inventory" => p.inventory_account_id = id,
+                "revenue" => p.revenue_account_id = id,
+                _ => p.expense_account_id = id,
+            }
+        }
+    }
+    Ok(())
 }
 
 fn apply_product(p: &mut Product, obj: &serde_json::Map<String, Value>) -> Result<(), ApiError> {
@@ -371,6 +485,41 @@ fn apply_product(p: &mut Product, obj: &serde_json::Map<String, Value>) -> Resul
     if let Some(v) = form::flag_field(obj, "is_active")? {
         p.is_active = v;
     }
+    if let Some(v) = form::str_field(obj, "product_type")? {
+        p.product_type = v;
+    }
+    if let Some(v) = form::str_field(obj, "cn8_code")? {
+        p.cn8_code = v;
+    }
+    if let Some(v) = form::str_field(obj, "cn8_name")? {
+        p.cn8_name = v;
+    }
+    if let Some(v) = form::i32_field(obj, "expense_account_id")? {
+        p.expense_account_id = v;
+    }
+    if let Some(v) = form::flag_field(obj, "auto_write_off")? {
+        p.auto_write_off = v;
+    }
+    Ok(())
+}
+
+async fn save_product_extra(st: &AppState, p: &Product) -> Result<(), ApiError> {
+    st.db
+        .exec(&format!("DELETE FROM product_extra WHERE id = {}", p.id))
+        .await
+        .map_err(db_err)?;
+    st.db
+        .exec(&format!(
+            "INSERT INTO product_extra (id, product_type, cn8_code, cn8_name, expense_account_id, auto_write_off) VALUES ({}, {}, {}, {}, {}, {})",
+            p.id,
+            lit(&p.product_type),
+            lit(&p.cn8_code),
+            lit(&p.cn8_name),
+            p.expense_account_id,
+            p.auto_write_off,
+        ))
+        .await
+        .map_err(db_err)?;
     Ok(())
 }
 
@@ -400,6 +549,7 @@ async fn product_save(st: &AppState, p: &Product) -> Result<(), ApiError> {
         ))
         .await
         .map_err(db_err)?;
+    save_product_extra(st, p).await?;
     Ok(())
 }
 
@@ -437,6 +587,11 @@ pub async fn product_create(
         stock_quantity: "0".into(),
         stock_value: "0".into(),
         is_active: 1,
+        product_type: String::new(),
+        cn8_code: String::new(),
+        cn8_name: String::new(),
+        expense_account_id: 0,
+        auto_write_off: 0,
     };
     apply_product(&mut p, obj)?;
     if p.name.trim().is_empty() {
@@ -448,9 +603,11 @@ pub async fn product_create(
     if code_taken(&st, p.company_id, &p.code, 0).await? {
         return Err(api_err(StatusCode::CONFLICT, "артикул с този код вече съществува"));
     }
+    product_account_defaults(&st, &mut p).await?;
     form::ensure_ref(&st.db, "accounts", p.inventory_account_id, p.company_id, "сметката").await?;
     form::ensure_ref(&st.db, "accounts", p.revenue_account_id, p.company_id, "сметката").await?;
-    finish_product(&mut p);
+    form::ensure_ref(&st.db, "accounts", p.expense_account_id, p.company_id, "сметката").await?;
+    finish_product(&mut p)?;
     p.stock_quantity = "0".into();
     p.stock_value = "0".into();
     p.id = st.db.next_id("products").await.map_err(db_err)?;
@@ -479,6 +636,7 @@ pub async fn product_create(
         ))
         .await
         .map_err(db_err)?;
+    save_product_extra(&st, &p).await?;
     Ok((StatusCode::CREATED, Json(product_json(&product_load(&st, p.id, p.company_id).await?))))
 }
 
@@ -498,9 +656,11 @@ pub async fn product_update(
     if code_taken(&st, p.company_id, &p.code, p.id).await? {
         return Err(api_err(StatusCode::CONFLICT, "артикул с този код вече съществува"));
     }
+    product_account_defaults(&st, &mut p).await?;
     form::ensure_ref(&st.db, "accounts", p.inventory_account_id, p.company_id, "сметката").await?;
     form::ensure_ref(&st.db, "accounts", p.revenue_account_id, p.company_id, "сметката").await?;
-    finish_product(&mut p);
+    form::ensure_ref(&st.db, "accounts", p.expense_account_id, p.company_id, "сметката").await?;
+    finish_product(&mut p)?;
     p.stock_quantity = qty;
     p.stock_value = val;
     product_save(&st, &p).await?;
@@ -515,6 +675,7 @@ pub async fn product_delete(
     let sub = auth_sub(&st, &headers)?;
     let company = active_or_one(&st, &sub).await?;
     let p = product_load(&st, id, company).await?;
+    let _ = st.db.exec(&format!("DELETE FROM product_extra WHERE id = {}", p.id)).await;
     st.db
         .exec(&format!(
             "DELETE FROM products WHERE id = {} AND company_id = {}",

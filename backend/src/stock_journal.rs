@@ -172,7 +172,7 @@ async fn rewrite_material(db: &Db, company: i32, rules: &[Rule], books: &Books, 
             let pid = cell_i32_at(line, 1);
             let debit = cell_i32_at(line, 2);
             let credit = cell_i32_at(line, 3);
-            if stock_rules::pair(rules, "material", credit, debit).is_none() {
+            if !stock_rules::material_line_allowed(db, company, rules, pid, credit, debit).await? {
                 warnings.push(format!("няма правило за материал по документ {}", doc.number));
                 skip = true;
                 break;

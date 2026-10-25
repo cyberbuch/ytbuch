@@ -20,6 +20,7 @@ const NOM_KINDS = [
   "tax_types",
   "tax_codes",
   "product_types",
+  "cn8",
   "units",
   "regions",
   "accounts",
@@ -92,6 +93,13 @@ const COLS: Record<NomKind, Col[]> = {
     { key: "group", labelKey: "saft.col.group", mono: true },
     { key: "group_name", labelKey: "saft.col.group_name" },
   ],
+  cn8: [
+    { key: "code", labelKey: "saft.col.code", mono: true },
+    { key: "name", labelKey: "saft.col.name" },
+    { key: "heading", labelKey: "saft.col.heading", mono: true },
+    { key: "heading_name", labelKey: "saft.col.heading_name" },
+    { key: "chapter", labelKey: "saft.col.chapter", mono: true },
+  ],
 };
 
 function cell(rec: Record<string, unknown>, key: string): string {
@@ -116,6 +124,10 @@ function NomenclaturesInner() {
     try {
       const qs = new URLSearchParams({ kind });
       if (q.trim()) qs.set("search", q.trim());
+      if (kind === "cn8") {
+        qs.set("limit", String(PAGE_SIZE));
+        qs.set("offset", String(offset));
+      }
       const data = await api.get<ListResponse<Record<string, unknown>>>(
         `/v1/saft/nomenclatures?${qs.toString()}`
       );
@@ -128,6 +140,10 @@ function NomenclaturesInner() {
     } finally {
       setLoading(false);
     }
+  }, [kind, q, offset]);
+
+  useEffect(() => {
+    setOffset(0);
   }, [kind, q]);
 
   useEffect(() => {
@@ -138,10 +154,11 @@ function NomenclaturesInner() {
   }, [load]);
 
   const cols = COLS[kind];
-  const pageCount = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
+  const itemCount = kind === "cn8" ? total : rows.length;
+  const pageCount = Math.max(1, Math.ceil(itemCount / PAGE_SIZE));
   const page = Math.min(Math.floor(offset / PAGE_SIZE), pageCount - 1);
   const start = page * PAGE_SIZE;
-  const paged = rows.slice(start, start + PAGE_SIZE);
+  const paged = kind === "cn8" ? rows : rows.slice(start, start + PAGE_SIZE);
 
   return (
     <div>
@@ -209,7 +226,7 @@ function NomenclaturesInner() {
           </div>
         )}
         <Pagination
-          total={rows.length}
+          total={itemCount}
           limit={PAGE_SIZE}
           offset={start}
           onPageChange={setOffset}

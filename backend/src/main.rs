@@ -15,6 +15,7 @@ mod auth_flow;
 mod bank_csv;
 mod bank_tx;
 mod banks;
+mod cn8;
 mod companies;
 mod counterparts;
 mod db;
@@ -253,6 +254,7 @@ async fn main() {
                 .delete(counterparts::counterpart_delete),
         )
         .route("/v1/products", get(lists::products).post(master::product_create))
+        .route("/v1/products/cn8-suggest", post(cn8::suggest))
         .route(
             "/v1/products/{id}",
             get(master::product_show)

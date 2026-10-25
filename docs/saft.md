@@ -7,7 +7,7 @@
 
 ## Видове
 
-`GET /v1/saft/nomenclatures` без `kind` връща тези 11:
+`GET /v1/saft/nomenclatures` без `kind` връща тези 12:
 
 | `kind` | Име | Редове | Полета |
 |--------|-----|--------|--------|
@@ -19,6 +19,7 @@
 | `tax_types` | Видове данъци | 21 | `code`, `name` |
 | `tax_codes` | Данъчни кодове | 169 | `tax_type`, `code`, `description`, `rate`, `note` |
 | `product_types` | Видове запаси | 5 | `code`, `name`, `name_en` |
+| `cn8` | Комбинирана номенклатура КН8 | 9887 | `code`, `name`, `heading`, `heading_name`, `chapter`, `chapter_name` |
 | `units` | Мерни единици | 127 | `code`, `name`, `name_en`, `symbol`, `category`, `source` |
 | `regions` | Области | 28 | `code`, `name` |
 | `accounts` | Сметки НАП | 360 | `code`, `name`, `section`, `section_name`, `group`, `group_name` |
@@ -29,6 +30,11 @@
 
 `search` филтрира по подниз в целия ред. Пример:
 `/v1/saft/nomenclatures?kind=invoice_types&search=фактура`.
+КН8 се зарежда от `backend/data/cn8.json`, извлечен от лист `NC8_TARIC` на
+официалния `Structure_Definition_V_1.0.1.xlsx`. Поддържа `limit` и `offset`.
+`POST /v1/products/cn8-suggest` предлага код, вид запас и SAF-T мерна единица
+по име и описание. Локалното търсене работи и без AI; при настроен Mistral ключ
+AI избира само код, който после се потвърждава в локалния каталог.
 
 Екранът е `/nomenclatures`. Сметкопланът е `/accounts` и зарежда едновременно
 `GET /v1/accounts` и `GET /v1/saft/nomenclatures?kind=accounts`.
@@ -79,5 +85,5 @@ eкрана може да го пусне пак: дублирани номер�
 
 - `DefaultCurrencyCode` в схемата е само `EUR`.
 - Чуждите полета в `Ownership` са задължителни. Българска майка се повтаря там с държава `BG`.
-- Стоковият код на продукта е `0`. Амортизацията за периода е `0.00`. Доставчикът на ДМА е „Неизвестен“.
+- Стоковият код на продукта е кодът КН8 на артикула. При услуга без код е `00000000`, а при друга липса — `0`. Видът на запаса идва от артикула (`10`–`50`). Амортизацията за периода е `0.00`. Доставчикът на ДМА е „Неизвестен“.
 - Съпоставяне на движения (`CorrespondingAccountsReport`) не се изнася.

@@ -25,6 +25,7 @@ const KINDS: &[(&str, &str)] = &[
     ("tax_types", "Видове данъци"),
     ("tax_codes", "Данъчни кодове"),
     ("product_types", "Видове запаси"),
+    ("cn8", "КН8 (продукти)"),
     ("units", "Мерни единици"),
     ("regions", "Области"),
     ("accounts", "Сметки НАП"),
@@ -66,6 +67,8 @@ fn parse_line(kind: &str, line: &str) -> Value {
 pub struct NomQuery {
     kind: Option<String>,
     search: Option<String>,
+    limit: Option<usize>,
+    offset: Option<usize>,
 }
 
 pub async fn nomenclatures(
@@ -81,6 +84,12 @@ pub async fn nomenclatures(
             .map(|(id, name)| json!({ "id": id, "name": name }))
             .collect();
         return Ok(Json(json!({ "kinds": kinds, "count": kinds.len() })));
+    }
+    if kind == "cn8" {
+        let limit = q.limit.unwrap_or(100).clamp(1, 500);
+        let offset = q.offset.unwrap_or(0);
+        let (count, items) = crate::cn8::search_noms(q.search.as_deref().unwrap_or(""), limit, offset);
+        return Ok(Json(json!({ "kind": kind, "items": items, "count": count, "limit": limit, "offset": offset })));
     }
     let Some(rows) = catalog().get(&kind) else {
         return Err(api_err(StatusCode::BAD_REQUEST, "непозната номенклатура (kind)"));

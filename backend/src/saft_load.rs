@@ -118,6 +118,8 @@ pub struct Product {
     pub qty: String,
     pub value: i128,
     pub inv_acc: i32,
+    pub product_type: String,
+    pub cn8_code: String,
 }
 
 pub struct Invoice {
@@ -423,8 +425,8 @@ pub async fn load(db: &Db, company_id: i32) -> Result<Snap, ApiError> {
     .await?;
     let products = map_rows(
         db,
-        "SELECT id, company_id, name, code, unit, cost_price, is_service, is_inventory, stock_quantity, stock_value, \
-         inventory_account_id FROM products ORDER BY id",
+        "SELECT p.id, p.company_id, p.name, p.code, p.unit, p.cost_price, p.is_service, p.is_inventory, p.stock_quantity, p.stock_value, \
+         p.inventory_account_id, e.product_type, e.cn8_code FROM products p LEFT JOIN product_extra e ON p.id = e.id ORDER BY p.id",
         |r| Product {
             id: cell_i32_at(r, 0),
             company_id: cell_i32_at(r, 1),
@@ -437,6 +439,8 @@ pub async fn load(db: &Db, company_id: i32) -> Result<Snap, ApiError> {
             qty: cell_str(r, 8),
             value: money_of(&cell_str(r, 9)),
             inv_acc: cell_i32_at(r, 10),
+            product_type: cell_str(r, 11),
+            cn8_code: cell_str(r, 12),
         },
     )
     .await?;

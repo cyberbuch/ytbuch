@@ -9,7 +9,7 @@ use std::sync::Arc;
 use axum::extract::State;
 use axum::http::{header, HeaderMap};
 use axum::Json;
-use serde_json::json;
+use serde_json::{json, Value};
 
 use crate::auth;
 use crate::db::{self, Db};
@@ -19,7 +19,9 @@ use crate::invoice_money;
 use crate::invoice_post;
 use crate::invoice_read;
 use crate::invoices;
+use crate::master;
 use crate::stock_replay;
+use crate::stock_rules;
 use crate::stock_writeoff;
 use crate::vat;
 use crate::AppState;
@@ -31,8 +33,8 @@ const CP_NAME: &str = "Тест Фискален К";
 const PROD_CODE: &str = "TST-FISCAL";
 const BUY_NO: &str = "T-FISCAL-BUY";
 const SELL_NO: &str = "T-FISCAL-SELL";
-const MARK_NOS: &[&str] = &[BUY_NO, SELL_NO, "T-GA-BUY", "T-GA-SELL", "T-GB-BUY", "T-GB-SELL"];
-const MARK_CODES: &[&str] = &[PROD_CODE, "TST-GOODS-A", "TST-GOODS-B"];
+const MARK_NOS: &[&str] = &[BUY_NO, SELL_NO, "T-GA-BUY", "T-GA-SELL", "T-GB-BUY", "T-GB-SELL", "T-MAT-AUTO-BUY", "T-MAT-SELL-BUY", "T-MAT-SELL-OUT"];
+const MARK_CODES: &[&str] = &[PROD_CODE, "TST-GOODS-A", "TST-GOODS-B", "TST-MAT-AUTO", "TST-MAT-SELL"];
 
 /// `next_id` е MAX(id)+1 — паралелните тестове биха разменили id-тата.
 /// Всички тестове минават една по една през тази ключалка.
@@ -190,20 +192,17 @@ async fn purge(st: &AppState) {
         )
         .await;
     }
+    let codes = MARK_CODES.iter().map(|code| db::lit(code)).collect::<Vec<_>>().join(", ");
     let products = invoice_read::qry(
         &st.db,
-        &format!(
-            "SELECT id FROM products WHERE code = {} OR code = {} OR code = {}",
-            db::lit(MARK_CODES[0]),
-            db::lit(MARK_CODES[1]),
-            db::lit(MARK_CODES[2])
-        ),
+        &format!("SELECT id FROM products WHERE code IN ({codes})"),
     )
     .await
     .unwrap_or_default();
     for row in products {
         let id = db::cell_i32(&row);
         let _ = invoice_read::exe(&st.db, &format!("DELETE FROM inventory_lots WHERE product_id = {id}")).await;
+        let _ = invoice_read::exe(&st.db, &format!("DELETE FROM product_extra WHERE id = {id}")).await;
         let _ = invoice_read::exe(&st.db, &format!("DELETE FROM products WHERE id = {id}")).await;
     }
     let counterparts = invoice_read::qry(
@@ -221,8 +220,7 @@ async fn purge(st: &AppState) {
             &st.db,
             &format!(
                 "SELECT id FROM journal_entries WHERE company_id = {company} AND document_type = 'stock_writeoff' \
-                 AND document_number = {}",
-                db::lit("2032-02")
+                 AND document_number IN ('2032-02', '2032-03')",
             ),
         )
         .await
@@ -557,6 +555,88 @@ async fn fiscal_writeoff_two_rules_out_of_order() {
     if let Some(id) = extra_b {
         let _ = invoice_read::exe(&f.st.db, &format!("DELETE FROM stock_account_rules WHERE id = {id}")).await;
     }
+    purge(&f.st).await;
+}
+
+async fn create_material(f: &Fixture, code: &str, auto: bool) -> Value {
+    let (status, Json(product)) = master::product_create(
+        State(f.st.clone()),
+        f.headers.clone(),
+        Json(json!({
+            "name": format!("Тест материал {code}"),
+            "code": code,
+            "unit": "H87",
+            "price": "12.00",
+            "cost_price": "5.00",
+            "product_type": "10",
+            "auto_write_off": auto,
+        })),
+    )
+    .await
+    .expect("материалът не се създава");
+    assert_eq!(status, axum::http::StatusCode::CREATED);
+    assert_eq!(product["product_type"].as_str(), Some("10"));
+    assert_eq!(product["inventory_account_id"].as_i64(), Some(account_id(&f.st, f.company, "302").await as i64));
+    assert_eq!(product["revenue_account_id"].as_i64(), Some(account_id(&f.st, f.company, "706").await as i64));
+    assert_eq!(product["expense_account_id"].as_i64(), Some(account_id(&f.st, f.company, "601").await as i64));
+    product
+}
+
+/// Материалът има свои 302/706/601. Незначителният се изписва веднага,
+/// а основният остава на склад и при продажба отива по себестойност в 601.
+#[tokio::test]
+async fn fiscal_material_auto_writeoff_and_sale() {
+    let _lock = LOCK.lock().await;
+    let Some(f) = fixture().await else { return };
+
+    let auto = create_material(&f, "TST-MAT-AUTO", true).await;
+    let auto_id = auto["id"].as_i64().expect("id на автоматичен материал") as i32;
+    let fa = with_product(&f, auto_id);
+    let auto_buy = create_invoice(&fa, "T-MAT-AUTO-BUY", "in", "11", "2", "5.00", "10.00", "2.00", "12.00", "2031-01-15").await;
+    invoice_post::post_one(&f.st, f.company, auto_buy).await.expect("автоматично изписване при покупка");
+    assert_journal(
+        &fa,
+        auto_buy,
+        &[
+            ("302", "debit", 1000),
+            ("601", "debit", 1000),
+            ("4531", "debit", 200),
+            ("302", "credit", 1000),
+            ("401", "credit", 1200),
+        ],
+    )
+    .await;
+    assert_eq!(stock_pair(&fa, auto_id).await, (dec::or0("0"), dec::or0("0")));
+
+    let manual = create_material(&f, "TST-MAT-SELL", false).await;
+    let manual_id = manual["id"].as_i64().expect("id на материал за продажба") as i32;
+    let rules = stock_rules::load(&f.st.db, f.company).await.expect("складови правила");
+    let inv302 = account_id(&f.st, f.company, "302").await;
+    let exp601 = account_id(&f.st, f.company, "601").await;
+    assert!(stock_rules::material_line_allowed(&f.st.db, f.company, &rules, manual_id, inv302, exp601).await.expect("разходната сметка на артикула"));
+    assert!(!stock_rules::material_line_allowed(&f.st.db, f.company, &rules, auto_id, inv302, exp601).await.expect("без повторно изписване"));
+    let fm = with_product(&f, manual_id);
+    let buy = create_invoice(&fm, "T-MAT-SELL-BUY", "in", "11", "10", "5.00", "50.00", "10.00", "60.00", "2032-03-05").await;
+    invoice_post::post_one(&f.st, f.company, buy).await.expect("покупка на материал за продажба");
+    assert_eq!(stock_pair(&fm, manual_id).await, (dec::or0("10"), dec::or0("50")));
+    let sell = create_invoice(&fm, "T-MAT-SELL-OUT", "out", "01", "2", "12.00", "24.00", "4.80", "28.80", "2032-03-06").await;
+    invoice_post::post_one(&f.st, f.company, sell).await.expect("продажба на материал");
+    assert_journal(
+        &fm,
+        sell,
+        &[("411", "debit", 2880), ("706", "credit", 2400), ("4532", "credit", 480)],
+    )
+    .await;
+    assert_eq!(stock_pair(&fm, manual_id).await, (dec::or0("8"), dec::or0("40")));
+
+    let written = stock_writeoff::run(&f.st.db, f.company, Some("2032-03"), None)
+        .await
+        .expect("изписване на продадения материал");
+    assert_eq!(written["amount"].as_str(), Some("10.00"));
+    let mut lines = writeoff_cents(&f, "2032-03").await;
+    lines.sort();
+    assert_eq!(lines, vec![("302".into(), "credit".into(), 1000), ("601".into(), "debit".into(), 1000)]);
+
     purge(&f.st).await;
 }
 

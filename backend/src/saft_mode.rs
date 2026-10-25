@@ -224,7 +224,7 @@ fn product(p: &Product) -> String {
     xml.push_str(&text("ProductCode", &code));
     xml.push_str(&text("GoodsServicesID", if p.service { "02" } else { "01" }));
     xml.push_str(&text("Description", &name));
-    xml.push_str(&text("ProductCommodityCode", "0"));
+    xml.push_str(&text("ProductCommodityCode", &saft_xml::cn8_code(&p.cn8_code, p.service)));
     xml.push_str(&text("UOMBase", &u));
     xml.push_str(&text("UOMStandard", &u));
     xml.push_str(&text("UOMToUOMBaseConversionFactor", "1"));
@@ -748,8 +748,8 @@ pub fn ondemand_xml(s: &Snap) -> String {
         stock.push_str(&saft_xml::open("PhysicalStockEntry"));
         stock.push_str(&text("WarehouseID", "1"));
         stock.push_str(&text("ProductCode", &code));
-        stock.push_str(&text("ProductType", "10"));
-        stock.push_str(&text("StockAccountCommodityCode", "0"));
+        stock.push_str(&text("ProductType", &saft_xml::product_type(&p.product_type)));
+        stock.push_str(&text("StockAccountCommodityCode", &saft_xml::cn8_code(&p.cn8_code, false)));
         stock.push_str(&text("OwnerID", &owner));
         stock.push_str(&text("UOMPhysicalStock", &u));
         stock.push_str(&text("UOMToUOMBaseConversionFactor", "1"));

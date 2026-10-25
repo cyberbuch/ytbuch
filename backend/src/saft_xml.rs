@@ -284,6 +284,24 @@ pub fn shown_name(name: &str, n: usize) -> String {
     }
 }
 
+pub fn cn8_code(raw: &str, is_service: bool) -> String {
+    let t = clip(raw, 18);
+    if !t.is_empty() {
+        t
+    } else if is_service {
+        "00000000".into()
+    } else {
+        "0".into()
+    }
+}
+
+pub fn product_type(raw: &str) -> String {
+    match raw.trim() {
+        "10" | "20" | "30" | "40" | "50" => raw.trim().to_string(),
+        _ => "10".into(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

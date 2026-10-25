@@ -59,17 +59,17 @@ pub async fn post(State(st): State<AppState>, headers: HeaderMap, Json(body): Js
 
 pub async fn run(db: &crate::db::Db, company: i32, month: Option<&str>, until: Option<&str>) -> Result<Value, ApiError> {
     let rules = stock_rules::load(db, company).await?;
-    if rules.is_empty() {
-        return Err(api_err(
-            StatusCode::UNPROCESSABLE_ENTITY,
-            "няма правила за склада — добавете ги в настройки, таб Склад",
-        ));
-    }
     let months = months(db, company, month, until).await?;
     for m in &months {
         periods::assert_open(db, company, &format!("{m}-01")).await?;
     }
     let built = stock_replay::rebuild(db, company, "9999-12-31").await?;
+    if rules.is_empty() && !built.sales.iter().any(|hit| hit.expense_account_id > 0) {
+        return Err(api_err(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "няма правила за склада — добавете ги в настройки, таб Склад",
+        ));
+    }
     let mut warnings = built.warnings;
     later_months(db, company, &months, &mut warnings).await?;
     let mut entries = Vec::new();
@@ -157,25 +157,30 @@ async fn later_months(db: &crate::db::Db, company: i32, months: &[String], warni
 }
 
 async fn one_month(db: &crate::db::Db, company: i32, month: &str, sales: &[SaleHit], rules: &[Rule], warnings: &mut Vec<String>) -> Result<(i32, i128), ApiError> {
-    let mut by: HashMap<i32, (String, i128, i32, i32)> = HashMap::new();
+    let mut by: HashMap<i32, (String, i128, i32, i32, i32)> = HashMap::new();
     for hit in sales {
         if !hit.date.starts_with(month) || hit.cost == 0 {
             continue;
         }
-        let e = by.entry(hit.product_id).or_insert((hit.product_name.clone(), 0, hit.inventory_account_id, hit.revenue_account_id));
+        let e = by.entry(hit.product_id).or_insert((hit.product_name.clone(), 0, hit.inventory_account_id, hit.revenue_account_id, hit.expense_account_id));
         e.1 = dec::add(e.1, hit.cost).unwrap_or(e.1);
     }
     let mut sides = Vec::new();
     let mut total = 0i128;
-    for (name, cost, inventory, revenue) in by.values() {
-        let rule = stock_rules::pair(rules, "goods", *inventory, *revenue)
-            .or_else(|| stock_rules::pair(rules, "production", *inventory, *revenue));
-        let Some(rule) = rule else {
-            warnings.push(format!("няма правило за {name}"));
-            continue;
+    for (name, cost, inventory, revenue, expense) in by.values() {
+        let (debit_id, credit_id) = if *expense > 0 {
+            (*expense, *inventory)
+        } else {
+            let rule = stock_rules::pair(rules, "goods", *inventory, *revenue)
+                .or_else(|| stock_rules::pair(rules, "production", *inventory, *revenue));
+            let Some(rule) = rule else {
+                warnings.push(format!("няма правило за {name}"));
+                continue;
+            };
+            (rule.offset_account_id, rule.inventory_account_id)
         };
-        let debit = posting::by_id(db, rule.offset_account_id).await?;
-        let credit = posting::by_id(db, rule.inventory_account_id).await?;
+        let debit = posting::by_id(db, debit_id).await?;
+        let credit = posting::by_id(db, credit_id).await?;
         let amount = money(*cost);
         sides.push(Side { account: debit, direction: "debit", amount: amount.clone() });
         sides.push(Side { account: credit, direction: "credit", amount });

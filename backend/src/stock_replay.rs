@@ -16,6 +16,7 @@ pub struct SaleHit {
     pub cost: i128,
     pub inventory_account_id: i32,
     pub revenue_account_id: i32,
+    pub expense_account_id: i32,
 }
 
 pub struct Flow {
@@ -50,6 +51,8 @@ pub(crate) struct Meta {
     pub(crate) is_inventory: i32,
     pub(crate) inventory: i32,
     pub(crate) revenue: i32,
+    pub(crate) expense: i32,
+    pub(crate) auto_write_off: i32,
 }
 
 struct Lot {
@@ -214,6 +217,7 @@ fn apply(items: &[Item], products: &HashMap<i32, Meta>, method: &str) -> Replay 
                         cost,
                         inventory_account_id: meta.map(|m| m.inventory).unwrap_or(0),
                         revenue_account_id: meta.map(|m| m.revenue).unwrap_or(0),
+                        expense_account_id: meta.map(|m| m.expense).unwrap_or(0),
                     });
                 }
             }
@@ -479,7 +483,7 @@ async fn load_products(db: &Db, company: i32) -> Result<HashMap<i32, Meta>, ApiE
     let rows = invoice_read::qry(
         db,
         &format!(
-            "SELECT id, name, is_inventory, inventory_account_id, revenue_account_id FROM products WHERE company_id = {company}"
+            "SELECT p.id, p.name, p.is_inventory, p.inventory_account_id, p.revenue_account_id, e.expense_account_id, e.auto_write_off FROM products p LEFT JOIN product_extra e ON p.id = e.id WHERE p.company_id = {company}"
         ),
     )
     .await?;
@@ -492,6 +496,8 @@ async fn load_products(db: &Db, company: i32) -> Result<HashMap<i32, Meta>, ApiE
                 is_inventory: cell_i32_at(r, 2),
                 inventory: cell_i32_at(r, 3),
                 revenue: cell_i32_at(r, 4),
+                expense: cell_i32_at(r, 5),
+                auto_write_off: cell_i32_at(r, 6),
             },
         );
     }
@@ -511,7 +517,10 @@ async fn company_setup(db: &Db, company: i32) -> Result<(i32, String), ApiError>
 }
 
 fn keep(products: &HashMap<i32, Meta>, id: i32) -> bool {
-    products.get(&id).map(|m| m.is_inventory == 1).unwrap_or(false)
+    products
+        .get(&id)
+        .map(|m| m.is_inventory == 1 && m.auto_write_off == 0)
+        .unwrap_or(false)
 }
 
 fn push_item(items: &mut Vec<Item>, dates: &mut Vec<String>, date: &str, rank: u8, seq: i64, mv: Mv) {

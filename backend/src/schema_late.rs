@@ -107,4 +107,12 @@ CREATE TABLE IF NOT EXISTS audit_logs (
     new_data VARCHAR,
     created_at VARCHAR
 );
+CREATE TABLE IF NOT EXISTS product_extra (
+    id INTEGER PRIMARY KEY,
+    product_type VARCHAR,
+    cn8_code VARCHAR,
+    cn8_name VARCHAR,
+    expense_account_id INTEGER,
+    auto_write_off INTEGER
+);
 ";

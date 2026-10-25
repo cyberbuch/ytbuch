@@ -58,7 +58,7 @@ pub async fn products(
         &st,
         &headers,
         &format!(
-            "SELECT id, name, code, description, unit, price, cost_price, vat_rate, is_service, is_inventory, inventory_account_id, revenue_account_id, stock_quantity, stock_value, is_active FROM products WHERE company_id = {company} ORDER BY id"
+            "SELECT p.id, p.name, p.code, p.description, p.unit, p.price, p.cost_price, p.vat_rate, p.is_service, p.is_inventory, p.inventory_account_id, p.revenue_account_id, p.stock_quantity, p.stock_value, p.is_active, e.product_type, e.cn8_code, e.cn8_name, e.expense_account_id, e.auto_write_off FROM products p LEFT JOIN product_extra e ON p.id = e.id WHERE p.company_id = {company} ORDER BY p.id"
         ),
     )
     .await?;
@@ -81,6 +81,11 @@ pub async fn products(
                 "stock_quantity": cell_str(r, 12),
                 "stock_value": cell_str(r, 13),
                 "is_active": cell_i32_at(r, 14),
+                "product_type": cell_str(r, 15),
+                "cn8_code": cell_str(r, 16),
+                "cn8_name": cell_str(r, 17),
+                "expense_account_id": cell_i32_at(r, 18),
+                "auto_write_off": cell_i32_at(r, 19),
             })
         })
         .collect();

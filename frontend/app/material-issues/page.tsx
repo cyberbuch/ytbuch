@@ -23,6 +23,8 @@ interface Product {
   code: string;
   is_inventory: number;
   inventory_account_id: number;
+  expense_account_id?: number;
+  auto_write_off?: number;
 }
 
 interface Rule {
@@ -91,7 +93,7 @@ function Inner() {
       ]);
       setRows(list);
       setLocations(locs);
-      setProducts(prods.filter((p) => Number(p.is_inventory) === 1));
+      setProducts(prods.filter((p) => Number(p.is_inventory) === 1 && Number(p.auto_write_off) !== 1));
       setAccounts(acc);
       setRules((rulePack.items ?? []).filter((r) => r.kind === "material"));
     } catch (e) {
@@ -263,8 +265,9 @@ function Inner() {
   );
 }
 
-function offsets(rules: Rule[], inventory: number): number[] {
+function offsets(rules: Rule[], inventory: number, expense = 0): number[] {
   const ids = rules.filter((r) => r.inventory_account_id === inventory).map((r) => r.offset_account_id);
+  if (expense > 0) ids.unshift(expense);
   return [...new Set(ids)];
 }
 
@@ -314,11 +317,11 @@ function Editor({
   function pickProduct(i: number, productId: number) {
     const product = products.find((p) => p.id === productId);
     const inventory = product?.inventory_account_id ?? 0;
-    const choices = offsets(rules, inventory);
+    const choices = offsets(rules, inventory, product?.expense_account_id ?? 0);
     setLine(i, {
       product_id: productId,
       inventory_account_id: inventory,
-      account_id: choices.length === 1 ? choices[0] : 0,
+      account_id: product?.expense_account_id || (choices.length === 1 ? choices[0] : 0),
     });
   }
 
@@ -417,7 +420,8 @@ function Editor({
         </thead>
         <tbody>
           {lines.map((line, i) => {
-            const choices = offsets(rules, line.inventory_account_id);
+            const product = products.find((p) => p.id === line.product_id);
+            const choices = offsets(rules, line.inventory_account_id, product?.expense_account_id ?? 0);
             return (
               <tr key={i}>
                 <td>

@@ -13,7 +13,7 @@ use crate::invoice_read;
 use crate::pagination::{paginate, PageQuery};
 use crate::periods;
 use crate::stock_replay;
-use crate::stock_rules::{self, Rule};
+use crate::stock_rules;
 use crate::{api_err, AppState, ApiError};
 
 const SEL: &str = "SELECT id, number, doc_date, location_id, status, notes, journal_entry_id, company_id FROM material_issues";
@@ -211,8 +211,9 @@ pub async fn confirm(State(st): State<AppState>, headers: HeaderMap, Path(id): P
     for line in &lines {
         let debit = line.get("account_id").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
         let credit = line.get("inventory_account_id").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
-        if stock_rules::pair(&rules, "material", credit, debit).is_none() {
-            return Err(api_err(StatusCode::UNPROCESSABLE_ENTITY, "редът не е по правило за материали"));
+        let product_id = line.get("product_id").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
+        if !stock_rules::material_line_allowed(&st.db, company, &rules, product_id, credit, debit).await? {
+            return Err(api_err(StatusCode::UNPROCESSABLE_ENTITY, "редът не е по правило за материали или по сметката на артикула"));
         }
     }
     invoice_read::exe(&st.db, &format!("UPDATE material_issues SET status = 'confirmed' WHERE id = {id}")).await?;
@@ -306,16 +307,12 @@ async fn parse_lines(st: &AppState, company: i32, obj: &serde_json::Map<String, 
         form::ensure_ref(&st.db, "products", product_id, company, "артикулът").await?;
         form::ensure_ref(&st.db, "accounts", account_id, company, "записът").await?;
         form::ensure_ref(&st.db, "accounts", inventory_account_id, company, "записът").await?;
-        if !rule_ok(&rules, inventory_account_id, account_id) {
-            return Err(api_err(StatusCode::UNPROCESSABLE_ENTITY, "сметката не е в правилата за материали"));
+        if !stock_rules::material_line_allowed(&st.db, company, &rules, product_id, inventory_account_id, account_id).await? {
+            return Err(api_err(StatusCode::UNPROCESSABLE_ENTITY, "сметката не е в правилата за материали или в артикула"));
         }
         out.push(LineIn { product_id, quantity, account_id, inventory_account_id });
     }
     Ok(out)
-}
-
-fn rule_ok(rules: &[Rule], inventory: i32, offset: i32) -> bool {
-    stock_rules::pair(rules, "material", inventory, offset).is_some()
 }
 
 fn qty_of(raw: &str) -> Result<String, ApiError> {

@@ -47,6 +47,33 @@ pub fn material_inventory(rules: &[Rule], inventory: i32) -> Option<&Rule> {
     rules.iter().find(|r| r.kind == "material" && r.inventory_account_id == inventory && inventory > 0)
 }
 
+/// Ръчното изписване приема глобално правило или разходната сметка на артикула.
+/// Автоматично изписваните при покупка материали не минават втори път през протокол.
+pub async fn material_line_allowed(
+    db: &Db,
+    company: i32,
+    rules: &[Rule],
+    product_id: i32,
+    inventory: i32,
+    offset: i32,
+) -> Result<bool, ApiError> {
+    let rows = invoice_read::qry(
+        db,
+        &format!(
+            "SELECT p.inventory_account_id, e.expense_account_id, e.auto_write_off \
+             FROM products p LEFT JOIN product_extra e ON p.id = e.id \
+             WHERE p.id = {product_id} AND p.company_id = {company}"
+        ),
+    )
+    .await?;
+    let Some(row) = rows.first() else { return Ok(false) };
+    if cell_i32_at(row, 0) != inventory || cell_i32_at(row, 2) == 1 {
+        return Ok(false);
+    }
+    Ok(pair(rules, "material", inventory, offset).is_some()
+        || (cell_i32_at(row, 1) > 0 && cell_i32_at(row, 1) == offset))
+}
+
 struct Named {
     name: String,
     inventory: i32,

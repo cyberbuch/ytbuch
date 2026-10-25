@@ -17,6 +17,7 @@ const TABLES: &[(&str, &str)] = &[
     ("counterparts", "id:i,company_id:i,name,counterpart_type,eik,vat_number,address,city,post_code,country,contact_person"),
     ("counterpart_extra", "id:i,vies_address,street_name,building_number,address_building,additional_address_detail,address_type,region,email,phone"),
     ("products", "id:i,company_id:i,name,code,description,unit,price,cost_price,vat_rate,is_service:i,is_inventory:i,inventory_account_id:i,revenue_account_id:i,stock_quantity,stock_value,is_active:i"),
+    ("product_extra", "id:i,product_type,cn8_code,cn8_name,expense_account_id:i,auto_write_off:i"),
     ("invoices", "id:i,company_id:i,direction,document_type,number,issue_date,due_date,counterpart_id:i,counterpart_name,currency,net_amount,vat_amount,total_amount,status,payment_method,notes"),
     ("invoice_lines", "id:i,invoice_id:i,code,description,quantity,unit,unit_price,vat_rate,net_amount,vat_amount,total_amount"),
     ("invoice_extra", "id:i,tax_event_date,accounting_month,currency_rate,discount_percent,discount_amount,vat_exemption_reason,original_invoice_id:i,location_id:i,journal_entry_id:i"),

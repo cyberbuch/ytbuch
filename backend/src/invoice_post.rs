@@ -23,6 +23,7 @@ use crate::periods;
 use crate::stock_replay;
 use crate::{api_err, AppState, ApiError};
 
+#[derive(Clone)]
 struct Acct {
     id: i32,
     number: String,
@@ -40,6 +41,8 @@ struct Prod {
     name: String,
     revenue_account_id: i32,
     inventory_account_id: i32,
+    expense_account_id: i32,
+    auto_write_off: i32,
 }
 
 async fn acct_number(st: &AppState, company: i32, number: &str) -> Result<Acct, ApiError> {
@@ -101,7 +104,7 @@ async fn product(st: &AppState, id: i32, company: i32) -> Result<Option<Prod>, A
     let rows = invoice_read::qry(
         &st.db,
         &format!(
-            "SELECT name, revenue_account_id, inventory_account_id FROM products WHERE id = {id} AND company_id = {company}"
+            "SELECT p.name, p.revenue_account_id, p.inventory_account_id, e.expense_account_id, e.auto_write_off FROM products p LEFT JOIN product_extra e ON p.id = e.id WHERE p.id = {id} AND p.company_id = {company}"
         ),
     )
     .await?;
@@ -112,6 +115,8 @@ async fn product(st: &AppState, id: i32, company: i32) -> Result<Option<Prod>, A
         name: cell_str(&row, 0),
         revenue_account_id: cell_i32_at(&row, 1),
         inventory_account_id: cell_i32_at(&row, 2),
+        expense_account_id: cell_i32_at(&row, 3),
+        auto_write_off: cell_i32_at(&row, 4),
     }))
 }
 
@@ -282,7 +287,18 @@ async fn plan_for(st: &AppState, inv: &Inv) -> Result<Vec<Jl>, ApiError> {
                 ));
             }
             let acct = acct_id(st, prod.inventory_account_id, company).await?;
-            push(&mut plan, acct, "debit", net, "0");
+            push(&mut plan, acct.clone(), "debit", net.clone(), "0");
+            if prod.auto_write_off == 1 {
+                if prod.expense_account_id <= 0 {
+                    return Err(api_err(
+                        StatusCode::UNPROCESSABLE_ENTITY,
+                        format!("артикулът {} няма сметка за автоматично изписване", prod.name),
+                    ));
+                }
+                let expense = acct_id(st, prod.expense_account_id, company).await?;
+                push(&mut plan, expense, "debit", net.clone(), "0");
+                push(&mut plan, acct, "credit", net, "0");
+            }
         }
         if inv.exclude_vat == 0 && vat_cents != 0 {
             push(&mut plan, a4531, "debit", vat.clone(), &vat);
