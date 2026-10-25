@@ -30,18 +30,15 @@ export function Cn8Picker({ code, name, candidates = [], onSelect }: Props) {
 
   useEffect(() => {
     const q = query.trim();
-    if (!q) {
-      setFound([]);
-      setError("");
-      return;
-    }
     let active = true;
+    // При празна търсачка се показват първите кодове от каталога, за да не е
+    // списъкът празен при отваряне на формата; писането го стеснява.
     const timer = window.setTimeout(async () => {
       setLoading(true);
       try {
         const data = await api.get<ListResponse<Cn8Item>>("/v1/saft/nomenclatures", {
           kind: "cn8",
-          search: q,
+          search: q || undefined,
           limit: 40,
         });
         if (active) {
