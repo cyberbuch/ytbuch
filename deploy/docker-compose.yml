@@ -21,10 +21,14 @@ services:
     volumes:
       - ydb-data:/data
       - ydb-backup:/backup
+      - ./ydb-env.sh:/usr/local/bin/ydb-env.sh:ro
       - ./ydb-backup.sh:/usr/local/bin/ydb-backup.sh:ro
       - ./ydb-startup.sh:/usr/local/bin/ydb-startup.sh:ro
+    # Healthcheckът гледа /proc/net/tcp (порт 1337 = 0x0539, състояние LISTEN),
+    # без да отваря връзка: всяко свързване без Postgres протокол буди
+    # ERR_ROCTO_INVALID_VERSION в rocto.log — стотици хиляди червени реда.
     healthcheck:
-      test: ["CMD-SHELL", "bash -c 'echo >/dev/tcp/127.0.0.1/1337'"]
+      test: ["CMD-SHELL", "grep -qE ':0539 [0-9A-F]{8}:[0-9A-F]{4} 0A ' /proc/net/tcp"]
       interval: 10s
       timeout: 3s
       retries: 30

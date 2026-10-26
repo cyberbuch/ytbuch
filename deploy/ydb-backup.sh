@@ -3,7 +3,13 @@
 # с превключване на журналите след архива (без -nonewjnlfiles).
 #   ydb-backup.sh        — един архив
 #   ydb-backup.sh loop   — периодично, през YDB_BACKUP_EVERY секунди (6h)
-. /opt/yottadb/current/ydb_env_set
+#
+# Използва споделената настройка ydb-env.sh вместо ydb_env_set,
+# за да не се влияе от потенциални грешки в journal recovery.
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+. "$SCRIPT_DIR/ydb-env.sh"
+
 log=/data/logs/ydb-backup.log
 export ydb_baktmpdir=/backup/.tmp
 mkdir -p "$ydb_baktmpdir" /backup
