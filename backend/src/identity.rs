@@ -18,9 +18,18 @@ pub struct User {
     pub totp_enabled: i32,
     pub totp_secret: String,
     pub totp_pending: String,
+    /// Версия на сесията. Расте при всяка смяна на паролата — токените,
+    /// издадени преди нея, отпадат.
+    pub ver: i64,
+    /// Неуспешни опити за 2FA код.
+    pub mfa_fails: i32,
+    /// Unix момент до който 2FA е заключен.
+    pub mfa_lock_until: i64,
 }
 
-const SEL: &str = "SELECT id, email, name, password_hash, is_active, is_super_admin, role_id, totp_enabled FROM users";
+const SEL: &str = "SELECT u.id, u.email, u.name, u.password_hash, u.is_active, u.is_super_admin, u.role_id, \
+                  u.totp_enabled, s.ver, s.mfa_fails, s.mfa_lock_until \
+                  FROM users u LEFT JOIN user_session s ON s.id = u.id";
 
 fn from_row(row: &db::Row) -> User {
     let email = cell_str(row, 1);
@@ -36,6 +45,9 @@ fn from_row(row: &db::Row) -> User {
         totp_enabled: cell_i32_at(row, 7),
         totp_secret: String::new(),
         totp_pending: String::new(),
+        ver: cell_i32_at(row, 8) as i64,
+        mfa_fails: cell_i32_at(row, 9),
+        mfa_lock_until: cell_i32_at(row, 10) as i64,
     }
 }
 
@@ -60,7 +72,7 @@ async fn with_login(db: &Db, mut user: User) -> Result<User, ApiError> {
 
 pub async fn by_id(db: &Db, id: i32) -> Result<Option<User>, ApiError> {
     let rows = db
-        .query(&format!("{SEL} WHERE id = {id}"))
+        .query(&format!("{SEL} WHERE u.id = {id}"))
         .await
         .map_err(db_err)?;
     let Some(row) = rows.first() else {
@@ -71,7 +83,7 @@ pub async fn by_id(db: &Db, id: i32) -> Result<Option<User>, ApiError> {
 
 pub async fn by_email(db: &Db, email: &str) -> Result<Option<User>, ApiError> {
     let rows = db
-        .query(&format!("{SEL} WHERE email = {}", lit(email)))
+        .query(&format!("{SEL} WHERE u.email = {}", lit(email)))
         .await
         .map_err(db_err)?;
     let Some(row) = rows.first() else {
@@ -145,7 +157,22 @@ pub async fn ensure_login(db: &Db, id: i32, username: &str) -> Result<(), ApiErr
 
 /// Имейлът е наследен от стария sha256 хеш; argon2 не го ползва,
 /// но сигнатурата остава, за да не се менят извикващите.
-pub async fn set_password(db: &Db, id: i32, _email: &str, password: &str) -> Result<(), ApiError> {
+/// Смяна на паролата. Връща новата версия на сесията — токените, издадени
+/// преди смяната, отпадат.
+pub async fn set_password(db: &Db, id: i32, _email: &str, password: &str) -> Result<i64, ApiError> {
+    let hash = auth::hash_new(password)?;
+    db.exec(&format!(
+        "UPDATE users SET password_hash = {} WHERE id = {id}",
+        lit(&hash)
+    ))
+    .await
+    .map_err(db_err)?;
+    bump_version(db, id).await
+}
+
+/// Пренаписване на хеша при смяна на стария sha256 формат. Паролата не се
+/// променя, затова и старите токени остават валидни.
+pub async fn rehash_password(db: &Db, id: i32, password: &str) -> Result<(), ApiError> {
     let hash = auth::hash_new(password)?;
     db.exec(&format!(
         "UPDATE users SET password_hash = {} WHERE id = {id}",
@@ -156,7 +183,83 @@ pub async fn set_password(db: &Db, id: i32, _email: &str, password: &str) -> Res
     Ok(())
 }
 
-pub async fn set_email(db: &Db, id: i32, email: &str, password: &str) -> Result<(), ApiError> {
+/// Расти версията на сесията. Токените, издадени преди смяната на
+/// паролата, отпадат — иначе откраднат токен би работил и след нея.
+pub async fn bump_version(db: &Db, user_id: i32) -> Result<i64, ApiError> {
+    let ver = session_row(db, user_id).await?.0 + 1;
+    save_session(db, user_id, Some(ver), None, None).await?;
+    Ok(ver)
+}
+
+/// Брои неуспешните опити за 2FA код и връща новия брой.
+pub async fn mfa_failure(db: &Db, user_id: i32) -> Result<i32, ApiError> {
+    let fails = session_row(db, user_id).await?.1 + 1;
+    save_session(db, user_id, None, Some(fails), None).await?;
+    Ok(fails)
+}
+
+/// Заключва 2FA до даден момент (unix секунди).
+pub async fn mfa_lock(db: &Db, user_id: i32, until: i64) -> Result<(), ApiError> {
+    save_session(db, user_id, None, Some(0), Some(until)).await
+}
+
+/// Изчистява брояча и заключването след успешен вход с код.
+pub async fn mfa_reset(db: &Db, user_id: i32) -> Result<(), ApiError> {
+    save_session(db, user_id, None, Some(0), Some(0)).await
+}
+
+async fn session_row(db: &Db, user_id: i32) -> Result<(i64, i32, i64), ApiError> {
+    let rows = db
+        .query(&format!(
+            "SELECT ver, mfa_fails, mfa_lock_until FROM user_session WHERE id = {user_id}"
+        ))
+        .await
+        .map_err(db_err)?;
+    Ok(match rows.first() {
+        Some(row) => (
+            cell_i32_at(row, 0) as i64,
+            cell_i32_at(row, 1),
+            cell_i32_at(row, 2) as i64,
+        ),
+        None => (0, 0, 0),
+    })
+}
+
+/// Запис на състоянието на сесията. `None` означава „остави както е“.
+async fn save_session(
+    db: &Db,
+    user_id: i32,
+    ver: Option<i64>,
+    fails: Option<i32>,
+    lock: Option<i64>,
+) -> Result<(), ApiError> {
+    let (cur_ver, cur_fails, cur_lock) = session_row(db, user_id).await?;
+    let ver = ver.unwrap_or(cur_ver);
+    let fails = fails.unwrap_or(cur_fails);
+    let lock = lock.unwrap_or(cur_lock);
+    let found = db
+        .query(&format!("SELECT id FROM user_session WHERE id = {user_id}"))
+        .await
+        .map_err(db_err)?;
+    if found.first().is_some() {
+        db.exec(&format!(
+            "UPDATE user_session SET ver = {ver}, mfa_fails = {fails}, \
+             mfa_lock_until = {lock} WHERE id = {user_id}"
+        ))
+        .await
+        .map_err(db_err)?;
+    } else {
+        db.exec(&format!(
+            "INSERT INTO user_session (id, user_id, ver, mfa_fails, mfa_lock_until) \
+             VALUES ({user_id}, {user_id}, {ver}, {fails}, {lock})"
+        ))
+        .await
+        .map_err(db_err)?;
+    }
+    Ok(())
+}
+
+pub async fn set_email(db: &Db, id: i32, email: &str, password: &str) -> Result<i64, ApiError> {
     let hash = auth::hash_new(password)?;
     db.exec(&format!(
         "UPDATE users SET email = {}, password_hash = {} WHERE id = {id}",
@@ -165,7 +268,7 @@ pub async fn set_email(db: &Db, id: i32, email: &str, password: &str) -> Result<
     ))
     .await
     .map_err(db_err)?;
-    Ok(())
+    bump_version(db, id).await
 }
 
 pub async fn set_name(db: &Db, id: i32, name: &str) -> Result<(), ApiError> {

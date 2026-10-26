@@ -40,8 +40,17 @@ pub async fn jwt_secret(db: &Db) -> Result<String, ApiError> {
     Ok(secret)
 }
 
+/// Маска, която заменя тайните при четене. Клиентът, който върне маска
+/// или празно, оставя записаната стойност непроменена.
+pub const SECRET_MASK: &str = "••••••••";
+
 fn is_private(key: &str) -> bool {
     key == "auth.jwt_secret" || key.starts_with("активна_фирма:")
+}
+
+/// Ключовете, чиято стойност е тайна. Те не се връщат ясно към клиента.
+fn is_secret(key: &str) -> bool {
+    matches!(key, "smtp.password" | "s3.secret_key")
 }
 
 fn items_json(map: &HashMap<String, String>) -> Vec<Value> {
@@ -49,7 +58,15 @@ fn items_json(map: &HashMap<String, String>) -> Vec<Value> {
     keys.sort();
     keys.into_iter()
         .filter(|k| !is_private(k))
-        .map(|k| json!({ "key": k, "value": map.get(k).cloned().unwrap_or_default() }))
+        .map(|k| {
+            let value = map.get(k).cloned().unwrap_or_default();
+            let value = if is_secret(k) && !value.is_empty() {
+                SECRET_MASK.to_string()
+            } else {
+                value
+            };
+            json!({ "key": k, "value": value })
+        })
         .collect()
 }
 
@@ -91,6 +108,10 @@ pub async fn update(
                 ))
             }
         };
+        // Маска или празно = тайната остава както е в базата.
+        if is_secret(key) && (value.is_empty() || value == SECRET_MASK) {
+            continue;
+        }
         upsert(&st.db, key, &value).await?;
     }
     let map = load(&st.db).await?;

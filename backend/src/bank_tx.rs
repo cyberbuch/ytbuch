@@ -218,8 +218,8 @@ pub async fn book(
     if !tx_contra.is_empty() {
         desc = format!("{desc} - {tx_contra}");
     }
-    let debit = posting::by_id(&st.db, debit_id).await?;
-    let credit = posting::by_id(&st.db, credit_id).await?;
+    let debit = posting::by_id(&st.db, company, debit_id).await?;
+    let credit = posting::by_id(&st.db, company, credit_id).await?;
     let debit_num = debit.number.clone();
     let credit_num = credit.number.clone();
     let entry = posting::write_entry(
@@ -288,7 +288,7 @@ pub async fn reallocate(
         return Err(api_err(StatusCode::UNPROCESSABLE_ENTITY, "Няма буферна сметка"));
     }
     let (cp_name, _) = counterpart(&st, cp, company).await?;
-    let acct = posting::by_id(&st.db, new_acc).await?;
+    let acct = posting::by_id(&st.db, company, new_acc).await?;
     let lines = invoice_read::qry(&st.db, &format!("SELECT id, account_id FROM journal_lines WHERE entry_id = {entry}")).await?;
     let mut replaced = 0;
     for line in &lines {
@@ -406,8 +406,8 @@ async fn bank(st: &AppState, id: i32, company: i32) -> Result<Ba, ApiError> {
 async fn auto_journal(st: &AppState, company: i32, ba: &Ba, tx: &Tx, amount: i128, tx_type: &str) -> Result<i32, ApiError> {
     let abs_s = money(dec::abs(amount));
     let (debit_id, credit_id) = if tx_type == "DEPOSIT" { (ba.gl, ba.buf) } else { (ba.buf, ba.gl) };
-    let debit = posting::by_id(&st.db, debit_id).await?;
-    let credit = posting::by_id(&st.db, credit_id).await?;
+    let debit = posting::by_id(&st.db, company, debit_id).await?;
+    let credit = posting::by_id(&st.db, company, credit_id).await?;
     let mut desc = if ba.name.is_empty() { "Банково извлечение".into() } else { format!("Банково извлечение {}", ba.name) };
     if !tx.description.is_empty() {
         desc = format!("{desc} — {}", tx.description);

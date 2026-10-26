@@ -97,8 +97,8 @@ async fn rewrite_production(db: &Db, company: i32, products: &HashMap<i32, Meta>
                 continue;
             }
             total = dec::add(total, cost.cost).unwrap_or(total);
-            let clearing = posting::by_id(db, rule.clearing_account_id).await?;
-            let inv = posting::by_id(db, mat.inventory).await?;
+            let clearing = posting::by_id(db, company, rule.clearing_account_id).await?;
+            let inv = posting::by_id(db, company, mat.inventory).await?;
             sides.push(Side { account: clearing, direction: "debit", amount: money(cost.cost) });
             sides.push(Side { account: inv, direction: "credit", amount: money(cost.cost) });
         }
@@ -106,8 +106,8 @@ async fn rewrite_production(db: &Db, company: i32, products: &HashMap<i32, Meta>
             continue;
         }
         if total != 0 {
-            let clearing = posting::by_id(db, rule.clearing_account_id).await?;
-            let inv = posting::by_id(db, out.inventory).await?;
+            let clearing = posting::by_id(db, company, rule.clearing_account_id).await?;
+            let inv = posting::by_id(db, company, out.inventory).await?;
             sides.push(Side { account: inv, direction: "debit", amount: money(total) });
             sides.push(Side { account: clearing, direction: "credit", amount: money(total) });
         }
@@ -183,8 +183,8 @@ async fn rewrite_material(db: &Db, company: i32, rules: &[Rule], books: &Books, 
             let unit = if q > 0 { dec::text(dec::div(cost, q).unwrap_or(0), 6) } else { "0.000000".into() };
             updates.push((id, unit, money(cost)));
             if cost != 0 {
-                sides.push(Side { account: posting::by_id(db, debit).await?, direction: "debit", amount: money(cost) });
-                sides.push(Side { account: posting::by_id(db, credit).await?, direction: "credit", amount: money(cost) });
+                sides.push(Side { account: posting::by_id(db, company, debit).await?, direction: "debit", amount: money(cost) });
+                sides.push(Side { account: posting::by_id(db, company, credit).await?, direction: "credit", amount: money(cost) });
             }
         }
         if skip {

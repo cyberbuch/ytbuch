@@ -50,15 +50,21 @@ pub async fn load(st: &AppState, headers: &HeaderMap, id: i32) -> Result<Loaded,
     } else {
         Value::Null
     };
-    let (original_number, original_date) = original(&st.db, inv.original_invoice_id).await?;
+    let (original_number, original_date) = original(&st.db, company_id, inv.original_invoice_id).await?;
     Ok(Loaded { inv, lines, company, counterpart, original_number, original_date })
 }
 
-async fn original(db: &crate::db::Db, id: i32) -> Result<(String, String), ApiError> {
+/// Оригиналната фактура е на същата фирма — иначе би изтекъл номер и дата
+/// на чужда фирма.
+async fn original(db: &crate::db::Db, company: i32, id: i32) -> Result<(String, String), ApiError> {
     if id <= 0 {
         return Ok((String::new(), String::new()));
     }
-    let rows = invoice_read::qry(db, &format!("SELECT number, issue_date FROM invoices WHERE id = {id}")).await?;
+    let rows = invoice_read::qry(
+        db,
+        &format!("SELECT number, issue_date FROM invoices WHERE id = {id} AND company_id = {company}"),
+    )
+    .await?;
     let Some(row) = rows.first() else {
         return Ok((String::new(), String::new()));
     };

@@ -115,4 +115,11 @@ CREATE TABLE IF NOT EXISTS product_extra (
     expense_account_id INTEGER,
     auto_write_off INTEGER
 );
+CREATE TABLE IF NOT EXISTS user_session (
+    id INTEGER PRIMARY KEY,
+    user_id INTEGER,
+    ver INTEGER,
+    mfa_fails INTEGER,
+    mfa_lock_until INTEGER
+);
 ";

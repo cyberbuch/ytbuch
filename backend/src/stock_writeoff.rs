@@ -179,8 +179,8 @@ async fn one_month(db: &crate::db::Db, company: i32, month: &str, sales: &[SaleH
             };
             (rule.offset_account_id, rule.inventory_account_id)
         };
-        let debit = posting::by_id(db, debit_id).await?;
-        let credit = posting::by_id(db, credit_id).await?;
+        let debit = posting::by_id(db, company, debit_id).await?;
+        let credit = posting::by_id(db, company, credit_id).await?;
         let amount = money(*cost);
         sides.push(Side { account: debit, direction: "debit", amount: amount.clone() });
         sides.push(Side { account: credit, direction: "credit", amount });

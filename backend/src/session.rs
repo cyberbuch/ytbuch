@@ -12,6 +12,11 @@ use crate::identity;
 use crate::totp;
 use crate::{api_err, AppState, ApiError};
 
+/// Колко пъти може да се сбърка кодът за 2FA, преди да се заключи.
+const MFA_MAX_FAILS: i32 = 5;
+/// Заключване на 2FA след много неуспешни опити (секунди).
+const MFA_LOCK_SEC: i64 = 900;
+
 #[derive(Deserialize)]
 pub(crate) struct TokenBody {
     sub: Option<String>,
@@ -46,7 +51,7 @@ pub async fn token(State(st): State<AppState>, Json(body): Json<TokenBody>) -> R
     let Some(user) = found else {
         if identity::user_count(&st.db).await? == 0 && login == "superadmin" && password == "123+123" {
             identity::provision_superadmin(&st.db).await?;
-            let token = auth::issue(&st.jwt_secret, "superadmin")?;
+            let token = auth::issue(&st.jwt_secret, "superadmin", 0)?;
             return Ok(token_json(token, "superadmin"));
         }
         return Err(api_err(StatusCode::UNAUTHORIZED, "грешен потребител или парола"));
@@ -60,14 +65,14 @@ pub async fn token(State(st): State<AppState>, Json(body): Json<TokenBody>) -> R
         }
         // Стар sha256 хеш: паролата е вярна, записваме я отново с argon2.
         auth::PasswordCheck::Rehash => {
-            if let Err(e) = identity::set_password(&st.db, user.id, &user.email, &password).await {
+            if let Err(e) = identity::rehash_password(&st.db, user.id, &password).await {
                 tracing::warn!("argon2 rehash на потребител {}: {e:?}", user.id);
             }
         }
         auth::PasswordCheck::Ok => {}
     }
     if user.totp_enabled == 1 {
-        let mfa = auth::issue_mfa(&st.jwt_secret, &user.username)?;
+        let mfa = auth::issue_mfa(&st.jwt_secret, &user.username, user.ver)?;
         return Ok(Json(json!({
             "mfa": "totp",
             "mfa_token": mfa,
@@ -75,7 +80,7 @@ pub async fn token(State(st): State<AppState>, Json(body): Json<TokenBody>) -> R
             "message": "Въведи кода от приложението или резервен код",
         })));
     }
-    let token = auth::issue(&st.jwt_secret, &user.username)?;
+    let token = auth::issue(&st.jwt_secret, &user.username, user.ver)?;
     Ok(token_json(token, &user.username))
 }
 
@@ -93,13 +98,31 @@ pub async fn mfa(State(st): State<AppState>, Json(body): Json<MfaBody>) -> Resul
         return Err(api_err(StatusCode::UNAUTHORIZED, "грешен код"));
     };
     let now = chrono::Utc::now().timestamp();
+    if user.mfa_lock_until > now {
+        return Err(api_err(
+            StatusCode::TOO_MANY_REQUESTS,
+            "2FA е заключен за 15 минути след неуспешни опити",
+        ));
+    }
     if totp::totp_ok(&user.totp_secret, code.trim(), now) {
-        let token = auth::issue(&st.jwt_secret, &user.username)?;
+        identity::mfa_reset(&st.db, user.id).await?;
+        let token = auth::issue(&st.jwt_secret, &user.username, user.ver)?;
         return Ok(token_json(token, &user.username));
     }
     if identity::take_recovery(&st.db, user.id, code.trim()).await? {
-        let token = auth::issue(&st.jwt_secret, &user.username)?;
+        identity::mfa_reset(&st.db, user.id).await?;
+        let token = auth::issue(&st.jwt_secret, &user.username, user.ver)?;
         return Ok(token_json(token, &user.username));
+    }
+    // Много опити с код → заключване, за да не се гадае кодът на догадки.
+    let fails = user.mfa_fails + 1;
+    identity::mfa_failure(&st.db, user.id).await?;
+    if fails >= MFA_MAX_FAILS {
+        identity::mfa_lock(&st.db, user.id, now + MFA_LOCK_SEC).await?;
+        return Err(api_err(
+            StatusCode::TOO_MANY_REQUESTS,
+            "изчерпани опити за 2FA — заключено за 15 минути",
+        ));
     }
     Err(api_err(StatusCode::UNAUTHORIZED, "грешен код"))
 }

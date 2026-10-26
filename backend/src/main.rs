@@ -101,6 +101,8 @@ mod vat_line;
 
 #[cfg(test)]
 mod fiscal_check;
+#[cfg(test)]
+mod session_check;
 
 use std::env;
 use std::net::SocketAddr;
@@ -457,7 +459,7 @@ async fn main() {
         .route("/v1/scans/ubl", post(ubl_in::import))
         .route("/v1/product-name-mappings", get(pnmap::index).post(pnmap::save))
         .fallback(fallback)
-        .layer(rate_limit::general_layer())
+        .layer(rate_limit::general_layer(&state.jwt_secret))
         .layer(axum::middleware::from_fn_with_state(
             state.clone(),
             gate::gate,

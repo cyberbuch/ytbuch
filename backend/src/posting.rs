@@ -19,8 +19,13 @@ pub struct Side {
     pub amount: String,
 }
 
-pub async fn by_id(db: &Db, id: i32) -> Result<Acct, ApiError> {
-    let rows = invoice_read::qry(db, &format!("SELECT id, number, name FROM accounts WHERE id = {id}")).await?;
+/// Сметка на фирмата. Без филтър по фирма би влязла чужда сметка в дневника.
+pub async fn by_id(db: &Db, company: i32, id: i32) -> Result<Acct, ApiError> {
+    let rows = invoice_read::qry(
+        db,
+        &format!("SELECT id, number, name FROM accounts WHERE id = {id} AND company_id = {company}"),
+    )
+    .await?;
     let Some(row) = rows.into_iter().next() else {
         return Err(api_err(StatusCode::UNPROCESSABLE_ENTITY, format!("липсва сметка с id {id}")));
     };

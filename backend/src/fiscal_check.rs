@@ -53,8 +53,13 @@ async fn octo() -> Option<Db> {
     }
 }
 
-fn auth_headers(st: &AppState) -> HeaderMap {
-    let token = auth::issue(&st.jwt_secret, "superadmin").expect("jwt");
+async fn auth_headers(st: &AppState) -> HeaderMap {
+    let ver = crate::identity::by_login(&st.db, "superadmin")
+        .await
+        .expect("superadmin")
+        .map(|u| u.ver)
+        .unwrap_or(0);
+    let token = auth::issue(&st.jwt_secret, "superadmin", ver).expect("jwt");
     let mut headers = HeaderMap::new();
     let value = format!("Bearer {token}").parse().expect("bearer");
     headers.insert(header::AUTHORIZATION, value);
@@ -111,7 +116,7 @@ async fn fixture() -> Option<Fixture> {
     )
     .await
     .expect("стока");
-    let headers = auth_headers(&st);
+    let headers = auth_headers(&st).await;
     Some(Fixture {
         st,
         headers,

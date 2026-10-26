@@ -10,12 +10,27 @@ use axum::middleware::Next;
 use axum::response::Response;
 use serde_json::Value;
 
-use crate::form::auth_sub;
+use crate::auth;
 use crate::identity;
 use crate::{api_err, AppState, ApiError};
 
 fn segments(path: &str) -> Vec<&str> {
     path.trim_matches('/').split('/').filter(|s| !s.is_empty()).collect()
+}
+
+/// Публични пътища: вход, 2FA, регистрация и забравена парола.
+/// Всичко друго под /v1 иска валиден токен — иначе нов ендпойнт, който
+/// не е в картата на правата, би останал отворен за всеки.
+pub fn is_public(path: &str) -> bool {
+    matches!(
+        path,
+        "/v1/auth/token"
+            | "/v1/auth/mfa"
+            | "/v1/auth/register"
+            | "/v1/auth/forgot-password"
+            | "/v1/auth/reset-password"
+            | "/v1/auth/registration-status"
+    )
 }
 
 /// Кой permission ключ пази даден път. `None` значи само вход.
@@ -87,6 +102,12 @@ fn allowed(perms: &[Value], key: &str) -> bool {
         .any(|p| p.as_str() == Some("*") || p.as_str() == Some(key))
 }
 
+/// Токенът е от приключила сесия, когато версията му не е текущата.
+/// Смяната на паролата расти версията и така отпада старият токен.
+fn stale_session(claims_ver: i64, user_ver: i64) -> bool {
+    claims_ver != user_ver
+}
+
 pub async fn gate(
     State(st): State<AppState>,
     req: Request,
@@ -94,25 +115,38 @@ pub async fn gate(
 ) -> Result<Response, ApiError> {
     let method = req.method().clone();
     let path = req.uri().path().to_string();
-    let Some(key) = required_permission(&method, &path) else {
+    // Всичко извън /v1 (health, ready) и публичните входни пътища минават.
+    if !path.starts_with("/v1/") || is_public(&path) {
         return Ok(next.run(req).await);
-    };
-    let sub = auth_sub(&st, req.headers())?;
-    let Some(user) = identity::by_login(&st.db, &sub).await? else {
+    }
+    let claims = auth::claims(&st.jwt_secret, req.headers())?;
+    if claims.mfa == 1 {
+        return Err(api_err(StatusCode::UNAUTHORIZED, "невалиден токен"));
+    }
+    let Some(user) = identity::by_login(&st.db, &claims.sub).await? else {
         return Err(api_err(StatusCode::UNAUTHORIZED, "потребителят не съществува"));
     };
     if user.is_active == 0 {
         return Err(api_err(StatusCode::FORBIDDEN, "потребителят е неактивен"));
-    };
-    if user.is_super_admin != 1 {
-        // Правата идват от ролята на потребителя към активната фирма.
-        let company = crate::companies::resolve_active(&st.db, &sub).await?;
-        let perms = crate::members::perms_for(&st.db, &user, company).await?;
-        if !allowed(&perms, key) {
-            return Err(api_err(
-                StatusCode::FORBIDDEN,
-                format!("липсва право: {key}"),
-            ));
+    }
+    // Смяната на паролата приключва сесиите, издадени преди нея.
+    if stale_session(claims.ver, user.ver) {
+        return Err(api_err(
+            StatusCode::UNAUTHORIZED,
+            "сесията е приключила — влезте отново",
+        ));
+    }
+    if let Some(key) = required_permission(&method, &path) {
+        if user.is_super_admin != 1 {
+            // Правата идват от ролята на потребителя към активната фирма.
+            let company = crate::companies::resolve_active(&st.db, &claims.sub).await?;
+            let perms = crate::members::perms_for(&st.db, &user, company).await?;
+            if !allowed(&perms, key) {
+                return Err(api_err(
+                    StatusCode::FORBIDDEN,
+                    format!("липсва право: {key}"),
+                ));
+            }
         }
     }
     Ok(next.run(req).await)
@@ -120,11 +154,26 @@ pub async fn gate(
 
 #[cfg(test)]
 mod tests {
-    use super::required_permission;
+    use super::{is_public, required_permission, stale_session};
     use axum::http::Method;
 
     fn perm(method: &str, path: &str) -> Option<&'static str> {
         required_permission(&Method::from_bytes(method.as_bytes()).unwrap(), path)
+    }
+
+    #[test]
+    fn only_auth_entry_points_are_public() {
+        assert!(is_public("/v1/auth/token"));
+        assert!(is_public("/v1/auth/mfa"));
+        assert!(is_public("/v1/auth/register"));
+        assert!(is_public("/v1/auth/forgot-password"));
+        assert!(is_public("/v1/auth/reset-password"));
+        assert!(is_public("/v1/auth/registration-status"));
+        assert!(!is_public("/v1/me"));
+        assert!(!is_public("/v1/dashboard"));
+        assert!(!is_public("/v1/system-settings"));
+        assert!(!is_public("/v1/unknown"));
+        assert!(!is_public("/v1/auth/other"));
     }
 
     #[test]
@@ -200,5 +249,12 @@ mod tests {
     fn unknown_paths_stay_open() {
         assert_eq!(perm("GET", "/v1/unknown"), None);
         assert_eq!(perm("GET", "/v1/invoices"), Some("invoices"));
+    }
+
+    #[test]
+    fn old_session_version_is_stale() {
+        assert!(stale_session(0, 1), "старият токен отпада след смяна на парола");
+        assert!(!stale_session(1, 1), "текущият токен важи");
+        assert!(!stale_session(0, 0), "токен без версия важи до първата смяна");
     }
 }

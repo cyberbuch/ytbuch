@@ -8,7 +8,7 @@ import Image from "next/image";
 import { useSearchParams } from "next/navigation";
 import { RequireAuth } from "../../components/RequireAuth";
 import { useI18n } from "../../components/I18nProvider";
-import { api } from "../../lib/api";
+import { api, setToken } from "../../lib/api";
 
 type Tab = "account" | "password" | "email" | "security";
 
@@ -104,10 +104,12 @@ function ProfileInner() {
     }
     setBusy("password");
     try {
-      const r = await api.post<{ message?: string }>("/v1/me/password", {
+      const r = await api.post<{ message?: string; access_token?: string }>("/v1/me/password", {
         current_password: currentPassword,
         new_password: newPassword,
       });
+      // Смяната на паролата приключва старите сесии — сърърът връща нов токен.
+      if (r.access_token) setToken(r.access_token);
       setMsg(r.message || t("profile.password_ok"));
       setCurrentPassword("");
       setNewPassword("");
@@ -125,10 +127,11 @@ function ProfileInner() {
     setError("");
     setMsg("");
     try {
-      const r = await api.post<{ message?: string }>("/v1/me/email", {
+      const r = await api.post<{ message?: string; access_token?: string }>("/v1/me/email", {
         email,
         current_password: emailPassword,
       });
+      if (r.access_token) setToken(r.access_token);
       setMsg(r.message || t("profile.email_ok"));
       setEmailPassword("");
       await load();

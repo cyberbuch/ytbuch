@@ -86,7 +86,7 @@ http://127.0.0.1:3020. Вход: **`superadmin` / `123+123`**.
 | `YTBUCH_PORT` | `8092` |
 | `YTBUCH_DATABASE_URL` | `host=127.0.0.1 port=1337 user=ydb password=ydbrocks dbname=ydb sslmode=disable` |
 | `YTBUCH_DATABASE_POOL_SIZE` | `8` |
-| `YTBUCH_JWT_SECRET` | `ytbuch-local-jwt-secret-change-me` |
+| `YTBUCH_JWT_SECRET` | няма — API-то генерира случайна тайна при първия старт и я пази в базата |
 | `YTBUCH_API_PROXY` | `http://127.0.0.1:8092` (Next препраща `/v1`, `/health`, `/ready`) |
 
 ## Изисквания

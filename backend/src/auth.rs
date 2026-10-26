@@ -22,6 +22,10 @@ pub struct Claims {
     pub iss: String,
     #[serde(default)]
     pub mfa: i64,
+    /// Версия на сесията. Расте при всяка смяна на паролата — старите токени
+    /// отпадат. Токените от преди въвеждането имат 0 и остават валидни.
+    #[serde(default)]
+    pub ver: i64,
 }
 
 pub fn hash_password(email: &str, password: &str) -> String {
@@ -74,7 +78,9 @@ fn encode_claims(secret: &str, claims: &Claims) -> Result<String, ApiError> {
     .map_err(|e| api_err(axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
 }
 
-pub fn issue(secret: &str, sub: &str) -> Result<String, ApiError> {
+/// Издава токен за сесия. `ver` е версията на сесията на потребителя —
+/// тя расте при смяна на паролата и старите токени отпадат.
+pub fn issue(secret: &str, sub: &str, ver: i64) -> Result<String, ApiError> {
     let now = chrono::Utc::now().timestamp() as usize;
     encode_claims(
         secret,
@@ -84,11 +90,12 @@ pub fn issue(secret: &str, sub: &str) -> Result<String, ApiError> {
             exp: now + TTL_SEC,
             iss: "ytbuch".into(),
             mfa: 0,
+            ver,
         },
     )
 }
 
-pub fn issue_mfa(secret: &str, sub: &str) -> Result<String, ApiError> {
+pub fn issue_mfa(secret: &str, sub: &str, ver: i64) -> Result<String, ApiError> {
     let now = chrono::Utc::now().timestamp() as usize;
     encode_claims(
         secret,
@@ -98,6 +105,7 @@ pub fn issue_mfa(secret: &str, sub: &str) -> Result<String, ApiError> {
             exp: now + 300,
             iss: "ytbuch".into(),
             mfa: 1,
+            ver,
         },
     )
 }
@@ -112,6 +120,29 @@ fn decode_claims(secret: &str, token: &str) -> Result<Claims, ApiError> {
     )
     .map_err(|_| api_err(axum::http::StatusCode::UNAUTHORIZED, "невалиден токен"))?;
     Ok(data.claims)
+}
+
+/// Токенът от заявката, проверен по подпис. Връща и mfa токените —
+/// те важат само за `/v1/auth/mfa` и се отхвърлят от `subject`.
+pub fn claims(secret: &str, headers: &HeaderMap) -> Result<Claims, ApiError> {
+    let raw = headers
+        .get(axum::http::header::AUTHORIZATION)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+    let token = raw
+        .strip_prefix("Bearer ")
+        .or_else(|| raw.strip_prefix("bearer "))
+        .unwrap_or("");
+    if token.is_empty() {
+        return Err(api_err(axum::http::StatusCode::UNAUTHORIZED, "липсва токен"));
+    }
+    decode_claims(secret, token)
+}
+
+/// Потребителят от токен, ако подписът е верен. Без връзка с базата —
+/// за лимита на заявките, който трябва да разпознава истински токен.
+pub fn verify_subject(secret: &str, token: &str) -> Option<String> {
+    decode_claims(secret, token).ok().map(|c| c.sub)
 }
 
 pub fn ttl() -> usize {

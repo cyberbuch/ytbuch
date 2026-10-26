@@ -415,6 +415,7 @@ pub async fn migrate(db: &Client) -> DbResult<()> {
     .await?;
     exec(db, crate::schema5::SQL).await?;
     exec(db, crate::schema_late::SQL).await?;
+    rebuild_user_session(db).await?;
     exec(db, crate::fsform::SQL).await?;
     insert_missing(
         db,
@@ -425,6 +426,23 @@ pub async fn migrate(db: &Client) -> DbResult<()> {
     .await?;
     seed_demo(db).await?;
     seed_audit_backfill(db).await?;
+    Ok(())
+}
+
+/// Octo няма ALTER TABLE. `user_session` пази версия на сесията; ако таблицата
+/// е създадена с колона `pwd_at`, презаписва се — в нея няма данни, които
+/// да се пазят.
+async fn rebuild_user_session(db: &Client) -> DbResult<()> {
+    if query(db, "SELECT ver FROM user_session WHERE id = 0").await.is_ok() {
+        return Ok(());
+    }
+    exec(db, "DROP TABLE IF EXISTS user_session").await?;
+    exec(
+        db,
+        "CREATE TABLE user_session (id INTEGER PRIMARY KEY, user_id INTEGER, ver INTEGER, \
+         mfa_fails INTEGER, mfa_lock_until INTEGER)",
+    )
+    .await?;
     Ok(())
 }
 

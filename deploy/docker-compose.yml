@@ -45,7 +45,10 @@ services:
       YTBUCH_DATABASE_URL: host=yottadb port=1337 user=ydb password=ydbrocks dbname=ydb sslmode=disable
       YTBUCH_DATABASE_POOL_SIZE: 8
       YTBUCH_YDB_BACKUP_DIR: /ydb-backup
-      YTBUCH_JWT_SECRET: ${YTBUCH_JWT_SECRET:-ytbuch-local-jwt-secret-change-me}
+      # Без стойност API-то генерира случайна тайна при първия старт и я
+      # пази в базата (settings: auth.jwt_secret). Твърда стойност тук би
+      # била публична и всеки би могъл да подпише свой токен.
+      YTBUCH_JWT_SECRET: ${YTBUCH_JWT_SECRET:-}
     ports:
       - "127.0.0.1:8092:8092"
     volumes:

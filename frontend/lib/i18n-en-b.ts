@@ -279,6 +279,7 @@ export const enB = {
   "admin.auth.registration": "Allow public registration",
   "admin.auth.hint": "Off: only an admin can create users. Password reset needs SMTP and app.url.",
   "admin.saved": "Settings saved",
+  "admin.secret.hint": "The secret is hidden and never returned by the server. It stays as is until you type a new value.",
   "admin.testing": "Testing…",
   "admin.app.name": "Application name",
   "admin.app.url": "Public URL",

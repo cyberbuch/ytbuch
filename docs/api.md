@@ -7,6 +7,12 @@
 Грешката е `{"detail":"..."}`.
 Списъците са `{"items","count","limit":50,"offset":0}`.
 
+Публични са само `/health`, `/ready`, `/readyz` и шестте входни пътя:
+`/v1/auth/token`, `/v1/auth/mfa`, `/v1/auth/register`,
+`/v1/auth/forgot-password`, `/v1/auth/reset-password` и
+`/v1/auth/registration-status`. Всичко друго под `/v1` иска валиден токен —
+иначе `401`, дори непознат път.
+
 `GET` под `/v1/`, за който няма маршрут, връща празен списък със статус 200.
 Така копираните екрани не показват „Not Found“. `POST`, `PATCH`, `PUT` и
 `DELETE` без маршрут са `404` с `{"detail":"Not Found"}`.
@@ -28,7 +34,7 @@
 | POST | `/v1/auth/forgot-password` | `{"email"}`. Винаги едно и също `message`, ако акаунтът съществува или не |
 | POST | `/v1/auth/reset-password` | `{"token","password","password_confirmation"}`. Токенът важи 1 час и веднъж |
 | GET | `/v1/me` | `sub`, `username`, `id`, `email`, `name`, `is_super_admin`, `role_id`, `totp_enabled`, `permissions` |
-| POST | `/v1/auth/mfa` | `{"mfa_token","code"}` → същият token отговор. Кодът е TOTP или резервен |
+| POST | `/v1/auth/mfa` | `{"mfa_token","code"}` → същият token отговор. Кодът е TOTP или резервен. Пет грешни кода заключват 2FA за 15 минути — после `429` и за верен код |
 
 Празно `email`/`sub` е `422` `email или sub е задължителен`.
 Неактивен потребител е `403` `потребителят е неактивен`.
@@ -64,8 +70,8 @@
 | Метод | Път | Бележка |
 |-------|-----|---------|
 | PATCH | `/v1/me` | `{"name"}`. Празно име е `422` |
-| POST | `/v1/me/password` | `current_password`, `new_password`. Под 8 символа е `422`. Грешна текуща е `401` |
-| POST | `/v1/me/email` | `email`, `current_password`. Зает имейл е `409`. Новият хеш е argon2 на подадената парола |
+| POST | `/v1/me/password` | `current_password`, `new_password`. Под 8 символа е `422`. Грешна текуща е `401`. Връща и нов `access_token` — старият отпада |
+| POST | `/v1/me/email` | `email`, `current_password`. Зает имейл е `409`. Новият хеш е argon2 на подадената парола. Връща и нов `access_token` |
 | POST | `/v1/me/totp/start` | `secret`, `uri`, `qr_svg`, `recovery_codes`. Вече включена 2FA е `409` |
 | POST | `/v1/me/totp/confirm` | `{"code"}`. Включва 2FA |
 | POST | `/v1/me/totp/disable` | `password` и TOTP или резервен код. Триe кодовете |
@@ -373,8 +379,8 @@ QR е SVG картинка. Резервните кодове се показв�
 
 | Метод | Път | Бележка |
 |-------|-----|---------|
-| GET | `/v1/system-settings` | `{key,value}`, сортирани по ключ |
-| PUT | `/v1/system-settings` | `{"items":[{"key","value"}]}`. Низ, число, булев или `null`. Друг тип е `422` |
+| GET | `/v1/system-settings` | `{key,value}`, сортирани по ключ. `smtp.password` и `s3.secret_key` идват с маска `••••••••`, а `auth.jwt_secret` изобщо не се връща |
+| PUT | `/v1/system-settings` | `{"items":[{"key","value"}]}`. Низ, число, булев или `null`. Друг тип е `422`. Маска или празно оставя тайната както е |
 | POST | `/v1/system-settings/smtp-test` | `{"to"}`. Успех `{"message":"Имейлът е изпратен"}` |
 | GET | `/v1/system-settings/db-check` | проверка на интегритета: `ok`, `duration_ms`, `checks[{id,ok,detail}]`, `tables[{name,rows}]` |
 | POST | `/v1/system-settings/s3-test` | `list` с `max_keys` 1. Успех `{"message":"Връзката с S3 е успешна. Bucket: …"}` |

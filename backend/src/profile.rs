@@ -68,8 +68,10 @@ pub async fn change_password(
             "паролата трябва да е поне 8 символа",
         ));
     }
-    identity::set_password(&st.db, user.id, &user.email, &new_password).await?;
-    Ok(Json(json!({ "message": "Паролата е сменена" })))
+    let ver = identity::set_password(&st.db, user.id, &user.email, &new_password).await?;
+    // Старият токен отпада при смяната на паролата — връщаме нов.
+    let token = auth::issue(&st.jwt_secret, &user.username, ver)?;
+    Ok(Json(json!({ "message": "Паролата е сменена", "access_token": token })))
 }
 
 pub async fn change_email(
@@ -96,11 +98,14 @@ pub async fn change_email(
         return Err(api_err(StatusCode::CONFLICT, "имейлът вече се ползва"));
     }
     identity::ensure_login(&st.db, user.id, &user.username).await?;
-    identity::set_email(&st.db, user.id, &email, &current_password).await?;
+    let ver = identity::set_email(&st.db, user.id, &email, &current_password).await?;
+    // И смяната на имейла приключва старите сесии — връщаме нов токен.
+    let token = auth::issue(&st.jwt_secret, &user.username, ver)?;
     Ok(Json(json!({
         "message": "Имейлът е сменен",
         "email": email,
         "username": user.username,
+        "access_token": token,
     })))
 }
 

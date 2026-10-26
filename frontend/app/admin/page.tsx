@@ -65,6 +65,8 @@ const KEYS = {
   auth: ["auth.registration_enabled"],
 };
 
+const SECRET_KEYS = new Set(["smtp.password", "s3.secret_key"]);
+
 function emptyMap(keys: string[]): Record<string, string> {
   const o: Record<string, string> = {};
   for (const k of keys) o[k] = "";
@@ -234,6 +236,11 @@ function AdminInner() {
         value={form[key] ?? ""}
         onChange={(e) => set(key, e.target.value)}
       />
+      {SECRET_KEYS.has(key) ? (
+        <p className="muted" style={{ margin: "4px 0 0" }}>
+          {t("admin.secret.hint")}
+        </p>
+      ) : null}
     </div>
   );
 

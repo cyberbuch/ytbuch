@@ -285,6 +285,10 @@ pub async fn users_delete(
         .await
         .map_err(db_err)?;
     st.db
+        .exec(&format!("DELETE FROM user_session WHERE id = {id}"))
+        .await
+        .map_err(db_err)?;
+    st.db
         .exec(&format!("DELETE FROM users WHERE id = {id}"))
         .await
         .map_err(db_err)?;

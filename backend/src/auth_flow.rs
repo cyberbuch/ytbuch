@@ -319,6 +319,7 @@ async fn insert_admin(db: &Db, email: &str, name: &str, password: &str) -> Resul
 
 async fn drop_user(db: &Db, id: i32) {
     let _ = db.exec(&format!("DELETE FROM user_login WHERE id = {id}")).await;
+    let _ = db.exec(&format!("DELETE FROM user_session WHERE id = {id}")).await;
     let _ = db.exec(&format!("DELETE FROM users WHERE id = {id}")).await;
 }
 

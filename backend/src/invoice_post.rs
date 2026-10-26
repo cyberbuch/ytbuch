@@ -158,6 +158,10 @@ async fn acct_or_create(
 
 async fn duty_expense_acct(st: &AppState, company: i32, inv: &Inv) -> Result<Acct, ApiError> {
     if inv.original_invoice_id > 0 {
+        // Оригиналът трябва да е на същата фирма, иначе биха влезли редове
+        // на чужда фактура в разхода.
+        let orig = invoice_read::load(&st.db, inv.original_invoice_id).await?;
+        invoice_read::belongs(&orig, company)?;
         let orig_lines = invoice_read::lines_of(&st.db, inv.original_invoice_id).await?;
         for l in &orig_lines {
             if let Some(p) = product(st, l.product_id, company).await? {

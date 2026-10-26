@@ -95,6 +95,11 @@ async function request<T>(
     }
   }
   if (!res.ok) {
+    // Изтекъл или приключил токен: чистим го, за да отидем към входа.
+    // Входните пътища се изключват — с тях 401 е просто грешен парола.
+    if (res.status === 401 && !path.startsWith("/v1/auth/")) {
+      setToken(null);
+    }
     throw new ApiError(res.status, formatApiDetail(data, res.statusText));
   }
   return data as T;
