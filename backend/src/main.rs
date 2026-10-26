@@ -16,6 +16,7 @@ mod bank_csv;
 mod bank_tx;
 mod banks;
 mod cn8;
+mod db_check;
 mod companies;
 mod counterparts;
 mod db;
@@ -299,6 +300,7 @@ async fn main() {
             get(settings::index).put(settings::update),
         )
         .route("/v1/system-settings/smtp-test", post(mail::smtp_test))
+        .route("/v1/system-settings/db-check", get(db_check::integrity))
         .route("/v1/system-settings/s3-test", post(s3store::s3_test))
         .route("/v1/system-settings/s3-backup", post(s3store::s3_backup))
         .route("/v1/system-settings/s3-backups", get(s3store::s3_list))

@@ -376,6 +376,7 @@ QR е SVG картинка. Резервните кодове се показв�
 | GET | `/v1/system-settings` | `{key,value}`, сортирани по ключ |
 | PUT | `/v1/system-settings` | `{"items":[{"key","value"}]}`. Низ, число, булев или `null`. Друг тип е `422` |
 | POST | `/v1/system-settings/smtp-test` | `{"to"}`. Успех `{"message":"Имейлът е изпратен"}` |
+| GET | `/v1/system-settings/db-check` | проверка на интегритета: `ok`, `duration_ms`, `checks[{id,ok,detail}]`, `tables[{name,rows}]` |
 | POST | `/v1/system-settings/s3-test` | `list` с `max_keys` 1. Успех `{"message":"Връзката с S3 е успешна. Bucket: …"}` |
 | POST | `/v1/system-settings/s3-backup` | качва gzip. `message`, `filename`, `s3_key`, `size`, `tables` |
 | GET | `/v1/system-settings/s3-backups` | обекти, чието име съдържа `ytbuch_backup` |

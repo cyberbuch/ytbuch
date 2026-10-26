@@ -9,7 +9,7 @@ import { useI18n } from "../../components/I18nProvider";
 import { api, ListResponse } from "../../lib/api";
 import { IconButton } from "../../components/IconButton";
 
-type Tab = "app" | "smtp" | "s3" | "auth";
+type Tab = "app" | "smtp" | "s3" | "auth" | "db";
 
 interface Setting {
   key: string;
@@ -21,6 +21,25 @@ interface Backup {
   filename: string;
   size_human: string;
   last_modified: string;
+}
+
+interface DbCheckItem {
+  id: string;
+  ok: boolean;
+  detail: string;
+}
+
+interface DbTableInfo {
+  name: string;
+  rows: number;
+}
+
+interface DbCheck {
+  ok: boolean;
+  checked_at: string;
+  duration_ms: number;
+  checks: DbCheckItem[];
+  tables: DbTableInfo[];
 }
 
 const KEYS = {
@@ -73,6 +92,7 @@ function AdminInner() {
   const [error, setError] = useState("");
   const [testTo, setTestTo] = useState("");
   const [backups, setBackups] = useState<Backup[]>([]);
+  const [dbResult, setDbResult] = useState<DbCheck | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -187,6 +207,20 @@ function AdminInner() {
     }
   };
 
+  const runDbCheck = async () => {
+    setBusy("db");
+    setError("");
+    setMsg("");
+    try {
+      const r = await api.get<DbCheck>("/v1/system-settings/db-check");
+      setDbResult(r);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy("");
+    }
+  };
+
   useEffect(() => {
     if (tab === "s3") void loadBackups();
   }, [tab]);
@@ -212,7 +246,7 @@ function AdminInner() {
         {t("admin.hint")}
       </p>
       <div className="tabs">
-        {(["app", "smtp", "s3", "auth"] as Tab[]).map((k) => (
+        {(["app", "smtp", "s3", "auth", "db"] as Tab[]).map((k) => (
           <button
             key={k}
             type="button"
@@ -393,6 +427,82 @@ function AdminInner() {
               </table>
             )}
           </div>
+        </div>
+      )}
+
+      {tab === "db" && (
+        <div>
+          <div className="card content" style={{ marginBottom: 16 }}>
+            <p className="muted" style={{ marginTop: 0 }}>{t("admin.db.hint")}</p>
+            <div className="form-actions" style={{ marginTop: 0 }}>
+              <button
+                type="button"
+                className="btn btn-primary"
+                disabled={busy !== ""}
+                onClick={() => void runDbCheck()}
+              >
+                {busy === "db" ? t("admin.db.checking") : t("admin.db.check")}
+              </button>
+            </div>
+          </div>
+
+          {dbResult && (
+            <>
+              <div className="card content" style={{ marginBottom: 16 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12, flexWrap: "wrap" }}>
+                  <span className={`badge ${dbResult.ok ? "badge-success" : "badge-warning"}`}>
+                    {dbResult.ok ? t("admin.db.ok") : t("admin.db.problems")}
+                  </span>
+                  <span className="muted" style={{ fontSize: 13 }}>
+                    {t("admin.db.duration").replace("{ms}", String(dbResult.duration_ms))}
+                    {" · "}
+                    {dbResult.checked_at}
+                  </span>
+                </div>
+                <table className="table">
+                  <tbody>
+                    {dbResult.checks.map((c) => (
+                      <tr key={c.id}>
+                        <td
+                          style={{
+                            width: 28,
+                            color: c.ok ? "#0e8c6a" : "#c62828",
+                            fontWeight: 700,
+                          }}
+                        >
+                          {c.ok ? "✓" : "✗"}
+                        </td>
+                        <td>{t(`dbcheck.${c.id}`)}</td>
+                        <td className="muted" style={{ color: c.ok ? undefined : "#c62828" }}>
+                          {c.detail}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="card">
+                <div className="content muted" style={{ paddingBottom: 0 }}>{t("admin.db.tables")}</div>
+                <table className="table">
+                  <thead>
+                    <tr>
+                      <th>{t("admin.db.name")}</th>
+                      <th>{t("admin.db.rows")}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {dbResult.tables.map((tb) => (
+                      <tr key={tb.name}>
+                        <td style={{ fontFamily: "ui-monospace, monospace" }}>{tb.name}</td>
+                        <td>{tb.rows}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
         </div>
       )}
     </div>
