@@ -6,12 +6,15 @@ use axum::body::Body;
 use axum::extract::{Query, State};
 use axum::http::{header, HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
+use chrono::{Datelike, NaiveDate};
 use serde::Deserialize;
+use std::collections::HashMap;
 
 use crate::form::auth_sub;
+use crate::saft_annual::annual_xml;
 use crate::saft_gl::{accounts_xml, entries_xml};
 use crate::saft_load::{self, Company, Owner, Parent, Snap};
-use crate::saft_mode::{annual_xml, ondemand_xml, payments_xml, tax_table, uom_products};
+use crate::saft_mode::{ondemand_xml, ondemand_xml_ranged, payments_xml, tax_table, uom_products};
 use crate::saft_src::{self, parties_xml};
 use crate::saft_xml::{self, clip, text, Addr};
 use crate::{api_err, ApiError, AppState};
@@ -22,6 +25,8 @@ const NS: &str = "mf:nra:dgti:dxxxx:declaration:v1";
 pub struct Q {
     period: Option<String>,
     mode: Option<String>,
+    date_from: Option<String>,
+    date_to: Option<String>,
 }
 
 pub async fn export(
@@ -46,7 +51,15 @@ pub async fn export(
         ));
     }
     let snap = saft_load::load(&st.db, cid).await?;
-    let xml = build(&snap, period, year, month, mode);
+    let range = if mode == "ondemand" {
+        ondemand_range(q.date_from.as_deref(), q.date_to.as_deref())?
+    } else {
+        None
+    };
+    let xml = match range {
+        Some((from, to)) => build_ranged(&st.db, &snap, period, cid, from, to).await?,
+        None => build(&snap, period, year, month, mode),
+    };
     let filename = format!("saft_{period}_{mode}.xml");
     let disp = format!("attachment; filename=\"{filename}\"");
     Ok(Response::builder()
@@ -60,7 +73,7 @@ pub async fn export(
 fn build(s: &Snap, period: &str, year: i32, month: i32, mode: &str) -> String {
     let mut xml = String::from("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");
     xml.push_str(&format!("<nsSAFT:AuditFile xmlns:nsSAFT=\"{NS}\">"));
-    xml.push_str(&header(s, period, year, month, mode));
+    xml.push_str(&header(s, period, year, month, mode, None));
     match mode {
         "annual" => xml.push_str(&annual_xml(s, year)),
         "ondemand" => xml.push_str(&ondemand_xml(s)),
@@ -87,12 +100,77 @@ fn monthly(s: &Snap, year: i32, month: i32) -> String {
     xml
 }
 
-fn header(s: &Snap, period: &str, year: i32, month: i32, mode: &str) -> String {
+/// При поискване с дати от-до: валидира и връща диапазона, ако е подаден.
+fn ondemand_range(from: Option<&str>, to: Option<&str>) -> Result<Option<(NaiveDate, NaiveDate)>, ApiError> {
+    let (Some(f), Some(t)) = (from, to) else {
+        return Ok(None);
+    };
+    let from = NaiveDate::parse_from_str(f.trim(), "%Y-%m-%d").ok();
+    let to = NaiveDate::parse_from_str(t.trim(), "%Y-%m-%d").ok();
+    let (Some(from), Some(to)) = (from, to) else {
+        return Err(api_err(
+            StatusCode::BAD_REQUEST,
+            "date_from и date_to са във формат YYYY-MM-DD",
+        ));
+    };
+    if from > to {
+        return Err(api_err(
+            StatusCode::BAD_REQUEST,
+            "date_from трябва да е преди или равен на date_to",
+        ));
+    }
+    Ok(Some((from, to)))
+}
+
+async fn stock_map(db: &crate::db::Db, cid: i32, day: NaiveDate) -> Result<HashMap<i32, (String, i128)>, ApiError> {
+    let out = crate::stock_replay::explain(db, cid, &day.format("%Y-%m-%d").to_string()).await?;
+    let mut acc: HashMap<i32, (i128, i128)> = HashMap::new();
+    for b in out.balances {
+        let e = acc.entry(b.product_id).or_insert((0, 0));
+        e.0 += crate::dec::or0(&b.quantity);
+        e.1 += crate::dec::or0(&b.value);
+    }
+    Ok(acc
+        .into_iter()
+        .map(|(id, (q, v))| (id, (crate::dec::text(q, 4), v)))
+        .collect())
+}
+
+async fn build_ranged(
+    db: &crate::db::Db,
+    s: &Snap,
+    period: &str,
+    cid: i32,
+    from: NaiveDate,
+    to: NaiveDate,
+) -> Result<String, ApiError> {
+    // Началната наличност е към деня преди from, крайната — към to.
+    let open = stock_map(db, cid, from.pred_opt().unwrap_or(from)).await?;
+    let close = stock_map(db, cid, to).await?;
+    let from_s = from.format("%Y-%m-%d").to_string();
+    let to_s = to.format("%Y-%m-%d").to_string();
+    let span = (from.month() as i32, from.year(), to.month() as i32, to.year());
+    let mut xml = String::from("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");
+    xml.push_str(&format!("<nsSAFT:AuditFile xmlns:nsSAFT=\"{NS}\">"));
+    xml.push_str(&header(s, period, to.year(), to.month() as i32, "ondemand", Some(span)));
+    xml.push_str(&ondemand_xml_ranged(s, &open, &close, &from_s, &to_s));
+    xml.push_str("</nsSAFT:AuditFile>");
+    Ok(xml)
+}
+
+fn header(s: &Snap, period: &str, year: i32, month: i32, mode: &str, span: Option<(i32, i32, i32, i32)>) -> String {
     let c = &s.company;
-    let (start, end, comment) = match mode {
-        "annual" => (1, 12, "A"),
-        "ondemand" => (month, month, "D"),
-        _ => (month, month, "M"),
+    let (start, start_year, end, end_year) = match span {
+        Some(v) => v,
+        None => match mode {
+            "annual" => (1, year, 12, year),
+            _ => (month, year, month, year),
+        },
+    };
+    let comment = match mode {
+        "annual" => "A",
+        "ondemand" => "D",
+        _ => "M",
     };
     let mut xml = saft_xml::open("Header");
     xml.push_str(&text("AuditFileVersion", "007"));
@@ -114,9 +192,9 @@ fn header(s: &Snap, period: &str, year: i32, month: i32, mode: &str) -> String {
     xml.push_str(&saft_xml::open("SelectionCriteria"));
     xml.push_str(&text("TaxReportingJurisdiction", "NRA"));
     xml.push_str(&text("PeriodStart", &start.to_string()));
-    xml.push_str(&text("PeriodStartYear", &year.to_string()));
+    xml.push_str(&text("PeriodStartYear", &start_year.to_string()));
     xml.push_str(&text("PeriodEnd", &end.to_string()));
-    xml.push_str(&text("PeriodEndYear", &year.to_string()));
+    xml.push_str(&text("PeriodEndYear", &end_year.to_string()));
     xml.push_str(&text("DocumentType", "F"));
     xml.push_str(&saft_xml::close("SelectionCriteria"));
     xml.push_str(&text("HeaderComment", comment));
@@ -423,5 +501,16 @@ mod tests {
         assert_eq!(group_code(""), "1");
         assert_eq!(group_code("3"), "3");
         assert_eq!(person("Иван Петров"), ("Иван".into(), "Петров".into()));
+    }
+
+    #[test]
+    fn range_is_validated() {
+        assert!(ondemand_range(None, None).unwrap().is_none());
+        let (f, t) = ondemand_range(Some("2026-01-15"), Some("2026-03-20"))
+            .unwrap()
+            .unwrap();
+        assert_eq!((f.year(), f.month(), t.year(), t.month()), (2026, 1, 2026, 3));
+        assert!(ondemand_range(Some("2026-03-20"), Some("2026-01-15")).is_err());
+        assert!(ondemand_range(Some("bad"), Some("2026-01-15")).is_err());
     }
 }

@@ -71,6 +71,7 @@ mod saft;
 mod saft_export;
 mod saft_gl;
 mod saft_load;
+mod saft_annual;
 mod saft_mode;
 mod saft_src;
 mod saft_xml;

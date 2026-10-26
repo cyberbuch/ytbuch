@@ -7,8 +7,8 @@ use std::collections::HashMap;
 
 use crate::dec::{self, money};
 use crate::saft_gl;
-use crate::saft_load::{Asset, Product, Snap};
-use crate::saft_xml::{self, amount, clip, or_text, same_co, stock_moves, text, unit_name, Addr};
+use crate::saft_load::{Product, Snap};
+use crate::saft_xml::{self, amount, clip, or_text, same_co, stock_moves, text, unit_name};
 
 pub fn tax_table() -> String {
     let mut xml = saft_xml::open("TaxTable");
@@ -232,152 +232,6 @@ fn product(p: &Product) -> String {
     xml
 }
 
-pub fn annual_xml(s: &Snap, year: i32) -> String {
-    let y = year.to_string();
-    let mut assets = String::new();
-    let mut tx = String::new();
-    let mut n = 0i64;
-    for a in &s.assets {
-        if !same_co(a.company_id, s.company_id) || a.acquired.len() < 10 {
-            continue;
-        }
-        let day: String = a.acquired.chars().take(10).collect();
-        let start = if a.startup.len() >= 10 {
-            a.startup.chars().take(10).collect()
-        } else {
-            day.clone()
-        };
-        let asset_id = {
-            let id = clip(&a.inventory, 35);
-            if id.is_empty() { format!("FA-{}", a.id) } else { id }
-        };
-        assets.push_str(&asset_block(a, &asset_id, &day, &start));
-        if day.starts_with(&y) {
-            n += 1;
-            tx.push_str(&asset_tx(&asset_id, &day, a.cost));
-        }
-    }
-    let mut xml = saft_xml::open("MasterFilesAnnual");
-    xml.push_str(&saft_xml::open("Assets"));
-    xml.push_str(&assets);
-    xml.push_str(&saft_xml::close("Assets"));
-    xml.push_str(&saft_xml::close("MasterFilesAnnual"));
-    xml.push_str(&saft_xml::open("SourceDocumentsAnnual"));
-    if !tx.is_empty() {
-        xml.push_str(&saft_xml::open("AssetTransactions"));
-        xml.push_str(&text("NumberOfAssetTransactions", &n.to_string()));
-        xml.push_str(&tx);
-        xml.push_str(&saft_xml::close("AssetTransactions"));
-    }
-    xml.push_str(&saft_xml::close("SourceDocumentsAnnual"));
-    xml
-}
-
-fn asset_block(a: &Asset, asset_id: &str, day: &str, start: &str) -> String {
-    let desc = {
-        let d = clip(&a.name, 256);
-        if d.is_empty() { asset_id.to_string() } else { d }
-    };
-    let mut xml = saft_xml::open("Asset");
-    xml.push_str(&text("AssetID", asset_id));
-    xml.push_str(&text("AccountID", "204"));
-    xml.push_str(&text("Description", &desc));
-    xml.push_str(&saft_xml::open("AssetSupplier"));
-    xml.push_str(&text("SupplierName", "Неизвестен"));
-    xml.push_str(&text("SupplierID", "0"));
-    xml.push_str(&saft_xml::address(
-        "PostalAddress",
-        &Addr {
-            street: "",
-            number: "",
-            extra: "",
-            building: "",
-            city: "",
-            post: "",
-            region: "",
-            country: "BG",
-            kind: "",
-        },
-    ));
-    xml.push_str(&saft_xml::close("AssetSupplier"));
-    xml.push_str(&text("DateOfAcquisition", day));
-    xml.push_str(&text("StartUpDate", start));
-    xml.push_str(&saft_xml::open("Valuations"));
-    xml.push_str(&valuation(a));
-    xml.push_str(&dap(a));
-    xml.push_str(&saft_xml::close("Valuations"));
-    xml.push_str(&saft_xml::close("Asset"));
-    xml
-}
-
-fn valuation(a: &Asset) -> String {
-    let book = a.cost - a.acc;
-    let mut xml = saft_xml::open("ValuationSAP");
-    xml.push_str(&text("ValuationClass", "Счетоводен"));
-    xml.push_str(&text("AcquisitionAndProductionCostsBegin", &money(a.cost)));
-    xml.push_str(&text("AcquisitionAndProductionCostsEnd", &money(a.cost)));
-    xml.push_str(&text("InvestmentSupport", "0.00"));
-    xml.push_str(&text("AssetLifeMonth", &or_text(&a.life, "0")));
-    xml.push_str(&text("AssetAddition", "0.00"));
-    xml.push_str(&text("Transfers", "0.00"));
-    xml.push_str(&text("AssetDisposal", "0.00"));
-    xml.push_str(&text("BookValueBegin", &money(book)));
-    xml.push_str(&text("DepreciationMethod", &clip(&or_text(&a.method, "linear"), 35)));
-    xml.push_str(&text("DepreciationPercentage", &or_text(&a.rate, "0")));
-    xml.push_str(&text("DepreciationForPeriod", "0.00"));
-    xml.push_str(&text("AppreciationForPeriod", "0.00"));
-    xml.push_str(&saft_xml::open("ExtraordinaryDepreciationsForPeriod"));
-    xml.push_str(&saft_xml::open("ExtraordinaryDepreciationForPeriod"));
-    xml.push_str(&text("ExtraordinaryDepreciationMethod", "0"));
-    xml.push_str(&text("ExtraordinaryDepreciationAmountForPeriod", "0.00"));
-    xml.push_str(&saft_xml::close("ExtraordinaryDepreciationForPeriod"));
-    xml.push_str(&saft_xml::close("ExtraordinaryDepreciationsForPeriod"));
-    xml.push_str(&text("AccumulatedDepreciation", &money(a.acc)));
-    xml.push_str(&text("BookValueEnd", &money(book)));
-    xml.push_str(&saft_xml::close("ValuationSAP"));
-    xml
-}
-
-fn dap(a: &Asset) -> String {
-    let tax_value = a.cost - a.tax_acc;
-    let mut xml = saft_xml::open("ValuationDAP");
-    xml.push_str(&text("ValuationClass", "Данъчен"));
-    xml.push_str(&text("CategoryTaxDepreciable", &clip(&or_text(&a.category_id.to_string(), "0"), 35)));
-    xml.push_str(&text("TaxDepreciableValue", &money(a.cost)));
-    xml.push_str(&text("AccruedTaxDepreciation", &money(a.tax_acc)));
-    xml.push_str(&text("TaxValueAsset", &money(tax_value)));
-    xml.push_str(&text("AnnualTaxDepreciationRate", &or_text(&a.tax_rate, "0")));
-    xml.push_str(&text("MonthChangeAssetValue", "0"));
-    xml.push_str(&text("MonthSuspensionResumptionAccrual", "0"));
-    xml.push_str(&text("MonthWriteOffAccounting", "0"));
-    xml.push_str(&text("MonthWriteOffTax", "0"));
-    xml.push_str(&text("NumberMonthsDepreciationDuring", "0"));
-    xml.push_str(&text("DepreciationForPeriod", "0.00"));
-    xml.push_str(&text("AccumulatedDepreciation", &money(a.tax_acc)));
-    xml.push_str(&text("TaxValueEndPeriod", &money(tax_value)));
-    xml.push_str(&saft_xml::close("ValuationDAP"));
-    xml
-}
-
-fn asset_tx(asset_id: &str, day: &str, cost: i128) -> String {
-    let id = clip(&format!("ACQ-{asset_id}"), 70);
-    let mut xml = saft_xml::open("AssetTransaction");
-    xml.push_str(&text("AssetTransactionID", &id));
-    xml.push_str(&text("AssetID", asset_id));
-    xml.push_str(&text("AssetTransactionType", "10"));
-    xml.push_str(&text("Description", "Придобиване"));
-    xml.push_str(&text("AssetTransactionDate", day));
-    xml.push_str(&text("TransactionID", &id));
-    xml.push_str(&saft_xml::open("AssetTransactionValuations"));
-    xml.push_str(&saft_xml::open("AssetTransactionValuation"));
-    xml.push_str(&text("AcquisitionAndProductionCostsOnTransaction", &money(cost)));
-    xml.push_str(&text("BookValueOnTransaction", &money(cost)));
-    xml.push_str(&text("AssetTransactionAmount", &money(cost)));
-    xml.push_str(&saft_xml::close("AssetTransactionValuation"));
-    xml.push_str(&saft_xml::close("AssetTransactionValuations"));
-    xml.push_str(&saft_xml::close("AssetTransaction"));
-    xml
-}
 
 struct MoveLine {
     no: i32,
@@ -435,7 +289,7 @@ fn move_xml(s: &Snap, m: &Move) -> String {
     xml
 }
 
-fn collect_moves(s: &Snap) -> Vec<Move> {
+fn collect_moves(s: &Snap, from: &str, to: &str) -> Vec<Move> {
     let mut moves = Vec::new();
     let prod: HashMap<i32, &Product> = s
         .products
@@ -461,12 +315,20 @@ fn collect_moves(s: &Snap) -> Vec<Move> {
             .unwrap_or_else(|| "0".into())
     };
     let day = |d: &str| -> String { d.chars().take(10).collect() };
+    // Празни from/to значават „без ограничение“; иначе денят е в [from, to].
+    let keep = |d: &str| {
+        let dd = day(d);
+        (from.is_empty() || dd.as_str() >= from) && (to.is_empty() || dd.as_str() <= to)
+    };
 
     for inv in &s.invoices {
         if !same_co(inv.company_id, s.company_id) || inv.journal_entry_id <= 0 {
             continue;
         }
         if inv.document_type == "proforma" || inv.issue_date.len() < 10 {
+            continue;
+        }
+        if !keep(&inv.issue_date) {
             continue;
         }
         let Some(lines) = s.inv_lines.get(&inv.id) else {
@@ -517,6 +379,9 @@ fn collect_moves(s: &Snap) -> Vec<Move> {
 
     for o in &s.prod_orders {
         if !same_co(o.company_id, s.company_id) || o.status != "completed" || o.date.len() < 10 {
+            continue;
+        }
+        if !keep(&o.date) {
             continue;
         }
         if o.output_product_id > 0 {
@@ -594,6 +459,9 @@ fn collect_moves(s: &Snap) -> Vec<Move> {
         if !same_co(d.company_id, s.company_id) || d.status != "confirmed" || d.date.len() < 10 {
             continue;
         }
+        if !keep(&d.date) {
+            continue;
+        }
         let Some(lines) = s.mat_lines.get(&d.id) else {
             continue;
         };
@@ -645,6 +513,9 @@ fn collect_moves(s: &Snap) -> Vec<Move> {
         if !same_co(d.company_id, s.company_id) || d.status != "confirmed" || d.date.len() < 10 {
             continue;
         }
+        if !keep(&d.date) {
+            continue;
+        }
         let Some(lines) = s.idoc_lines.get(&d.id) else {
             continue;
         };
@@ -692,8 +563,8 @@ fn collect_moves(s: &Snap) -> Vec<Move> {
     moves
 }
 
-pub fn movements_xml(s: &Snap) -> String {
-    let moves = collect_moves(s);
+pub fn movements_xml_range(s: &Snap, from: &str, to: &str) -> String {
+    let moves = collect_moves(s, from, to);
     let mut body = String::new();
     let mut lines = 0i64;
     let mut received = 0i128;
@@ -719,6 +590,28 @@ pub fn movements_xml(s: &Snap) -> String {
 }
 
 pub fn ondemand_xml(s: &Snap) -> String {
+    ondemand_xml_impl(s, None, None, "", "")
+}
+
+/// Вариант с дати от-до: движенията са само в диапазона, а наличностите са
+/// пресметнати към деня преди from (начални) и към to (крайни).
+pub fn ondemand_xml_ranged(
+    s: &Snap,
+    open: &HashMap<i32, (String, i128)>,
+    close: &HashMap<i32, (String, i128)>,
+    from: &str,
+    to: &str,
+) -> String {
+    ondemand_xml_impl(s, Some(open), Some(close), from, to)
+}
+
+fn ondemand_xml_impl(
+    s: &Snap,
+    open: Option<&HashMap<i32, (String, i128)>>,
+    close: Option<&HashMap<i32, (String, i128)>>,
+    from: &str,
+    to: &str,
+) -> String {
     let owner = {
         let e = clip(&s.company.eik, 35);
         if e.is_empty() { "0".into() } else { e }
@@ -742,9 +635,17 @@ pub fn ondemand_xml(s: &Snap) -> String {
             if c.is_empty() { "0".into() } else { c }
         };
         let u = unit_code(&p.unit);
-        let qty = or_text(&p.qty, "0");
-        let oq = open_qty.get(&p.id).cloned().unwrap_or_else(|| "0".into());
-        let ov = open_val.get(&p.id).copied().unwrap_or(0);
+        let (oq, ov) = match open {
+            Some(m) => m.get(&p.id).cloned().unwrap_or_else(|| ("0".into(), 0)),
+            None => (
+                open_qty.get(&p.id).cloned().unwrap_or_else(|| "0".into()),
+                open_val.get(&p.id).copied().unwrap_or(0),
+            ),
+        };
+        let (cq, cv) = match close {
+            Some(m) => m.get(&p.id).cloned().unwrap_or_else(|| ("0".into(), 0)),
+            None => (or_text(&p.qty, "0"), p.value),
+        };
         stock.push_str(&saft_xml::open("PhysicalStockEntry"));
         stock.push_str(&text("WarehouseID", "1"));
         stock.push_str(&text("ProductCode", &code));
@@ -757,8 +658,8 @@ pub fn ondemand_xml(s: &Snap) -> String {
         stock.push_str(&text("UnitPriceEnd", &money(p.cost)));
         stock.push_str(&text("OpeningStockQuantity", &oq));
         stock.push_str(&text("OpeningStockValue", &money(ov)));
-        stock.push_str(&text("ClosingStockQuantity", &qty));
-        stock.push_str(&text("ClosingStockValue", &money(p.value)));
+        stock.push_str(&text("ClosingStockQuantity", &cq));
+        stock.push_str(&text("ClosingStockValue", &money(cv)));
         stock.push_str(&saft_xml::close("PhysicalStockEntry"));
     }
     let mut xml = saft_xml::open("MasterFilesOnDemand");
@@ -769,7 +670,7 @@ pub fn ondemand_xml(s: &Snap) -> String {
     xml.push_str(&saft_xml::close("PhysicalStock"));
     xml.push_str(&saft_xml::close("MasterFilesOnDemand"));
     xml.push_str(&saft_xml::open("SourceDocumentsOnDemand"));
-    xml.push_str(&movements_xml(s));
+    xml.push_str(&movements_xml_range(s, from, to));
     xml.push_str(&saft_xml::close("SourceDocumentsOnDemand"));
     xml
 }
