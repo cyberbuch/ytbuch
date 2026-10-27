@@ -109,8 +109,17 @@ pub async fn change_email(
     })))
 }
 
-pub async fn totp_start(State(st): State<AppState>, headers: HeaderMap) -> Result<Json<Value>, ApiError> {
+/// Включване на 2FA иска текущата парола — токенът е в localStorage и само
+/// той не бива да стига за запис на чужд TOTP (иначе краден токен = takeover).
+pub async fn totp_start(
+    State(st): State<AppState>,
+    headers: HeaderMap,
+    Json(body): Json<Value>,
+) -> Result<Json<Value>, ApiError> {
     let user = current(&st, &headers).await?;
+    if !password_ok(&user, &str_val(&body, "current_password")) {
+        return Err(api_err(StatusCode::UNAUTHORIZED, "грешна парола"));
+    }
     if user.totp_enabled == 1 {
         return Err(api_err(StatusCode::CONFLICT, "2FA вече е включена"));
     }
@@ -140,6 +149,9 @@ pub async fn totp_confirm(
     Json(body): Json<Value>,
 ) -> Result<Json<Value>, ApiError> {
     let user = current(&st, &headers).await?;
+    if !password_ok(&user, &str_val(&body, "current_password")) {
+        return Err(api_err(StatusCode::UNAUTHORIZED, "грешна парола"));
+    }
     let code = str_val(&body, "code");
     if code.is_empty() {
         return Err(api_err(StatusCode::UNPROCESSABLE_ENTITY, "кодът е задължителен"));
@@ -148,7 +160,11 @@ pub async fn totp_confirm(
         return Err(api_err(StatusCode::BAD_REQUEST, "няма започнато включване на 2FA"));
     }
     let now = chrono::Utc::now().timestamp();
-    if !totp::totp_ok(&user.totp_pending, &code, now) {
+    let Some(counter) = totp::totp_counter(&user.totp_pending, &code, now) else {
+        return Err(api_err(StatusCode::UNAUTHORIZED, "грешен код"));
+    };
+    // Прозорецът се консумира: един и същ код не минава повторно.
+    if !identity::totp_consume_counter(&st.db, user.id, counter).await? {
         return Err(api_err(StatusCode::UNAUTHORIZED, "грешен код"));
     }
     identity::set_totp(&st.db, user.id, 1, &user.totp_pending, "").await?;
@@ -173,7 +189,10 @@ pub async fn totp_disable(
         return Err(api_err(StatusCode::UNAUTHORIZED, "грешна парола"));
     }
     let now = chrono::Utc::now().timestamp();
-    let mut ok = totp::totp_ok(&user.totp_secret, &code, now);
+    let mut ok = match totp::totp_counter(&user.totp_secret, &code, now) {
+        Some(counter) => identity::totp_consume_counter(&st.db, user.id, counter).await?,
+        None => false,
+    };
     if !ok {
         ok = identity::take_recovery(&st.db, user.id, &code).await?;
     }

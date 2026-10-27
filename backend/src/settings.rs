@@ -45,7 +45,7 @@ pub async fn jwt_secret(db: &Db) -> Result<String, ApiError> {
 pub const SECRET_MASK: &str = "••••••••";
 
 fn is_private(key: &str) -> bool {
-    key == "auth.jwt_secret" || key.starts_with("активна_фирма:")
+    key == "auth.jwt_secret" || key.starts_with("активна_фирма:") || key.starts_with("totp_last:")
 }
 
 /// Ключовете, чиято стойност е тайна. Те не се връщат ясно към клиента.

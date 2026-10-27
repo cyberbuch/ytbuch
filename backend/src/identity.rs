@@ -4,6 +4,7 @@
 use crate::auth;
 use crate::db::{self, cell_i32_at, cell_str, lit, Db};
 use crate::form::db_err;
+use crate::settings;
 use crate::ApiError;
 
 pub struct User {
@@ -118,8 +119,11 @@ pub async fn is_super(db: &Db, login: &str) -> Result<bool, ApiError> {
     })
 }
 
-pub async fn provision_superadmin(db: &Db) -> Result<(), ApiError> {
-    let hash = auth::hash_new("123+123")?;
+/// Създава superadmin само при празна база. Паролата идва от
+/// `YTBUCH_SUPERADMIN_PASSWORD` или е генерирана еднократно при стартиране —
+/// никога фиксирана в кода, за да не може външен да я познае.
+pub async fn provision_superadmin(db: &Db, password: &str) -> Result<(), ApiError> {
+    let hash = auth::hash_new(password)?;
     let existing = db
         .query("SELECT id FROM users WHERE email = 'superadmin'")
         .await
@@ -164,6 +168,12 @@ pub async fn set_password(db: &Db, id: i32, _email: &str, password: &str) -> Res
     db.exec(&format!(
         "UPDATE users SET password_hash = {} WHERE id = {id}",
         lit(&hash)
+    ))
+    .await
+    .map_err(db_err)?;
+    // Всички издадени линкове за смяна отпадат — да не остава жив стар токен.
+    db.exec(&format!(
+        "UPDATE password_reset_tokens SET used = 1 WHERE user_id = {id} AND used = 0"
     ))
     .await
     .map_err(db_err)?;
@@ -241,7 +251,7 @@ async fn save_session(
         .query(&format!("SELECT id FROM user_session WHERE id = {user_id}"))
         .await
         .map_err(db_err)?;
-    if found.first().is_some() {
+    if !found.is_empty() {
         db.exec(&format!(
             "UPDATE user_session SET ver = {ver}, mfa_fails = {fails}, \
              mfa_lock_until = {lock} WHERE id = {user_id}"
@@ -358,13 +368,39 @@ pub async fn take_recovery(db: &Db, user_id: i32, code: &str) -> Result<bool, Ap
         }
         if cell_str(row, 1) == want {
             let id = cell_i32_at(row, 0);
-            db.exec(&format!(
-                "UPDATE user_recovery_codes SET used = 1 WHERE id = {id}"
-            ))
-            .await
-            .map_err(db_err)?;
-            return Ok(true);
+            // `AND used = 0` + броят засегнати: при едновременна употреба
+            // само единият заявката печели — без check-then-set състезание.
+            let n = db
+                .exec(&format!(
+                    "UPDATE user_recovery_codes SET used = 1 WHERE id = {id} AND used = 0"
+                ))
+                .await
+                .map_err(db_err)?;
+            return Ok(n > 0);
         }
     }
     Ok(false)
+}
+
+/// Консумира TOTP прозореца: по-малък или равен номер вече е ползван —
+/// един и същ код не може да влезе повторно (replay). Връща true, ако
+/// прозорецът е нов и е записан.
+pub async fn totp_consume_counter(db: &Db, user_id: i32, counter: u64) -> Result<bool, ApiError> {
+    let key = format!("totp_last:{user_id}");
+    let rows = db
+        .query(&format!(
+            "SELECT value FROM settings WHERE setting_key = {}",
+            lit(&key)
+        ))
+        .await
+        .map_err(db_err)?;
+    let last: u64 = rows
+        .first()
+        .map(|r| cell_str(r, 0).parse().unwrap_or(0))
+        .unwrap_or(0);
+    if counter <= last {
+        return Ok(false);
+    }
+    settings::upsert(db, &key, &counter.to_string()).await?;
+    Ok(true)
 }

@@ -23,6 +23,8 @@ docker compose -f deploy/docker-compose.yml up -d --build
 docker compose -f deploy/docker-compose.yml ps
 ```
 
-Вход: **`superadmin` / `123+123`**.
+Вход: **`superadmin`**. Паролата се генерира при първия старт с празна база и
+е в лога (`docker logs ytbuch-backend`) или я задай като
+`YTBUCH_SUPERADMIN_PASSWORD` преди старта.
 Отвори http://127.0.0.1:3020.
 API: http://127.0.0.1:8092.

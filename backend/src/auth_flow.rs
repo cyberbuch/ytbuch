@@ -60,10 +60,11 @@ pub async fn register(
         return Err(api_err(StatusCode::UNPROCESSABLE_ENTITY, "ЕИК е задължителен"));
     }
     if identity::email_taken(&st.db, &email, 0).await? {
-        return Err(api_err(
-            StatusCode::UNPROCESSABLE_ENTITY,
-            "потребител с този email вече съществува",
-        ));
+        // Еднакъв отговор при зает имейл — да не се познава кои имейли имат
+        // акаунти. Известие получава само собственикът на имейла.
+        auth::burn_password_check(&password);
+        notify_taken_email(&st.db, &email).await;
+        return Ok(register_answer());
     }
     let cid = companies::create_for_register(
         &st.db,
@@ -94,14 +95,42 @@ pub async fn register(
         drop_company(&st.db, cid).await;
         return Err(e);
     }
-    Ok((
-        StatusCode::CREATED,
-        Json(json!({
-            "ok": 1,
-            "message": "Регистрацията е успешна. Можете да влезете.",
-            "company_id": cid
-        })),
-    ))
+    Ok(register_answer())
+}
+
+fn register_answer() -> (StatusCode, Json<Value>) {
+    (StatusCode::CREATED, Json(register_answer_json()))
+}
+
+/// Един и същ отговор при свободен и при зает имейл.
+fn register_answer_json() -> Value {
+    json!({
+        "ok": 1,
+        "message": "Регистрацията е приета. Ако email-ът е свободен, вече можете да влезете.",
+    })
+}
+
+/// Уведомление до собственика при опит за регистрация с неговия имейл.
+async fn notify_taken_email(db: &Db, email: &str) {
+    let Ok(map) = settings::load(db).await else {
+        return;
+    };
+    if !mail_ready(&map) {
+        return;
+    }
+    let cfg = settings::smtp_cfg(&map);
+    let to = email.to_string();
+    let subject = "Опит за регистрация — ytbuch".to_string();
+    let html = "<p>Някой се опита да се регистира в ytbuch с този email, но той вече е зает.</p>\
+                <p>Ако сте вие, влезте или сменете паролата. Ако не сте — игнорирайте писмото.</p>"
+        .to_string();
+    tokio::spawn(async move {
+        match tokio::task::spawn_blocking(move || mail::send_html(&cfg, &to, &subject, &html)).await {
+            Ok(Ok(())) => {}
+            Ok(Err(msg)) => tracing::warn!("taken email mail: {msg}"),
+            Err(err) => tracing::warn!("taken email mail task: {err}"),
+        }
+    });
 }
 
 pub async fn forgot_password(
@@ -117,10 +146,13 @@ pub async fn forgot_password(
     }
     let user = identity::by_email(&st.db, &email).await?;
     let answer = Json(json!({ "ok": 1, "message": FORGOT_MSG }));
+    let raw_token = raw_token()?;
+    // Зареждането на настройките е и в двата клона — отговорът да е еднакъв
+    // по време, а писмото да не се чака (SMTP кръговото пътуване издава).
+    let map = settings::load(&st.db).await.unwrap_or_default();
     let Some(user) = user else {
         return Ok(answer);
     };
-    let raw_token = raw_token()?;
     let hash = token_hash(&raw_token);
     let id = st.db.next_id("password_reset_tokens").await.map_err(db_err)?;
     let exp = now_unix() + 3600;
@@ -133,12 +165,8 @@ pub async fn forgot_password(
         ))
         .await
         .map_err(db_err)?;
-    let map = match settings::load(&st.db).await {
-        Ok(map) => map,
-        Err(_) => return Ok(answer),
-    };
     if mail_ready(&map) {
-        send_reset_mail(&map, &email, &raw_token).await;
+        tokio::spawn(send_reset_mail(map, email, raw_token));
     }
     Ok(answer)
 }
@@ -171,7 +199,6 @@ pub async fn reset_password(
     let Some(row) = rows.first() else {
         return Err(api_err(StatusCode::UNPROCESSABLE_ENTITY, BAD_TOKEN));
     };
-    let tid = cell_i32_at(row, 0);
     let uid = cell_i32_at(row, 1);
     let exp = cell_i32_at(row, 2) as i64;
     let used = cell_i32_at(row, 3);
@@ -182,12 +209,6 @@ pub async fn reset_password(
         return Err(api_err(StatusCode::UNPROCESSABLE_ENTITY, BAD_TOKEN));
     };
     identity::set_password(&st.db, user.id, &user.email, &password).await?;
-    st.db
-        .exec(&format!(
-            "UPDATE password_reset_tokens SET used = 1 WHERE id = {tid}"
-        ))
-        .await
-        .map_err(db_err)?;
     Ok(Json(json!({
         "ok": 1,
         "message": "Паролата е променена. Можете да влезете."
@@ -283,12 +304,11 @@ fn reset_html(link: &str) -> String {
     )
 }
 
-async fn send_reset_mail(map: &HashMap<String, String>, to: &str, token: &str) {
+async fn send_reset_mail(map: HashMap<String, String>, to: String, token: String) {
     let url = map.get("app.url").map(|s| s.trim()).unwrap_or("");
-    let link = reset_link(url, token);
+    let link = reset_link(url, &token);
     let html = reset_html(&link);
-    let cfg = settings::smtp_cfg(map);
-    let to = to.to_string();
+    let cfg = settings::smtp_cfg(&map);
     let subject = "Възстановяване на парола — ytbuch".to_string();
     match tokio::task::spawn_blocking(move || mail::send_html(&cfg, &to, &subject, &html)).await {
         Ok(Ok(())) => {}

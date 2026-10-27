@@ -155,10 +155,15 @@ pub async fn s3_delete(
     if key.is_empty() {
         return Err(api_err(StatusCode::UNPROCESSABLE_ENTITY, "s3_key е задължителен"));
     }
-    if !is_backup_name(key) {
+    let cfg = settings::s3_cfg(&settings::load(&st.db).await?);
+    // Само в папката на ytbuch и само архиви — иначе супер администратор би
+    // могъл да изтрие чужд обект в bucket-а.
+    let Some(filename) = key.strip_prefix(cfg.prefix.as_str()) else {
+        return Err(api_err(StatusCode::BAD_REQUEST, "ключът не е в папката на ytbuch"));
+    };
+    if !is_backup_name(filename) {
         return Err(api_err(StatusCode::BAD_REQUEST, "ключът не е архив на ytbuch"));
     }
-    let cfg = settings::s3_cfg(&settings::load(&st.db).await?);
     let s3 = client(&cfg)?;
     s3.delete_object()
         .bucket(cfg.bucket.as_str())
@@ -234,6 +239,42 @@ fn newest_ydb_backup() -> Option<(String, Vec<u8>)> {
     Some((name, data))
 }
 
+/// Строг шаблон за собствените архиви: `ytbuch_backup_*.sql.gz` и
+/// `ydb_backup_*.tar.gz` само с обикновени знаци — без пътища и без `..`.
+/// Преди се приемаше всяко име, съдържащо „ytbuch_backup“.
 fn is_backup_name(name: &str) -> bool {
-    name.contains("ytbuch_backup") || name.starts_with("ydb_backup_")
+    let stem = if let Some(r) = name.strip_prefix("ytbuch_backup_") {
+        r.strip_suffix(".sql.gz")
+    } else if let Some(r) = name.strip_prefix("ydb_backup_") {
+        r.strip_suffix(".tar.gz")
+    } else {
+        None
+    };
+    match stem {
+        Some(stem) => {
+            !stem.is_empty()
+                && !stem.contains("..")
+                && stem
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '.'))
+        }
+        None => false,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn backup_names_are_strict() {
+        assert!(is_backup_name("ytbuch_backup_20261027_221035.sql.gz"));
+        assert!(is_backup_name("ydb_backup_2026-10-27.tar.gz"));
+        // чужди и хитри имена не минават
+        assert!(!is_backup_name("my_ytbuch_backup_notes.txt"));
+        assert!(!is_backup_name("ytbuch_backup_.sql.gz"));
+        assert!(!is_backup_name("ytbuch_backup_a/../../etc.sql.gz"));
+        assert!(!is_backup_name("ydb_backup_x.tar.gz/../../obj"));
+        assert!(!is_backup_name("other.txt"));
+    }
 }

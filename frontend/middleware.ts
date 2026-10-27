@@ -11,6 +11,7 @@ export function middleware(request: NextRequest) {
     img-src 'self' data: blob:;
     font-src 'self' data:;
     connect-src 'self' http://127.0.0.1:8092 http://localhost:8092;
+    frame-src 'self' blob:;
     frame-ancestors 'none';
     base-uri 'self';
     form-action 'self';
@@ -42,6 +43,8 @@ export function middleware(request: NextRequest) {
     "Permissions-Policy",
     "camera=(), microphone=(), geolocation=()"
   );
+  // HSTS важи само през HTTPS — на http браузърът го пренебрегва.
+  response.headers.set("Strict-Transport-Security", "max-age=15552000");
 
   return response;
 }

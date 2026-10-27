@@ -58,6 +58,7 @@ function ProfileInner() {
   const [qr, setQr] = useState("");
   const [codes, setCodes] = useState<string[]>([]);
   const [code, setCode] = useState("");
+  const [startPassword, setStartPassword] = useState("");
   const [disablePassword, setDisablePassword] = useState("");
   const [msg, setMsg] = useState("");
   const [error, setError] = useState("");
@@ -152,7 +153,7 @@ function ProfileInner() {
         qr_svg?: string;
         recovery_codes?: string[];
         message?: string;
-      }>("/v1/me/totp/start");
+      }>("/v1/me/totp/start", { current_password: startPassword });
       setSecret(r.secret);
       setQr(r.qr_svg ?? "");
       setCodes(r.recovery_codes ?? []);
@@ -169,12 +170,16 @@ function ProfileInner() {
     setBusy("confirm");
     setError("");
     try {
-      const r = await api.post<{ message?: string }>("/v1/me/totp/confirm", { code });
+      const r = await api.post<{ message?: string }>("/v1/me/totp/confirm", {
+        code,
+        current_password: startPassword,
+      });
       setMsg(r.message || t("security.enabled"));
       setSecret("");
       setQr("");
       setCodes([]);
       setCode("");
+      setStartPassword("");
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -332,9 +337,25 @@ function ProfileInner() {
             {t("security.status")}: <strong>{on ? t("security.on") : t("security.off")}</strong>
           </p>
           {!on && !secret && (
-            <button className="btn btn-primary" disabled={busy !== ""} onClick={() => void start()}>
-              {t("security.enable")}
-            </button>
+            <div>
+              <p className="muted">{t("security.start_hint")}</p>
+              <div className="field">
+                <label className="label">{t("profile.current_password")}</label>
+                <input
+                  className="input"
+                  type="password"
+                  value={startPassword}
+                  onChange={(e) => setStartPassword(e.target.value)}
+                />
+              </div>
+              <button
+                className="btn btn-primary"
+                disabled={busy !== "" || !startPassword}
+                onClick={() => void start()}
+              >
+                {t("security.enable")}
+              </button>
+            </div>
           )}
           {secret && (
             <form onSubmit={confirmTotp}>

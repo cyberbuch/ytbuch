@@ -14,7 +14,12 @@ import urllib.request
 
 BASE = os.environ.get("YTBUCH_API", "http://127.0.0.1:8092")
 USER = os.environ.get("YTBUCH_CHECK_USER", "superadmin")
-PASSWORD = os.environ.get("YTBUCH_CHECK_PASSWORD", "123+123")
+PASSWORD = os.environ.get("YTBUCH_CHECK_PASSWORD", "")
+if not PASSWORD:
+    sys.exit(
+        "Задай YTBUCH_CHECK_PASSWORD (паролата на потребителя за вход). "
+        "При първи старт я виж в лога: docker logs ytbuch-backend"
+    )
 
 TOKEN = ""
 PASSED = 0

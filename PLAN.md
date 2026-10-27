@@ -21,7 +21,7 @@
 - Контейнер `ytbuch-yottadb` (`download.yottadb.com/yottadb/yottadb-debian`).
   Octo: `127.0.0.1:1337`, потребител `ydb`, парола `ydbrocks`.
   Данните са в volume `ytbuch_ydb-data`. GUI: `:9080`.
-- API `:8092` и UI `:3020`. Вход `superadmin` / `123+123`.
+- API `:8092` и UI `:3020`. Вход `superadmin` с еднократна парола от лога.
 - Фирми, активна фирма, табло, четене на настройките на фирмата.
 - Демо фирма **YT ООД** с фактури, дневник, контрагенти и стока.
 - Номенклатури на НАП и сметкоплан: четене и seed. Липсващите кодове се
@@ -93,4 +93,5 @@ docker compose -f deploy/docker-compose.yml up -d --build
 docker compose -f deploy/docker-compose.yml ps
 ```
 
-Вход както в bagabuch, докато няма друг потребител: `superadmin` / `123+123`.
+Вход като в bagabuch, докато няма друг потребител: `superadmin` с парола от
+`YTBUCH_SUPERADMIN_PASSWORD` или генерирана при първия старт.

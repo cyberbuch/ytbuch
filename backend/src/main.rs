@@ -128,6 +128,36 @@ pub struct AppState {
     pub(crate) jwt_secret: String,
 }
 
+/// Първоначален superadmin само при празна база. Паролата идва от
+/// `YTBUCH_SUPERADMIN_PASSWORD` или се генерира еднократно и се отпечатва
+/// в лога — никога фиксирана в кода, за да не може външен да я познае.
+async fn bootstrap_superadmin(db: &Db) {
+    match identity::user_count(db).await {
+        Ok(0) => {}
+        Ok(_) => return,
+        Err(e) => panic!("users: {e:?}"),
+    }
+    let from_env = match env::var("YTBUCH_SUPERADMIN_PASSWORD") {
+        Ok(s) if !s.trim().is_empty() => Some(s),
+        _ => None,
+    };
+    let (password, generated) = match from_env {
+        Some(p) => (p, false),
+        None => (hex::encode(totp::random_bytes(16).unwrap_or_else(|e| panic!("urandom: {e}"))), true),
+    };
+    identity::provision_superadmin(db, &password)
+        .await
+        .unwrap_or_else(|e| panic!("provision superadmin: {e:?}"));
+    if generated {
+        tracing::warn!(
+            "Създаден е superadmin с еднократна парола: {password} — смени я веднага от Профил. \
+             За избрана от теб парола задай YTBUCH_SUPERADMIN_PASSWORD преди първия старт."
+        );
+    } else {
+        tracing::warn!("Създаден е superadmin от YTBUCH_SUPERADMIN_PASSWORD — смени я веднага от Профил.");
+    }
+}
+
 #[tokio::main]
 async fn main() {
     tracing_subscriber::fmt()
@@ -158,6 +188,10 @@ async fn main() {
     .await
     .unwrap_or_else(|_| panic!("octo: timeout"))
     .unwrap_or_else(|e| panic!("octo: {e}"));
+    // Как се третира `\` в литералите — различните режими искат различен lit().
+    if let Err(e) = db::detect_literal_escaping(&db).await {
+        tracing::warn!("literal escaping probe: {e}");
+    }
     tokio::time::timeout(std::time::Duration::from_secs(120), db.migrate())
         .await
         .unwrap_or_else(|_| panic!("migrate: timeout"))
@@ -180,6 +214,7 @@ async fn main() {
     members::backfill(&db)
         .await
         .unwrap_or_else(|e| panic!("members backfill: {:?}", e.0));
+    bootstrap_superadmin(&db).await;
     let state = AppState {
         db,
         jwt_secret,

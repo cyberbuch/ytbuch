@@ -9,6 +9,7 @@ use serde_json::{json, Value};
 use crate::auth;
 use crate::form::auth_sub;
 use crate::identity;
+use crate::rate_limit;
 use crate::totp;
 use crate::{api_err, AppState, ApiError};
 
@@ -47,20 +48,25 @@ pub async fn token(State(st): State<AppState>, Json(body): Json<TokenBody>) -> R
         .ok_or_else(|| api_err(StatusCode::UNPROCESSABLE_ENTITY, "email или sub е задължителен"))?;
     let login = login.trim();
     let password = body.password.unwrap_or_default();
+    // Заключване по акаунт — ключът е опитаният login и за съществуващ, и за
+    // несъществуващ, затова не издава кои акаунти има.
+    if let Some(left) = rate_limit::login_locked(login) {
+        let mins = left.as_secs().div_ceil(60).max(1);
+        return Err(api_err(
+            StatusCode::TOO_MANY_REQUESTS,
+            format!("твърде много неуспешни опити, опитайте след {mins} минути"),
+        ));
+    }
     let found = identity::by_login(&st.db, login).await?;
     let Some(user) = found else {
-        if identity::user_count(&st.db).await? == 0 && login == "superadmin" && password == "123+123" {
-            identity::provision_superadmin(&st.db).await?;
-            let token = auth::issue(&st.jwt_secret, "superadmin", 0)?;
-            return Ok(token_json(token, "superadmin"));
-        }
+        // Еднакво време при липсващ потребител — да не се познава кои имейли има.
+        auth::burn_password_check(&password);
+        rate_limit::login_failure(login);
         return Err(api_err(StatusCode::UNAUTHORIZED, "грешен потребител или парола"));
     };
-    if user.is_active == 0 {
-        return Err(api_err(StatusCode::FORBIDDEN, "потребителят е неактивен"));
-    }
     match auth::check_password(&user.password_hash, &user.email, &password) {
         auth::PasswordCheck::Fail => {
+            rate_limit::login_failure(login);
             return Err(api_err(StatusCode::UNAUTHORIZED, "грешен потребител или парола"));
         }
         // Стар sha256 хеш: паролата е вярна, записваме я отново с argon2.
@@ -70,6 +76,11 @@ pub async fn token(State(st): State<AppState>, Json(body): Json<TokenBody>) -> R
             }
         }
         auth::PasswordCheck::Ok => {}
+    }
+    rate_limit::login_success(login);
+    // След валидна парола — иначе отговорът 403 издава, че акаунтът съществува.
+    if user.is_active == 0 {
+        return Err(api_err(StatusCode::FORBIDDEN, "потребителят е неактивен"));
     }
     if user.totp_enabled == 1 {
         let mfa = auth::issue_mfa(&st.jwt_secret, &user.username, user.ver)?;
@@ -104,10 +115,13 @@ pub async fn mfa(State(st): State<AppState>, Json(body): Json<MfaBody>) -> Resul
             "2FA е заключен за 15 минути след неуспешни опити",
         ));
     }
-    if totp::totp_ok(&user.totp_secret, code.trim(), now) {
-        identity::mfa_reset(&st.db, user.id).await?;
-        let token = auth::issue(&st.jwt_secret, &user.username, user.ver)?;
-        return Ok(token_json(token, &user.username));
+    if let Some(counter) = totp::totp_counter(&user.totp_secret, code.trim(), now) {
+        // Прозорецът се консумира: един и същ код не минава повторно.
+        if identity::totp_consume_counter(&st.db, user.id, counter).await? {
+            identity::mfa_reset(&st.db, user.id).await?;
+            let token = auth::issue(&st.jwt_secret, &user.username, user.ver)?;
+            return Ok(token_json(token, &user.username));
+        }
     }
     if identity::take_recovery(&st.db, user.id, code.trim()).await? {
         identity::mfa_reset(&st.db, user.id).await?;

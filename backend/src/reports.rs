@@ -55,9 +55,14 @@ pub async fn export(
         ),
         _ => (crate::reports_sheet::ods(&built.grid, bg), "application/vnd.oasis.opendocument.spreadsheet"),
     };
-    let from = q.from.as_deref().unwrap_or("").trim();
-    let to = q.to.as_deref().unwrap_or("").trim();
-    let filename = format!("{}-{from}-{to}.{format}", built.slug);
+    // from/to идват от query-то — само цифри и тирета в името на файла,
+    // за да не се инжектират параметри в Content-Disposition.
+    let period: String = [q.from.as_deref().unwrap_or(""), q.to.as_deref().unwrap_or("")]
+        .join("-")
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() || c == '-' { c } else { '_' })
+        .collect();
+    let filename = format!("{}-{period}.{format}", built.slug);
     let disp = format!("attachment; filename=\"{filename}\"");
     Ok(Response::builder()
         .status(StatusCode::OK)

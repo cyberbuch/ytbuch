@@ -69,6 +69,15 @@ pub fn check_password(stored: &str, email: &str, password: &str) -> PasswordChec
     }
 }
 
+/// Фиктивна проверка при липсващ потребител — входът да отнема същото
+/// време и да не издава кои имейли съществуват.
+pub fn burn_password_check(password: &str) {
+    use std::sync::OnceLock;
+    static DUMMY: OnceLock<String> = OnceLock::new();
+    let hash = DUMMY.get_or_init(|| hash_new("burn-only").expect("argon2"));
+    let _ = check_password(hash, "burn", password);
+}
+
 fn encode_claims(secret: &str, claims: &Claims) -> Result<String, ApiError> {
     encode(
         &Header::default(),

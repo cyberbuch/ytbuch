@@ -204,7 +204,7 @@ export async function printFile(path: string): Promise<void> {
     }, 60_000);
   } catch {
     frame.remove();
-    window.open(url, "_blank");
+    window.open(url, "_blank", "noopener,noreferrer");
   }
 }
 

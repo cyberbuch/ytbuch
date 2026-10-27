@@ -219,7 +219,9 @@ pub fn window(year: i32, month: i32, fys: i32) -> Window {
 
 /// `o` е движение преди месеца, `p` е месецът. Датата е YYYY-MM-DD.
 pub fn bucket(date: &str, w: &Window) -> Option<char> {
-    let date = &date[..date.len().min(10)];
+    // До 10 знака, а не байта — срез по байт може да падне вътре в знак.
+    let date: String = date.chars().take(10).collect();
+    let date = date.as_str();
     if date.len() < 10 {
         return None;
     }

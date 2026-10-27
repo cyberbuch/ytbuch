@@ -70,25 +70,25 @@ fn hotp(secret: &[u8], counter: u64) -> String {
     format!("{:06}", bin % 1_000_000)
 }
 
-pub fn totp_ok(secret_b32: &str, code: &str, unix: i64) -> bool {
-    let Ok(secret) = b32_decode(secret_b32) else {
-        return false;
-    };
+/// Валиден код връща номера на прозореца, който е покрил. Номерът се пази
+/// (`identity::totp_consume_counter`) и същият код не може да мине повторно.
+pub fn totp_counter(secret_b32: &str, code: &str, unix: i64) -> Option<u64> {
+    let secret = b32_decode(secret_b32).ok()?;
     if secret.is_empty() {
-        return false;
+        return None;
     }
     let want: String = code.chars().filter(|c| c.is_ascii_digit()).collect();
     if want.len() != 6 {
-        return false;
+        return None;
     }
     let slot = unix.max(0) / 30;
     for delta in -1i64..=1 {
         let counter = slot + delta;
         if counter >= 0 && hotp(&secret, counter as u64) == want {
-            return true;
+            return Some(counter as u64);
         }
     }
-    false
+    None
 }
 
 fn pct(text: &str) -> String {

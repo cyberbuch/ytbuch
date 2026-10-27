@@ -250,7 +250,12 @@ fn norm_money(raw: &str) -> String {
 
 fn flex_date(raw: &str) -> String {
     let t = raw.trim();
-    if t.len() >= 10 && t.as_bytes().get(4) == Some(&b'-') && t.as_bytes().first().is_some_and(u8::is_ascii_digit) {
+    // Срезът до 10 байта е само при ASCII — иначе не е на граница на знак.
+    if t.len() >= 10
+        && t.as_bytes()[..10].iter().all(u8::is_ascii)
+        && t.as_bytes().get(4) == Some(&b'-')
+        && t.as_bytes().first().is_some_and(u8::is_ascii_digit)
+    {
         return t[..10].to_string();
     }
     let sep = if t.contains('/') { '/' } else if t.contains('.') { '.' } else if t.contains('-') { '-' } else { return String::new() };

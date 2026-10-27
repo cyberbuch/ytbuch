@@ -49,6 +49,9 @@ services:
       # пази в базата (settings: auth.jwt_secret). Твърда стойност тук би
       # била публична и всеки би могъл да подпише свой токен.
       YTBUCH_JWT_SECRET: ${YTBUCH_JWT_SECRET:-}
+      # Без стойност при първия старт с празна база API-то генерира случайна
+      # парола за superadmin и я отпечатва в лога (docker logs ytbuch-backend).
+      YTBUCH_SUPERADMIN_PASSWORD: ${YTBUCH_SUPERADMIN_PASSWORD:-}
     ports:
       - "127.0.0.1:8092:8092"
     volumes:

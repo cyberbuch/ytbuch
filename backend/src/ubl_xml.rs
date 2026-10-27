@@ -68,7 +68,7 @@ fn dot(raw: &str) -> String {
 
 fn date(raw: &str) -> String {
     let t = text_of(raw);
-    if t.len() >= 10 { t[..10].to_string() } else { t }
+    t.chars().take(10).collect()
 }
 
 fn empty_party() -> Party {

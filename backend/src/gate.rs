@@ -1,8 +1,10 @@
 //! Проверка на права по маршрут. Едно middleware пред всички /v1 пътища:
 //! пътят се сваля до permission ключ, ролята на потребителя трябва да го
 //! съдържа. Супер администраторът и `"*"` в ролята минават навсякъде.
-//! Пътища без permission остават достъпни за всеки влязъл потребител:
-//! собствен профил, табло, превключвател на фирма, статични каталози.
+//! Някои пътища са за всеки влязъл потребител: собствен профил, табло,
+//! превключвател на фирма, статични каталози. Непознатите пътища се
+//! отказват (404) — deny by default, за да не остава нов забравен маршрут
+//! отворен само защото не е в картата на правата.
 
 use axum::extract::{Request, State};
 use axum::http::{Method, StatusCode};
@@ -33,13 +35,24 @@ pub fn is_public(path: &str) -> bool {
     )
 }
 
-/// Кой permission ключ пази даден път. `None` значи само вход.
+/// Достъпът до даден /v1 път.
+#[derive(Debug, PartialEq, Eq)]
+pub enum Access {
+    /// Всеки влязъл потребител (профил, табло, статични каталози).
+    Any,
+    /// Изисква permission ключ от ролята.
+    Key(&'static str),
+    /// Непознат път — отказва се, вместо да минава без проверка.
+    Unknown,
+}
+
+/// Кой permission ключ пази даден път.
 /// Правата са грубо по екран: без деление четене/запис — ролята вижда
 /// целия модул или нищо.
-pub fn required_permission(method: &Method, path: &str) -> Option<&'static str> {
+pub fn required_permission(method: &Method, path: &str) -> Access {
     let s = segments(path);
     if s.first() != Some(&"v1") {
-        return None;
+        return Access::Any;
     }
     match s.get(1).copied() {
         Some("companies") => {
@@ -47,52 +60,55 @@ pub fn required_permission(method: &Method, path: &str) -> Option<&'static str> 
             // създаването и редакцията изискват право. Потребителите на
             // фирма са под /users и се пазят от ролята "users".
             if s.len() == 2 && method == Method::GET {
-                None
+                Access::Any
             } else if s.len() >= 4 && s.get(3) == Some(&"users") {
-                Some("users")
+                Access::Key("users")
             } else {
-                Some("companies")
+                Access::Key("companies")
             }
         }
         Some("company-locations")
         | Some("beneficial-owners")
         | Some("ultimate-parents")
-        | Some("document-series") => Some("companies"),
-        Some("accounts") => Some("accounts"),
-        Some("counterparts") | Some("addresses") => Some("counterparts"),
-        Some("products") | Some("product-name-mappings") => Some("products"),
-        Some("invoices") => Some("invoices"),
-        Some("scans") => Some("scans"),
-        Some("journal") => Some("journal"),
-        Some("accounting-periods") | Some("opening-balances") => Some("periods"),
-        Some("vat") => Some("vat"),
-        Some("bank-accounts") | Some("bank-transactions") => Some("banking"),
-        Some("fixed-assets") | Some("fixed-asset-categories") => Some("assets"),
-        Some("inventory") | Some("internal-docs") | Some("material-issues") => Some("stock"),
+        | Some("document-series") => Access::Key("companies"),
+        Some("accounts") => Access::Key("accounts"),
+        Some("counterparts") | Some("addresses") => Access::Key("counterparts"),
+        Some("products") | Some("product-name-mappings") => Access::Key("products"),
+        Some("invoices") => Access::Key("invoices"),
+        Some("scans") => Access::Key("scans"),
+        Some("journal") => Access::Key("journal"),
+        Some("accounting-periods") | Some("opening-balances") => Access::Key("periods"),
+        Some("vat") => Access::Key("vat"),
+        Some("bank-accounts") | Some("bank-transactions") => Access::Key("banking"),
+        Some("fixed-assets") | Some("fixed-asset-categories") => Access::Key("assets"),
+        Some("inventory") | Some("internal-docs") | Some("material-issues") => Access::Key("stock"),
         Some("stock") => match s.get(2).copied() {
-            Some("rules") => Some("companies"),
-            _ => Some("stock"),
+            Some("rules") => Access::Key("companies"),
+            _ => Access::Key("stock"),
         },
-        Some("recipes") | Some("production-orders") => Some("production"),
-        Some("dividend-distributions") | Some("dividends") => Some("dividends"),
-        Some("reports") | Some("fs") => Some("reports"),
+        Some("recipes") | Some("production-orders") => Access::Key("production"),
+        Some("dividend-distributions") | Some("dividends") => Access::Key("dividends"),
+        Some("reports") | Some("fs") => Access::Key("reports"),
         Some("audit-logs") => match s.get(2).copied() {
-            Some("invoice") => Some("invoices"),
-            Some("journal") => Some("journal"),
-            Some("internal_doc") | Some("material_issue") => Some("stock"),
-            Some("production_order") => Some("production"),
-            Some("bank_tx") => Some("banking"),
-            _ => Some("reports"),
+            Some("invoice") => Access::Key("invoices"),
+            Some("journal") => Access::Key("journal"),
+            Some("internal_doc") | Some("material_issue") => Access::Key("stock"),
+            Some("production_order") => Access::Key("production"),
+            Some("bank_tx") => Access::Key("banking"),
+            _ => Access::Key("reports"),
         },
         Some("saft") => match s.get(2).copied() {
-            Some("export") | Some("movement-mappings") => Some("saft"),
+            Some("export") | Some("movement-mappings") => Access::Key("saft"),
             // Номенклатурите са статичен каталог, четат ги много екрана.
-            _ => None,
+            _ => Access::Any,
         },
-        Some("users") | Some("roles") => Some("users"),
-        Some("system-settings") => Some("settings"),
-        Some("exchange-rates") => Some("rates"),
-        _ => None,
+        Some("users") | Some("roles") => Access::Key("users"),
+        Some("system-settings") => Access::Key("settings"),
+        Some("exchange-rates") => Access::Key("rates"),
+        // За всеки влязъл: профил, табло, превключвател на фирма, каталози.
+        Some("me") | Some("dashboard") | Some("active-company") | Some("units")
+        | Some("vat-exemptions") => Access::Any,
+        _ => Access::Unknown,
     }
 }
 
@@ -136,16 +152,23 @@ pub async fn gate(
             "сесията е приключила — влезте отново",
         ));
     }
-    if let Some(key) = required_permission(&method, &path) {
-        if user.is_super_admin != 1 {
-            // Правата идват от ролята на потребителя към активната фирма.
-            let company = crate::companies::resolve_active(&st.db, &claims.sub).await?;
-            let perms = crate::members::perms_for(&st.db, &user, company).await?;
-            if !allowed(&perms, key) {
-                return Err(api_err(
-                    StatusCode::FORBIDDEN,
-                    format!("липсва право: {key}"),
-                ));
+    match required_permission(&method, &path) {
+        Access::Unknown => {
+            // Непознат /v1 път — отказ, вместо да мине само с вход.
+            return Err(api_err(StatusCode::NOT_FOUND, "непознат път"));
+        }
+        Access::Any => {}
+        Access::Key(key) => {
+            if user.is_super_admin != 1 {
+                // Правата идват от ролята на потребителя към активната фирма.
+                let company = crate::companies::resolve_active(&st.db, &claims.sub).await?;
+                let perms = crate::members::perms_for(&st.db, &user, company).await?;
+                if !allowed(&perms, key) {
+                    return Err(api_err(
+                        StatusCode::FORBIDDEN,
+                        format!("липсва право: {key}"),
+                    ));
+                }
             }
         }
     }
@@ -154,12 +177,14 @@ pub async fn gate(
 
 #[cfg(test)]
 mod tests {
-    use super::{is_public, required_permission, stale_session};
+    use super::{is_public, required_permission, stale_session, Access};
     use axum::http::Method;
 
-    fn perm(method: &str, path: &str) -> Option<&'static str> {
+    fn perm(method: &str, path: &str) -> Access {
         required_permission(&Method::from_bytes(method.as_bytes()).unwrap(), path)
     }
+
+    const ANY: Access = Access::Any;
 
     #[test]
     fn only_auth_entry_points_are_public() {
@@ -178,77 +203,82 @@ mod tests {
 
     #[test]
     fn public_and_own_paths_stay_open() {
-        assert_eq!(perm("GET", "/v1/me"), None);
-        assert_eq!(perm("POST", "/v1/me/password"), None);
-        assert_eq!(perm("GET", "/v1/dashboard"), None);
-        assert_eq!(perm("GET", "/v1/companies"), None);
-        assert_eq!(perm("GET", "/v1/units"), None);
-        assert_eq!(perm("GET", "/v1/saft/nomenclatures"), None);
-        assert_eq!(perm("GET", "/v1/vat-exemptions"), None);
-        assert_eq!(perm("GET", "/health"), None);
+        assert_eq!(perm("GET", "/v1/me"), ANY);
+        assert_eq!(perm("POST", "/v1/me/password"), ANY);
+        assert_eq!(perm("GET", "/v1/dashboard"), ANY);
+        assert_eq!(perm("GET", "/v1/active-company"), ANY);
+        assert_eq!(perm("GET", "/v1/companies"), ANY);
+        assert_eq!(perm("GET", "/v1/units"), ANY);
+        assert_eq!(perm("GET", "/v1/saft/nomenclatures"), ANY);
+        assert_eq!(perm("GET", "/v1/vat-exemptions"), ANY);
+        assert_eq!(perm("GET", "/health"), ANY);
     }
 
     #[test]
     fn company_writes_need_permission() {
-        assert_eq!(perm("POST", "/v1/companies"), Some("companies"));
-        assert_eq!(perm("PATCH", "/v1/companies/3"), Some("companies"));
-        assert_eq!(perm("DELETE", "/v1/companies/3"), Some("companies"));
-        assert_eq!(perm("POST", "/v1/companies/3/locations"), Some("companies"));
-        assert_eq!(perm("DELETE", "/v1/document-series/7"), Some("companies"));
-        assert_eq!(perm("GET", "/v1/companies/3/users"), Some("users"));
-        assert_eq!(perm("POST", "/v1/companies/3/users"), Some("users"));
-        assert_eq!(perm("PATCH", "/v1/companies/3/users/5"), Some("users"));
-        assert_eq!(perm("DELETE", "/v1/companies/3/users/5"), Some("users"));
+        assert_eq!(perm("POST", "/v1/companies"), Access::Key("companies"));
+        assert_eq!(perm("PATCH", "/v1/companies/3"), Access::Key("companies"));
+        assert_eq!(perm("DELETE", "/v1/companies/3"), Access::Key("companies"));
+        assert_eq!(perm("POST", "/v1/companies/3/locations"), Access::Key("companies"));
+        assert_eq!(perm("DELETE", "/v1/document-series/7"), Access::Key("companies"));
+        assert_eq!(perm("GET", "/v1/companies/3/users"), Access::Key("users"));
+        assert_eq!(perm("POST", "/v1/companies/3/users"), Access::Key("users"));
+        assert_eq!(perm("PATCH", "/v1/companies/3/users/5"), Access::Key("users"));
+        assert_eq!(perm("DELETE", "/v1/companies/3/users/5"), Access::Key("users"));
     }
 
     #[test]
     fn modules_map_to_keys() {
-        assert_eq!(perm("GET", "/v1/accounts"), Some("accounts"));
-        assert_eq!(perm("GET", "/v1/counterparts"), Some("counterparts"));
-        assert_eq!(perm("POST", "/v1/counterparts/vies"), Some("counterparts"));
-        assert_eq!(perm("GET", "/v1/products"), Some("products"));
-        assert_eq!(perm("GET", "/v1/product-name-mappings"), Some("products"));
-        assert_eq!(perm("POST", "/v1/invoices/9/post"), Some("invoices"));
-        assert_eq!(perm("GET", "/v1/invoices/9/print"), Some("invoices"));
-        assert_eq!(perm("POST", "/v1/scans/extract"), Some("scans"));
-        assert_eq!(perm("GET", "/v1/journal"), Some("journal"));
-        assert_eq!(perm("GET", "/v1/journal/4"), Some("journal"));
-        assert_eq!(perm("POST", "/v1/accounting-periods/close"), Some("periods"));
-        assert_eq!(perm("POST", "/v1/opening-balances"), Some("periods"));
-        assert_eq!(perm("GET", "/v1/vat/registers"), Some("vat"));
-        assert_eq!(perm("GET", "/v1/vat/export"), Some("vat"));
-        assert_eq!(perm("POST", "/v1/bank-transactions/4/book"), Some("banking"));
-        assert_eq!(perm("GET", "/v1/bank-accounts"), Some("banking"));
-        assert_eq!(perm("POST", "/v1/fixed-assets/depreciation/post"), Some("assets"));
-        assert_eq!(perm("DELETE", "/v1/fixed-asset-categories/2"), Some("assets"));
-        assert_eq!(perm("GET", "/v1/inventory/at-location"), Some("stock"));
-        assert_eq!(perm("POST", "/v1/internal-docs/5/confirm"), Some("stock"));
-        assert_eq!(perm("GET", "/v1/stock/rules"), Some("companies"));
-        assert_eq!(perm("POST", "/v1/stock/rebuild"), Some("stock"));
-        assert_eq!(perm("GET", "/v1/stock/report"), Some("stock"));
-        assert_eq!(perm("POST", "/v1/material-issues/1/confirm"), Some("stock"));
-        assert_eq!(perm("POST", "/v1/production-orders/2/confirm"), Some("production"));
-        assert_eq!(perm("PUT", "/v1/recipes/1"), Some("production"));
-        assert_eq!(perm("POST", "/v1/dividends/3/pay"), Some("dividends"));
-        assert_eq!(perm("GET", "/v1/reports"), Some("reports"));
-        assert_eq!(perm("GET", "/v1/audit-logs"), Some("reports"));
-        assert_eq!(perm("GET", "/v1/audit-logs/invoice/1"), Some("invoices"));
-        assert_eq!(perm("GET", "/v1/audit-logs/journal/1"), Some("journal"));
-        assert_eq!(perm("PUT", "/v1/fs/formulas"), Some("reports"));
-        assert_eq!(perm("GET", "/v1/saft/export"), Some("saft"));
-        assert_eq!(perm("POST", "/v1/saft/movement-mappings/defaults"), Some("saft"));
-        assert_eq!(perm("GET", "/v1/users"), Some("users"));
-        assert_eq!(perm("PATCH", "/v1/roles/2"), Some("users"));
-        assert_eq!(perm("PUT", "/v1/system-settings"), Some("settings"));
-        assert_eq!(perm("POST", "/v1/system-settings/s3-backup"), Some("settings"));
-        assert_eq!(perm("POST", "/v1/exchange-rates/import"), Some("rates"));
-        assert_eq!(perm("POST", "/v1/addresses/parse"), Some("counterparts"));
+        assert_eq!(perm("GET", "/v1/accounts"), Access::Key("accounts"));
+        assert_eq!(perm("GET", "/v1/counterparts"), Access::Key("counterparts"));
+        assert_eq!(perm("POST", "/v1/counterparts/vies"), Access::Key("counterparts"));
+        assert_eq!(perm("GET", "/v1/products"), Access::Key("products"));
+        assert_eq!(perm("GET", "/v1/product-name-mappings"), Access::Key("products"));
+        assert_eq!(perm("POST", "/v1/invoices/9/post"), Access::Key("invoices"));
+        assert_eq!(perm("GET", "/v1/invoices/9/print"), Access::Key("invoices"));
+        assert_eq!(perm("POST", "/v1/scans/extract"), Access::Key("scans"));
+        assert_eq!(perm("GET", "/v1/journal"), Access::Key("journal"));
+        assert_eq!(perm("GET", "/v1/journal/4"), Access::Key("journal"));
+        assert_eq!(perm("POST", "/v1/accounting-periods/close"), Access::Key("periods"));
+        assert_eq!(perm("POST", "/v1/opening-balances"), Access::Key("periods"));
+        assert_eq!(perm("GET", "/v1/vat/registers"), Access::Key("vat"));
+        assert_eq!(perm("GET", "/v1/vat/export"), Access::Key("vat"));
+        assert_eq!(perm("POST", "/v1/bank-transactions/4/book"), Access::Key("banking"));
+        assert_eq!(perm("GET", "/v1/bank-accounts"), Access::Key("banking"));
+        assert_eq!(perm("POST", "/v1/fixed-assets/depreciation/post"), Access::Key("assets"));
+        assert_eq!(perm("DELETE", "/v1/fixed-asset-categories/2"), Access::Key("assets"));
+        assert_eq!(perm("GET", "/v1/inventory/at-location"), Access::Key("stock"));
+        assert_eq!(perm("POST", "/v1/internal-docs/5/confirm"), Access::Key("stock"));
+        assert_eq!(perm("GET", "/v1/stock/rules"), Access::Key("companies"));
+        assert_eq!(perm("POST", "/v1/stock/rebuild"), Access::Key("stock"));
+        assert_eq!(perm("GET", "/v1/stock/report"), Access::Key("stock"));
+        assert_eq!(perm("POST", "/v1/material-issues/1/confirm"), Access::Key("stock"));
+        assert_eq!(perm("POST", "/v1/production-orders/2/confirm"), Access::Key("production"));
+        assert_eq!(perm("PUT", "/v1/recipes/1"), Access::Key("production"));
+        assert_eq!(perm("POST", "/v1/dividends/3/pay"), Access::Key("dividends"));
+        assert_eq!(perm("GET", "/v1/reports"), Access::Key("reports"));
+        assert_eq!(perm("GET", "/v1/audit-logs"), Access::Key("reports"));
+        assert_eq!(perm("GET", "/v1/audit-logs/invoice/1"), Access::Key("invoices"));
+        assert_eq!(perm("GET", "/v1/audit-logs/journal/1"), Access::Key("journal"));
+        assert_eq!(perm("PUT", "/v1/fs/formulas"), Access::Key("reports"));
+        assert_eq!(perm("GET", "/v1/saft/export"), Access::Key("saft"));
+        assert_eq!(perm("POST", "/v1/saft/movement-mappings/defaults"), Access::Key("saft"));
+        assert_eq!(perm("GET", "/v1/users"), Access::Key("users"));
+        assert_eq!(perm("PATCH", "/v1/roles/2"), Access::Key("users"));
+        assert_eq!(perm("PUT", "/v1/system-settings"), Access::Key("settings"));
+        assert_eq!(perm("POST", "/v1/system-settings/s3-backup"), Access::Key("settings"));
+        assert_eq!(perm("POST", "/v1/exchange-rates/import"), Access::Key("rates"));
+        assert_eq!(perm("POST", "/v1/addresses/parse"), Access::Key("counterparts"));
     }
 
     #[test]
-    fn unknown_paths_stay_open() {
-        assert_eq!(perm("GET", "/v1/unknown"), None);
-        assert_eq!(perm("GET", "/v1/invoices"), Some("invoices"));
+    fn unknown_paths_are_denied() {
+        // Deny by default: нов забравен рут не бива да минава само с вход.
+        assert_eq!(perm("GET", "/v1/unknown"), Access::Unknown);
+        assert_eq!(perm("POST", "/v1/auth/other"), Access::Unknown);
+        assert_eq!(perm("GET", "/v1/evil"), Access::Unknown);
+        // известните остават по картата
+        assert_eq!(perm("GET", "/v1/invoices"), Access::Key("invoices"));
     }
 
     #[test]

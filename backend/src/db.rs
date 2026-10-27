@@ -3,13 +3,16 @@
 //! Заявките са simple query за съвместимост с използваната версия на Octo.
 //! Мъртва връзка се отваря наново; запис не се повтаря, за да не се дублира.
 
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::time::Duration;
 
 use tokio::sync::Mutex;
 use tokio_postgres::{Client, NoTls, SimpleQueryMessage};
 
 pub type DbResult<T> = Result<T, tokio_postgres::Error>;
+
+/// Дали `\` е escape знаците в низовите литерали на сървъра.
+static ESCAPE_BACKSLASH: AtomicBool = AtomicBool::new(false);
 
 pub struct Db {
     url: String,
@@ -740,17 +743,35 @@ pub async fn next_id(db: &Client, table: &str) -> DbResult<i32> {
 }
 
 /// SQL низ в единични кавички. Единичната кавичка се удвоява.
+/// Ако сървърът третира `\` като escape в литералите (като Postgres с
+/// `standard_conforming_strings = off`), удвояваме и обратната черта —
+/// иначе вход като `\'` би затворил литерала. Режимът се засича при
+/// стартиране от `detect_literal_escaping`.
 pub fn lit(value: &str) -> String {
+    lit_with(value, ESCAPE_BACKSLASH.load(Ordering::Relaxed))
+}
+
+fn lit_with(value: &str, escape_backslash: bool) -> String {
     let mut out = String::from("'");
     for ch in value.chars() {
-        if ch == '\'' {
-            out.push_str("''");
-        } else {
-            out.push(ch);
+        match ch {
+            '\'' => out.push_str("''"),
+            '\\' if escape_backslash => out.push_str("\\\\"),
+            _ => out.push(ch),
         }
     }
     out.push('\'');
     out
+}
+
+/// Засича дали `\` е escape знаците в низовите литерали. `'a\\b'` е 4 знака
+/// при буквално третиране и 3 при escape — пита се при стартиране, защото
+/// двата режима изискват различен `lit()`.
+pub async fn detect_literal_escaping(db: &Db) -> DbResult<bool> {
+    let rows = db.query("SELECT length('a\\\\b')").await?;
+    let escapes = rows.first().map(cell_i32) == Some(3);
+    ESCAPE_BACKSLASH.store(escapes, Ordering::Relaxed);
+    Ok(escapes)
 }
 
 pub fn cell_str(row: &Row, idx: usize) -> String {
@@ -767,4 +788,24 @@ pub fn cell_i32_at(row: &Row, idx: usize) -> i32 {
 
 pub fn now_stamp() -> String {
     chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn lit_doubles_quotes() {
+        assert_eq!(lit_with("it's", false), "'it''s'");
+        assert_eq!(lit_with("plain", false), "'plain'");
+    }
+
+    #[test]
+    fn lit_escapes_backslash_only_in_escape_mode() {
+        // Буквален режим (`standard_conforming_strings = on`): `\` е за себе си.
+        assert_eq!(lit_with("a\\b", false), "'a\\b'");
+        // Escape режим: `\'` не бива да затваря литерала.
+        assert_eq!(lit_with("a\\b", true), "'a\\\\b'");
+        assert_eq!(lit_with("\\'", true), "'\\\\'''");
+    }
 }

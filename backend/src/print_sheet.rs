@@ -45,6 +45,7 @@ pub fn safe_name(s: &str) -> String {
         .chars()
         .map(|c| match c {
             '"' | '/' | '\\' | ':' | '*' | '?' | '<' | '>' | '|' => '_',
+            c if c.is_control() => '_',
             c => c,
         })
         .collect();
@@ -112,10 +113,16 @@ pub fn doc_prefix(t: &str) -> &'static str {
 pub fn bg_date(raw: &str) -> String {
     let s = raw.trim();
     let b = s.as_bytes();
-    if s.len() >= 10 && b.get(4) == Some(&b'-') && b.get(7) == Some(&b'-') {
+    // Първите 10 байта да са ASCII — иначе срезовете по-долу не са на граница
+    // на знак и паникват.
+    if b.len() >= 10
+        && b[..10].iter().all(u8::is_ascii)
+        && b.get(4) == Some(&b'-')
+        && b.get(7) == Some(&b'-')
+    {
         return format!("{}.{}.{}", &s[8..10], &s[5..7], &s[0..4]);
     }
-    if s.len() >= 8 && s.as_bytes().iter().take(8).all(u8::is_ascii_digit) {
+    if b.len() >= 8 && b[..8].iter().all(u8::is_ascii_digit) {
         return format!("{}.{}.{}", &s[6..8], &s[4..6], &s[0..4]);
     }
     s.to_string()
