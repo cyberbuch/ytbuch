@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="bg">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ytbuch — счетоводна програма с отворен код</title>
+  <meta name="description" content="ytbuch е счетоводна програма с отворен код (BSD-3-Clause): фактури, ДДС дневници, SAF-T към НАП, склад, банки и отчети. Rust, YottaDB и Next.js в три Docker контейнера — данните остават при теб.">
+  <meta property="og:title" content="ytbuch — счетоводна програма с отворен код">
+  <meta property="og:description" content="Фактури, ДДС дневници, SAF-T към НАП, склад, банки и отчети. BSD-3-Clause.">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://ytbuch.cfd/">
+  <link rel="canonical" href="https://ytbuch.cfd/">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%231d4ed8'/%3E%3Ctext x='32' y='43' font-family='Segoe UI,Arial' font-size='28' font-weight='700' fill='white' text-anchor='middle'%3Eyt%3C/text%3E%3C/svg%3E">
+  <link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+  <header class="site-header">
+    <div class="wrap header-row">
+      <a class="brand" href="#top">
+        <span class="brand-mark">yt</span>
+        <span class="brand-name">ytbuch</span>
+      </a>
+      <nav class="nav" aria-label="Основна навигация">
+        <a href="#features">Възможности</a>
+        <a href="#stack">Стек</a>
+        <a href="#start">Стартиране</a>
+        <a href="#license">Лиценз</a>
+        <a class="nav-cta" href="https://github.com/cyberbuch/ytbuch" target="_blank" rel="noopener">GitHub ↗</a>
+      </nav>
+    </div>
+  </header>
+
+  <main id="top">
+    <section class="hero">
+      <div class="wrap hero-inner">
+        <p class="eyebrow">Серия Baraba · модел ytbuch</p>
+        <h1>Счетоводна програма<br>с отворен код</h1>
+        <p class="lead">
+          Фактури, ДДС дневници, SAF-T към НАП, склад, банки и отчети —
+          всичко за дневното счетоводство. Работи на твоята машина:
+          данните остават при теб, а кодът е отворен.
+        </p>
+        <div class="hero-actions">
+          <a class="btn btn-primary" href="#start">Стартирай с Docker</a>
+          <a class="btn btn-ghost" href="https://github.com/cyberbuch/ytbuch" target="_blank" rel="noopener">Виж кода в GitHub</a>
+        </div>
+        <ul class="badges" aria-label="Технологии и лиценз">
+          <li>BSD-3-Clause</li>
+          <li>Rust + Axum</li>
+          <li>YottaDB + Octo</li>
+          <li>Next.js</li>
+          <li>Docker Compose</li>
+        </ul>
+      </div>
+    </section>
+
+    <section class="section" id="features">
+      <div class="wrap">
+        <h2>Какво може ytbuch</h2>
+        <p class="section-lead">
+          Функционалностите следват българските изисквания — ДДС, НАП, SAF-T,
+          черно сторно, базова валута евро.
+        </p>
+        <div class="grid">
+          <article class="card">
+            <h3>Фактури</h3>
+            <p>Чернова и пост, следващ номер, черно сторно, печат в PDF, DOCX,
+              ODT и UBL. Входящи фактури и протоколи по чл. 117 ЗДДС.</p>
+          </article>
+          <article class="card">
+            <h3>ДДС дневници и НАП</h3>
+            <p>Дневници за покупки и продажби, файл за НАП, периоди и начални
+              салда. Затвореният месец спира поста на документи.</p>
+          </article>
+          <article class="card">
+            <h3>SAF-T експорт</h3>
+            <p>XML по схема V1.0.1 за месец, година или при поискване —
+              с номенклатурите на НАП: сметки, мерни единици, данъчни кодове, КН8.</p>
+          </article>
+          <article class="card">
+            <h3>Сметкоплан</h3>
+            <p>Готов сметкоплан от каталога на НАП. Seed-ът добавя липсващите
+              сметки и не дублира номера.</p>
+          </article>
+          <article class="card">
+            <h3>Контрагенти и стоки</h3>
+            <p>Без дубликати по ЕИК и ДДС номер, VIES проверка, разбиване на
+              адреси, КН8 класификация и автоматично изписване при покупка.</p>
+          </article>
+          <article class="card">
+            <h3>Банки</h3>
+            <p>CSV, MT940 и XML — Postbank, UniCredit, OBB и camt.053.
+              Операциите се свързват със счетоводните записи.</p>
+          </article>
+          <article class="card">
+            <h3>Склад и производство</h3>
+            <p>Движение по обекти, месечно изписване, ръчни материали, рецепти
+              и производствени заповеди. ДМА и дивиденти.</p>
+          </article>
+          <article class="card">
+            <h3>Фирми, потребители, роли</h3>
+            <p>Многофирмена изолация по фирма, роли с права по модул и одитна
+              следа с потребител и час за документите и статиите.</p>
+          </article>
+          <article class="card">
+            <h3>Сигурност</h3>
+            <p>argon2id, 2FA с QR и резервни кодове, анулиране на сесиите при
+              смяна на парола, заключване при грешни входове, бекъп към S3.</p>
+          </article>
+          <article class="card">
+            <h3>Сканиране на фактури</h3>
+            <p>Снимка или PDF се превръща в чернова чрез AI (Mistral). UBL вход
+              и запомняне на имена на стоки.</p>
+          </article>
+          <article class="card">
+            <h3>Справки и отчети</h3>
+            <p>Табло, дневник, счетоводни справки и финансови отчети (СС 1),
+              износ в Excel, ODS и PDF.</p>
+          </article>
+          <article class="card">
+            <h3>Курсове и проверки</h3>
+            <p>Курсове на ЕЦБ, VIES проверка на ДДС номер, SMTP известия
+              и съпоставяне на SAF-T движения.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="section section-soft" id="stack">
+      <div class="wrap">
+        <h2>Стек и разполагане</h2>
+        <p class="section-lead">
+          Три контейнера с Docker Compose, автоматичен рестарт, без външни
+          услуги и без облак по подразбиране.
+        </p>
+        <div class="grid grid-4">
+          <article class="card card-plain">
+            <h3>Backend</h3>
+            <p>Rust и Axum 0.8, JWT HS256, REST API на един порт.</p>
+          </article>
+          <article class="card card-plain">
+            <h3>База данни</h3>
+            <p>YottaDB с SQL през Octo. Данните са в локален volume.</p>
+          </article>
+          <article class="card card-plain">
+            <h3>Интерфейс</h3>
+            <p>Next.js 16 (App Router) — български и английски език.</p>
+          </article>
+          <article class="card card-plain">
+            <h3>Разполагане</h3>
+            <p>Docker Compose: yottadb, backend и frontend. Готово за минута.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="section section-dark" id="start">
+      <div class="wrap start-inner">
+        <h2>Стартиране</h2>
+        <p class="section-lead">
+          Достатъчен е Docker с Compose. От корена на проекта:
+        </p>
+        <pre class="code"><code>git clone https://github.com/cyberbuch/ytbuch.git
+cd ytbuch
+docker compose -f deploy/docker-compose.yml up -d --build</code></pre>
+        <p class="start-note">
+          Отвори <a href="http://127.0.0.1:3020">http://127.0.0.1:3020</a>.
+          Потребителят е <strong>superadmin</strong>, а паролата се генерира при
+          първия старт и е в лога (<code>docker logs ytbuch-backend</code>).
+          Смени я веднага от Профил.
+        </p>
+        <p class="start-note">
+          Пълната документация е в
+          <a href="https://github.com/cyberbuch/ytbuch/tree/main/docs" target="_blank" rel="noopener">docs/</a>
+          и <a href="https://github.com/cyberbuch/ytbuch/tree/main/user-docs" target="_blank" rel="noopener">user-docs/</a>
+          в хранилището.
+        </p>
+      </div>
+    </section>
+
+    <section class="section" id="license">
+      <div class="wrap license-inner">
+        <div>
+          <h2>Свободен лиценз</h2>
+          <p class="section-lead">
+            ytbuch е с отворен код под <strong>BSD-3-Clause</strong> — ползвай го,
+            променяй го и го разпространявай свободно, включително в търговски
+            продукти. Серия Baraba, модел ytbuch.
+          </p>
+        </div>
+        <div class="license-links">
+          <a class="btn btn-primary" href="https://github.com/cyberbuch/ytbuch/blob/main/LICENSE" target="_blank" rel="noopener">Текст на лиценза</a>
+          <a class="btn btn-ghost" href="https://github.com/cyberbuch/ytbuch" target="_blank" rel="noopener">Хранилището</a>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="wrap footer-row">
+      <p>© 2026 Baraba · Серия Baraba, модел ytbuch · BSD-3-Clause</p>
+      <p><a href="https://github.com/cyberbuch/ytbuch" target="_blank" rel="noopener">github.com/cyberbuch/ytbuch</a></p>
+    </div>
+  </footer>
+</body>
+</html>

@@ -2,6 +2,7 @@
 
 **Серия Baraba · модел ytbuch** — счетоводна програма с отворен код:
 Rust и Axum, YottaDB с Octo и Next.js интерфейс.
+**Сайт:** https://ytbuch.cfd
 
 **Документация (текущо състояние на кода):** [`docs/`](docs/README.md) —
 [архитектура](docs/architecture.md) (модули и потоци), API, данни, SAF-T номенклатури и какво още липсва.
