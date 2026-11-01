@@ -52,7 +52,7 @@
             <p class="t-line out">ytbuch — счетоводна програма с отворен код</p>
             <p class="t-line cmd">$ cat /etc/motd</p>
             <p class="t-line out">&gt; фактури · ДДС дневници · SAF-T към НАП</p>
-            <p class="t-line out">&gt; склад · банки · отчети · многофирменост</p>
+            <p class="t-line out">&gt; склад · банки · отчети · UBL/Peppol</p>
             <p class="t-line out">&gt; базова валута: EUR · черно сторно · 2FA</p>
             <p class="t-line out ok">[OK] лиценз: BSD-3-Clause · данните са при теб</p>
             <p class="t-line cmd">$ <span class="cursor">█</span></p>
@@ -79,6 +79,13 @@
             <h3>&gt; фактури <span class="ok">[OK]</span></h3>
             <p>Чернова и пост, следващ номер, черно сторно. Печат PDF, DOCX,
               ODT и UBL. Входящи фактури и протоколи по чл. 117 ЗДДС.</p>
+          </article>
+          <article class="card">
+            <h3>&gt; ubl_peppol <span class="ok">[OK]</span></h3>
+            <p>Е-фактури по стандарта на ЕС: UBL 2.1 XML по EN 16931 /
+              Peppol BIS Billing 3.0. Експорт от фактура, импорт към чернова
+              през Сканиране; кредитните са CreditNote. Форматът на ViDA
+              (VAT in the Digital Age).</p>
           </article>
           <article class="card">
             <h3>&gt; ддс_и_нап <span class="ok">[OK]</span></h3>
@@ -122,8 +129,8 @@
           </article>
           <article class="card">
             <h3>&gt; сканиране <span class="ok">[OK]</span></h3>
-            <p>Снимка или PDF става чернова чрез AI (Mistral). UBL вход и
-              запомняне на имена на стоки.</p>
+            <p>Снимка, PDF или UBL XML (Peppol) стават чернова — снимките и
+              PDF чрез AI (Mistral). Запомняне на имена на стоки.</p>
           </article>
           <article class="card">
             <h3>&gt; отчети <span class="ok">[OK]</span></h3>
