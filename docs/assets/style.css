@@ -311,6 +311,25 @@ p { margin: 0 0 1em; }
 
 .note { color: var(--muted); margin-top: 18px; }
 
+.share-card {
+  margin: 0;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--panel);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45), var(--shadow-glow);
+}
+
+.share-card img { display: block; width: 100%; height: auto; }
+
+.share-card figcaption {
+  padding: 10px 14px;
+  border-top: 1px solid var(--line-soft);
+  background: var(--panel-bar);
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
 .license-actions { justify-content: flex-start; margin-bottom: 0; }
 
 /* Копиране на командите */
