@@ -514,6 +514,7 @@ export const enB = {
   "fa.events": "History",
   "journal.new_entry": "New entry",
   "journal.edit_entry": "Edit entry",
+  "journal.pick_account": "Pick an account",
   "journal.lines": "Lines",
   "journal.loading_entry": "Loading entry…",
   "journal.doc.manual": "Manual",

@@ -105,6 +105,11 @@ function toDateInput(raw: string | undefined): string {
   return s.slice(0, 10);
 }
 
+function accountLabel(accounts: Account[], id: string): string {
+  const a = accounts.find((x) => String(x.id) === id);
+  return a ? `${a.number} ${a.name}` : "";
+}
+
 function toMonthInput(raw: string | undefined): string {
   if (!raw) return "";
   const s = String(raw).trim();
@@ -144,6 +149,9 @@ function JournalInner() {
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState("");
   const [activeEntryMeta, setActiveEntryMeta] = useState<JournalEntry | null>(null);
+  // модалът за избор на сметка е отворен за този индекс ред
+  const [accountModalFor, setAccountModalFor] = useState<number | null>(null);
+  const [accountQuery, setAccountQuery] = useState("");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -258,6 +266,12 @@ function JournalInner() {
     .filter((l) => l.direction === "credit")
     .reduce((acc, l) => acc + (parseFloat(l.amount) || 0), 0);
   const balanced = Math.abs(debitSum - creditSum) < 0.0001;
+
+  const filteredAccounts = useMemo(() => {
+    const s = accountQuery.trim().toLowerCase();
+    if (!s) return accounts;
+    return accounts.filter((a) => `${a.number} ${a.name}`.toLowerCase().includes(s));
+  }, [accounts, accountQuery]);
 
   const filteredEntries = useMemo(() => {
     const s = q.trim().toLowerCase();
@@ -660,22 +674,15 @@ function JournalInner() {
                 </div>
                 {lines.map((l, i) => (
                   <div key={i} className="journal-line-row">
-                    <select
-                      className="select"
-                      value={l.accountId}
-                      onChange={(e) => setLine(i, "accountId", e.target.value)}
-                      required
+                    <button
+                      type="button"
+                      className={`btn picker-trigger${l.accountId ? "" : " picker-empty"}`}
+                      onClick={() => setAccountModalFor(i)}
                       disabled={loadingEntry || readOnly}
                     >
-                      <option value="" disabled>
-                        {t("journal.account")}…
-                      </option>
-                      {accounts.map((a) => (
-                        <option key={a.id} value={a.id}>
-                          {a.number} {a.name}
-                        </option>
-                      ))}
-                    </select>
+                      {accountLabel(accounts, l.accountId) ||
+                        (l.accountId ? l.accountId : `${t("journal.account")}…`)}
+                    </button>
                     <select
                       className="select"
                       value={l.direction}
@@ -765,6 +772,59 @@ function JournalInner() {
                 editCount={activeEntryMeta.edit_count}
               />
             )}
+          </div>
+        </div>
+      )}
+
+      {accountModalFor !== null && (
+        <div
+          className="modal-backdrop"
+          onClick={() => {
+            setAccountModalFor(null);
+            setAccountQuery("");
+          }}
+        >
+          <div className="card modal picker-modal" onClick={(e) => e.stopPropagation()}>
+            <h2 className="modal-title">{t("journal.pick_account")}</h2>
+            <input
+              className="input"
+              autoFocus
+              value={accountQuery}
+              onChange={(e) => setAccountQuery(e.target.value)}
+              placeholder={t("common.search")}
+            />
+            <div className="picker-list">
+              {filteredAccounts.map((a) => (
+                <button
+                  type="button"
+                  key={a.id}
+                  className="picker-item"
+                  onClick={() => {
+                    setLine(accountModalFor, "accountId", String(a.id));
+                    setAccountModalFor(null);
+                    setAccountQuery("");
+                  }}
+                >
+                  <b>{a.number}</b>
+                  <span className="muted">{a.name}</span>
+                </button>
+              ))}
+              {filteredAccounts.length === 0 && (
+                <div className="muted">{t("common.empty")}</div>
+              )}
+            </div>
+            <div className="form-actions" style={{ marginTop: 12 }}>
+              <button
+                type="button"
+                className="btn"
+                onClick={() => {
+                  setAccountModalFor(null);
+                  setAccountQuery("");
+                }}
+              >
+                {t("common.cancel")}
+              </button>
+            </div>
           </div>
         </div>
       )}

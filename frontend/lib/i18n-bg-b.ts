@@ -515,6 +515,7 @@ export const bgB = {
   "fa.events": "История",
   "journal.new_entry": "Нов запис",
   "journal.edit_entry": "Редакция на запис",
+  "journal.pick_account": "Избери сметка",
   "journal.lines": "Редове",
   "journal.loading_entry": "Зареждане на записа…",
   "journal.doc.manual": "Ръчен",
