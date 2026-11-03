@@ -6,6 +6,7 @@ Rust и Axum, YottaDB с Octo и Next.js интерфейс.
 
 **Документация (текущо състояние на кода):** [`docs/`](docs/README.md) —
 [архитектура](docs/architecture.md) (модули и потоци), API, данни, SAF-T номенклатури и какво още липсва.
+Промените по версии са в [`CHANGELOG.md`](CHANGELOG.md) и на сайта [ytbuch.cfd/changelog.html](https://ytbuch.cfd/changelog.html).
 `PLAN.md` е пътната карта. `start-ytbuch.md` е първоначалната бележка.
 
 Базовата валута е **евро (EUR)**. Черното сторно остава правилото: отрицателен

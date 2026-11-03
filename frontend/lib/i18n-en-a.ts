@@ -130,6 +130,7 @@ export const enA = {
   "settings.tab.series": "Numbering",
   "settings.tab.fs": "Financial statements",
   "settings.tab.stock": "Warehouse",
+  "settings.tab.closing": "Closing",
   "settings.tab.users": "Users",
   "settings.users.title": "Company users",
   "settings.users.hint": "Name and password are required only for a new account (password at least 8 characters). For an existing user only email and role are needed.",

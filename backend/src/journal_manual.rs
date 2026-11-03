@@ -435,8 +435,8 @@ async fn delete_one(st: &AppState, sub: &str, id: i32, company: i32) -> Result<(
         return Err(api_err(StatusCode::NOT_FOUND, "записът не е намерен"));
     };
     let doc_type = cell_str(row, 0);
-    if !is_manual(&doc_type) {
-        return Err(api_err(StatusCode::FORBIDDEN, "само ръчни записи могат да се изтриват"));
+    if !is_manual(&doc_type) && doc_type != crate::closing::CLOSING_TYPE {
+        return Err(api_err(StatusCode::FORBIDDEN, "само ръчни и приключвателни записи могат да се изтриват"));
     }
     let entry_date = cell_str(row, 1);
     let doc_no = cell_str(row, 2);

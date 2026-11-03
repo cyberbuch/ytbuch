@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="bg">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ytbuch — changelog · промени по версия</title>
+  <meta name="description" content="Changelog на ytbuch: какво е добавено, променено и оправено във всяка версия. Пълната история е в git log на github.com/cyberbuch/ytbuch.">
+  <meta name="theme-color" content="#070b10">
+  <meta property="og:title" content="ytbuch — changelog">
+  <meta property="og:description" content="Какво ново има във всяка версия на ytbuch.">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://ytbuch.cfd/changelog.html">
+  <meta property="og:site_name" content="ytbuch">
+  <meta property="og:locale" content="bg_BG">
+  <meta property="og:image" content="https://ytbuch.cfd/assets/og.png">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="ytbuch — changelog">
+  <meta name="twitter:description" content="Какво ново има във всяка версия на ytbuch.">
+  <meta name="twitter:image" content="https://ytbuch.cfd/assets/og.png">
+  <link rel="canonical" href="https://ytbuch.cfd/changelog.html">
+  <link rel="icon" type="image/svg+xml" href="assets/favicon.svg">
+  <link rel="icon" type="image/x-icon" href="favicon.ico">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png">
+  <link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+  <header class="site-header">
+    <div class="wrap header-row">
+      <a class="brand" href="index.html"><span class="prompt">&gt;_</span> ytbuch</a>
+      <nav class="nav" aria-label="Основна навигация">
+        <a href="index.html#modules">/modules</a>
+        <a href="index.html#stack">/stack</a>
+        <a href="index.html#deploy">/deploy</a>
+        <a href="changelog.html">/changelog</a>
+        <a class="nav-cta" href="https://github.com/cyberbuch/ytbuch" target="_blank" rel="noopener">GitHub ↗</a>
+      </nav>
+    </div>
+  </header>
+
+  <main id="top">
+    <section class="section">
+      <div class="wrap">
+        <p class="comment">// changelog · формат Keep a Changelog · пълната история в git log</p>
+        <h1><span class="prompt">$</span> git log --oneline</h1>
+        <p class="section-lead">
+          Всички значими промени по версии. Изходният файл е
+          <a href="https://github.com/cyberbuch/ytbuch/blob/main/CHANGELOG.md" target="_blank" rel="noopener">CHANGELOG.md</a>
+          в хранилището.
+        </p>
+
+        <div class="term" style="margin-bottom: 28px">
+          <div class="term-bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="term-title">CHANGELOG.md</span></div>
+          <div class="term-body">
+            <p class="cmd">&gt; cat CHANGELOG.md</p>
+            <p class="out"><strong>## [Нерелизнато] — 2026-11-03</strong></p>
+            <p class="out ok">### Добавено</p>
+            <p class="out">- Приключвателни операции в края на месеца: карта <code>closing_map</code> в настройките
+              на фирмата (префикс → целева сметка; най-дългият префикс печели, напр. <code>602 → 612</code>,
+              по подразбиране <code>60 → 611</code>).</p>
+            <p class="out">- API: <code>GET /v1/closing-operations/preview</code> и <code>POST /v1/closing-operations/run</code> —
+              балансирана статия <code>CLOSE-YYYY-MM</code> на последния ден на месеца; 409 при повторение.</p>
+            <p class="out">- UI: таб „Приключване“ в настройките и бутон „Приключи“ на отворен месец в „Счетоводни периоди“.</p>
+            <p class="out ok">### Променено</p>
+            <p class="out">- Приключвателните записи могат да се трият от дневника (приключване отново след корекция).</p>
+            <p class="out">- Документация и контейнерите са rebuild-нати с новите endpoint-и.</p>
+            <p class="out">&nbsp;</p>
+            <p class="out"><strong>## [0.1.0] — 2026-10</strong> — първа публична версия:</p>
+            <p class="out">вход с JWT и TOTP 2FA, многофирменост с роли, сметкоплан от НАП, фактури с UBL 2.1,
+              ДДС дневници и SAF-T XML, ръчен дневник с одитна следа, банки, ДМА, склад, производство,
+              справки (оборотна ведомост, главна книга, баланс, ОПР), три Docker контейнера и сайт на Pages.</p>
+          </div>
+        </div>
+
+        <div class="hero-actions">
+          <a class="btn btn-primary" href="index.html">[ ./index ]</a>
+          <a class="btn btn-ghost" href="https://github.com/cyberbuch/ytbuch/blob/main/CHANGELOG.md" target="_blank" rel="noopener">[ cat CHANGELOG.md ↗ ]</a>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="wrap footer-row">
+      <p>© 2026 Baraba · Серия Baraba, модел ytbuch · BSD-3-Clause</p>
+      <p><a href="https://github.com/cyberbuch/ytbuch" target="_blank" rel="noopener">github.com/cyberbuch/ytbuch</a> <span class="prompt">[EOF]</span></p>
+    </div>
+  </footer>
+</body>
+</html>

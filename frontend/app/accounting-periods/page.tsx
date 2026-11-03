@@ -14,6 +14,28 @@ interface Period {
   notes?: string;
 }
 
+interface ClosingLine {
+  source_number: string;
+  source_name: string;
+  target_number: string;
+  target_name: string;
+  balance: string;
+}
+
+interface ClosingPreview {
+  year: number;
+  month: number;
+  entry_date: string;
+  period: string;
+  document_number: string;
+  lines: ClosingLine[];
+  total: string;
+  count: number;
+  already_done: boolean;
+  existing_document_number?: string;
+  entry_id?: number;
+}
+
 function todayIso(): string {
   return new Date().toISOString().slice(0, 10);
 }
@@ -27,6 +49,10 @@ function PeriodsInner() {
   const [busy, setBusy] = useState(0);
   const [closeMonth, setCloseMonth] = useState(0);
   const [notes, setNotes] = useState("");
+  const [closingMonth, setClosingMonth] = useState(0);
+  const [preview, setPreview] = useState<ClosingPreview | null>(null);
+  const [closingBusy, setClosingBusy] = useState(false);
+  const [closingMsg, setClosingMsg] = useState("");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -47,6 +73,49 @@ function PeriodsInner() {
 
   const closed = items.filter((p) => p.status === "closed").length;
   const open = 12 - closed;
+
+  const loadClosing = async (month: number) => {
+    setClosingBusy(true);
+    setError("");
+    setClosingMsg("");
+    setPreview(null);
+    try {
+      const data = await api.get<ClosingPreview>(
+        `/v1/closing-operations/preview?year=${year}&month=${month}`
+      );
+      setPreview(data);
+      setClosingMonth(month);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+      setClosingMonth(0);
+    } finally {
+      setClosingBusy(false);
+    }
+  };
+
+  const runClosing = async () => {
+    if (!preview) return;
+    setClosingBusy(true);
+    setError("");
+    setClosingMsg("");
+    try {
+      const data = await api.post<ClosingPreview>("/v1/closing-operations/run", {
+        year: preview.year,
+        month: preview.month,
+      });
+      setClosingMsg(
+        `${t("closing.done")}: ${data.document_number} (№${data.entry_id}), ${t("closing.total")} ${data.total}`
+      );
+      await loadClosing(preview.month);
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+      setClosingMonth(0);
+      setPreview(null);
+    } finally {
+      setClosingBusy(false);
+    }
+  };
 
   const act = async (path: string, month: number, extra?: Record<string, string>) => {
     setBusy(month);
@@ -128,22 +197,111 @@ function PeriodsInner() {
                       {t("per.reopen")}
                     </button>
                   ) : (
-                    <button
-                      className="btn btn-danger"
-                      type="button"
-                      disabled={busy === p.month}
-                      onClick={() => {
-                        setCloseMonth(p.month);
-                        setNotes("");
-                      }}
-                    >
-                      {t("per.close")}
-                    </button>
+                    <>
+                      <button
+                        className="btn"
+                        type="button"
+                        disabled={closingBusy}
+                        onClick={() => loadClosing(p.month)}
+                      >
+                        {t("closing.run")}
+                      </button>
+                      <button
+                        className="btn btn-danger"
+                        type="button"
+                        disabled={busy === p.month}
+                        onClick={() => {
+                          setCloseMonth(p.month);
+                          setNotes("");
+                        }}
+                      >
+                        {t("per.close")}
+                      </button>
+                    </>
                   )}
                 </div>
               </div>
             );
           })}
+        </div>
+      )}
+      {closingMsg && (
+        <div className="flash-ok" style={{ marginTop: 16 }}>
+          {closingMsg}
+          <button className="btn-ghost btn-sm" onClick={() => setClosingMsg("")} type="button">
+            ×
+          </button>
+        </div>
+      )}
+      {closingMonth > 0 && preview && (
+        <div className="card card-pad" style={{ marginTop: 16 }}>
+          <h3 className="section-title">
+            {t("closing.run_title")}: {t(`per.m${closingMonth}`)} {year} ({preview.entry_date})
+          </h3>
+          <p className="muted" style={{ fontSize: 12 }}>
+            {preview.document_number}
+            {preview.already_done
+              ? ` — ${t("closing.already")} (${preview.existing_document_number ?? ""})`
+              : ""}
+          </p>
+          {preview.lines.length === 0 ? (
+            <p className="muted">{t("closing.no_lines")}</p>
+          ) : (
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>{t("closing.from")}</th>
+                  <th>{t("closing.balance")}</th>
+                  <th>{t("closing.to")}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {preview.lines.map((l, i) => (
+                  <tr key={i}>
+                    <td>
+                      {l.source_number} {l.source_name}
+                    </td>
+                    <td>{l.balance}</td>
+                    <td>
+                      {l.target_number} {l.target_name}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr>
+                  <td colSpan={2}>
+                    <strong>{t("closing.total")}</strong> ({preview.count})
+                  </td>
+                  <td>
+                    <strong>{preview.total}</strong>
+                  </td>
+                </tr>
+              </tfoot>
+            </table>
+          )}
+          <div className="form-actions">
+            <button
+              className="btn"
+              type="button"
+              onClick={() => {
+                setClosingMonth(0);
+                setPreview(null);
+              }}
+            >
+              {t("common.cancel")}
+            </button>
+            {!preview.already_done && preview.lines.length > 0 && (
+              <button
+                className="btn btn-primary"
+                type="button"
+                disabled={closingBusy}
+                onClick={runClosing}
+              >
+                {t("closing.execute")}
+              </button>
+            )}
+          </div>
         </div>
       )}
       {closeMonth > 0 && (

@@ -20,6 +20,11 @@
 - [x] **Ръчен запис в дневника** — `POST /v1/journal`, `PATCH /v1/journal/{id}`,
   `DELETE /v1/journal/{id}` в `backend/src/journal_manual.rs`. Само `document_type='manual'`
   записи могат да се редактират/изтриват. Валидация: балансиран Дт=Кт, отворен период.
+- [x] **Приключвателни операции** — `backend/src/closing.rs`: карта `closing_map` в настройките
+  на фирмата (префикс → целева сметка, най-дългият префикс печели; по подразбиране 60→611).
+  `GET /v1/closing-operations/preview`, `POST /v1/closing-operations/run` — балансирана статия
+  `closing` / `CLOSE-YYYY-MM` на последния ден на месеца, 409 при повторение, изтриване от дневника.
+  UI: таб «Приключване» в настройките и бутон «Приключи» на всеки отворен месец.
 - [x] **Frontend тестове (Vitest)** — Vitest + Testing Library + jsdom инсталирани.
   `vitest.config.ts`, `vitest.setup.ts`, `npm test` скрипт. Тестове за `escapeHtml()`
   и `Pagination` компонента (12 теста минават).

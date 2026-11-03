@@ -15,6 +15,7 @@ mod auth_flow;
 mod bank_csv;
 mod bank_tx;
 mod banks;
+mod closing;
 mod cn8;
 mod db_check;
 mod companies;
@@ -370,6 +371,8 @@ async fn main() {
         .route("/v1/accounting-periods", get(periods::index))
         .route("/v1/accounting-periods/close", post(periods::close))
         .route("/v1/accounting-periods/reopen", post(periods::reopen))
+        .route("/v1/closing-operations/preview", get(closing::preview))
+        .route("/v1/closing-operations/run", post(closing::run))
         .route(
             "/v1/opening-balances",
             get(opening::index).post(opening::create),

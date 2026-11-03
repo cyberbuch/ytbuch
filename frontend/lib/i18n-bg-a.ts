@@ -135,6 +135,7 @@ export const bgA = {
   "settings.tab.series": "Номерация",
   "settings.tab.fs": "Финансови отчети",
   "settings.tab.stock": "Склад",
+  "settings.tab.closing": "Приключване",
   "settings.tab.users": "Потребители",
   "settings.users.title": "Потребители на фирмата",
   "settings.users.hint": "Име и парола са задължителни само за нов акаунт (парола минимум 8 знака). За съществуващ потребител са нужни само имейл и роля.",
