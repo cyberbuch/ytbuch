@@ -28,7 +28,7 @@ jobs:
       - name: Сглобяване на сайта
         run: |
           mkdir -p _site/assets
-          cp docs/index.html docs/CNAME docs/favicon.ico docs/apple-touch-icon.png _site/
+          cp docs/*.html docs/CNAME docs/favicon.ico docs/apple-touch-icon.png _site/
           cp docs/assets/* _site/assets/
       - uses: actions/upload-pages-artifact@v3
         with:
