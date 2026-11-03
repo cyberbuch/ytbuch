@@ -5,6 +5,7 @@
 // в края на месеца (напр. 60 -> 611, 602 -> 612).
 
 import { FormEvent, useCallback, useEffect, useState } from "react";
+import { AccountPicker } from "./AccountPicker";
 import { useI18n } from "./I18nProvider";
 import {
   ACTIVE_COMPANY_EVENT,
@@ -148,8 +149,6 @@ export function SettingsClosingTab() {
   if (loading) return <div className="muted">{t("common.loading")}</div>;
   if (companyId <= 0) return <div className="muted">{t("settings.no_company")}</div>;
 
-  const sourceListId = "closing-sources";
-
   return (
     <div className="card card-pad" style={{ maxWidth: 880 }}>
       <h2 style={{ marginTop: 0 }}>{t("closing.title")}</h2>
@@ -172,27 +171,20 @@ export function SettingsClosingTab() {
               {rows.map((r, i) => (
                 <tr key={i}>
                   <td>
-                    <input
-                      className="input"
-                      list={sourceListId}
-                      placeholder={t("closing.source_ph")}
+                    <AccountPicker
                       value={r.source}
-                      onChange={(e) => setRow(i, { source: e.target.value })}
+                      accounts={accounts}
+                      onChange={(v) => setRow(i, { source: v })}
+                      placeholder={t("closing.source_ph")}
                     />
                   </td>
                   <td>
-                    <select
-                      className="select"
+                    <AccountPicker
                       value={r.target}
-                      onChange={(e) => setRow(i, { target: e.target.value })}
-                    >
-                      <option value="">{t("closing.pick_target")}</option>
-                      {accounts.map((a) => (
-                        <option key={a.id} value={a.number}>
-                          {a.number} {a.name}
-                        </option>
-                      ))}
-                    </select>
+                      accounts={accounts}
+                      onChange={(v) => setRow(i, { target: v })}
+                      placeholder={t("closing.search_ph")}
+                    />
                   </td>
                   <td>
                     <button type="button" className="btn" onClick={() => removeRow(i)}>
@@ -204,13 +196,6 @@ export function SettingsClosingTab() {
             </tbody>
           </table>
         )}
-        <datalist id={sourceListId}>
-          {accounts.map((a) => (
-            <option key={a.id} value={a.number}>
-              {a.name}
-            </option>
-          ))}
-        </datalist>
         <div className="form-actions">
           <button type="button" className="btn" onClick={addRow}>
             {t("closing.add")}

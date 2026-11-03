@@ -81,7 +81,7 @@ export const bgB = {
   "closing.source": "Сметка / подсметка (префикс)",
   "closing.target": "Приключва се към",
   "closing.source_ph": "напр. 60 или 60201",
-  "closing.pick_target": "Избери сметка…",
+  "closing.search_ph": "Търси по номер или име…",
   "closing.add": "Добави правило",
   "closing.empty": "Няма правила — по подразбиране 60 → 611.",
   "closing.saved": "Картата за приключване е запазена",

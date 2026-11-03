@@ -73,7 +73,7 @@ export const enB = {
   "closing.source": "Account / sub-account (prefix)",
   "closing.target": "Closes to",
   "closing.source_ph": "e.g. 60 or 60201",
-  "closing.pick_target": "Pick an account…",
+  "closing.search_ph": "Search by number or name…",
   "closing.add": "Add rule",
   "closing.empty": "No rules — by default 60 → 611.",
   "closing.saved": "Closing map saved",
