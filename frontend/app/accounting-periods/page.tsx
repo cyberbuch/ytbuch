@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { api, ListResponse } from "../../lib/api";
+import { api, ListResponse, ACTIVE_COMPANY_EVENT } from "../../lib/api";
 import { useI18n } from "../../components/I18nProvider";
 import { RequireAuth } from "../../components/RequireAuth";
 
@@ -69,6 +69,11 @@ function PeriodsInner() {
 
   useEffect(() => {
     load();
+    //  Periodите са за активната фирма — при смяна на фирмата от хедъра
+    //  списъкът се презарежда, за да не се показват периоди на друга фирма.
+    const onChange = () => load();
+    window.addEventListener(ACTIVE_COMPANY_EVENT, onChange);
+    return () => window.removeEventListener(ACTIVE_COMPANY_EVENT, onChange);
   }, [load]);
 
   const closed = items.filter((p) => p.status === "closed").length;
