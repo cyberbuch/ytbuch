@@ -395,6 +395,7 @@ async fn main() {
         .route("/v1/bank-transactions", get(bank_tx::index))
         .route("/v1/bank-transactions/preview", post(bank_tx::preview))
         .route("/v1/bank-transactions/import", post(bank_tx::import))
+        .route("/v1/bank-transactions/bulk/delete", post(bank_tx::bulk_delete))
         .route("/v1/bank-transactions/{id}/book", post(bank_tx::book))
         .route("/v1/bank-transactions/{id}/reallocate", post(bank_tx::reallocate))
         .route("/v1/bank-transactions/{id}", delete(bank_tx::delete))

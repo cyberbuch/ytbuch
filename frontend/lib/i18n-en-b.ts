@@ -44,6 +44,13 @@ export const enB = {
   "brules.preview_hint": "Will allocate",
   "brules.apply": "Post",
   "bank_tx.tab_tx": "Transactions",
+  "bank_tx.date_from": "From date",
+  "bank_tx.date_to": "To date",
+  "bank_tx.process": "Process by rules",
+  "bank_tx.bulk_delete": "Delete selected",
+  "bank_tx.bulk_confirm": "Delete the selected bank transactions together with their journal entries?",
+  "bank_tx.bulk_deleted": "Deleted",
+  "bank_tx.bulk_failed": "failed",
   "journal.sign_hint":
     "Amounts may be negative (storno, credit note, advance settlement, correction). The sign is stored as entered. Debit and credit are not swapped.",
   "ob.title": "Opening balances",

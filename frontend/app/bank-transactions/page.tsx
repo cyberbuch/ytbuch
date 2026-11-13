@@ -21,6 +21,23 @@ import { BankTxModals } from "./BankTxModals";
 import { BankRulesPanel } from "./BankRulesPanel";
 import { Pagination } from "../../components/Pagination";
 
+interface ProcDetail {
+  id: number;
+  status: string;
+  rule?: string;
+  account?: string;
+  counterpart?: string;
+  amount?: string;
+  text?: string;
+  error?: string;
+}
+interface ProcResult {
+  matched: number;
+  unmatched: number;
+  errors: number;
+  details: ProcDetail[];
+}
+
 const PAGE_SIZE = 50;
 
 function BankTransactionsInner() {
@@ -33,6 +50,12 @@ function BankTransactionsInner() {
   const [filterStatus, setFilterStatus] = useState("");
   const [q, setQ] = useState("");
   const [tab, setTab] = useState<"tx" | "rules">("tx");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+  const [selected, setSelected] = useState<number[]>([]);
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const [procPreview, setProcPreview] = useState<ProcResult | null>(null);
+  const [procBusy, setProcBusy] = useState(false);
   const [offset, setOffset] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -103,19 +126,76 @@ function BankTransactionsInner() {
 
   const filteredRows = useMemo(() => {
     const s = q.trim().toLowerCase();
-    if (!s) return rows;
-    return rows.filter((tx) =>
-      [tx.description, tx.counterpart_name, tx.reference, tx.amount, tx.transaction_date]
+    return rows.filter((tx) => {
+      if (dateFrom && tx.transaction_date < dateFrom) return false;
+      if (dateTo && tx.transaction_date > dateTo) return false;
+      if (!s) return true;
+      return [tx.description, tx.counterpart_name, tx.reference, tx.amount, tx.transaction_date]
         .join(" ")
         .toLowerCase()
-        .includes(s)
-    );
-  }, [rows, q]);
+        .includes(s);
+    });
+  }, [rows, q, dateFrom, dateTo]);
 
   const pageCount = Math.max(1, Math.ceil(filteredRows.length / PAGE_SIZE));
   const page = Math.min(Math.floor(offset / PAGE_SIZE), pageCount - 1);
   const start = page * PAGE_SIZE;
   const pagedRows = filteredRows.slice(start, start + PAGE_SIZE);
+
+  const toggleSel = (id: number, on: boolean) =>
+    setSelected((p) => (on ? [...p, id] : p.filter((x) => x !== id)));
+  const allSelected = pagedRows.length > 0 && pagedRows.every((tx) => selected.includes(tx.id));
+  const toggleAll = (on: boolean) =>
+    setSelected((p) =>
+      on
+        ? Array.from(new Set([...p, ...pagedRows.map((tx) => tx.id)]))
+        : p.filter((id) => !pagedRows.some((tx) => tx.id === id))
+    );
+
+  const handleBulkDelete = async () => {
+    if (selected.length === 0) return;
+    if (!window.confirm(t("bank_tx.bulk_confirm"))) return;
+    setBulkBusy(true);
+    setError("");
+    try {
+      const r = await api.post<{ deleted: number; failed: number }>("/v1/bank-transactions/bulk/delete", { ids: selected });
+      setSuccess(`${t("bank_tx.bulk_deleted")}: ${r.deleted}, ${t("bank_tx.bulk_failed")}: ${r.failed}`);
+      setSelected([]);
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBulkBusy(false);
+    }
+  };
+
+  const openProcess = async () => {
+    setProcBusy(true);
+    setError("");
+    try {
+      const r = await api.post<ProcResult>("/v1/bank-transactions/auto-allocate/preview", {});
+      setProcPreview(r);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setProcBusy(false);
+    }
+  };
+
+  const applyProcess = async () => {
+    setProcBusy(true);
+    setError("");
+    try {
+      const r = await api.post<ProcResult>("/v1/bank-transactions/auto-allocate", {});
+      setProcPreview(null);
+      setSuccess(`${t("brules.matched")}: ${r.matched}, ${t("brules.unmatched")}: ${r.unmatched}, ${t("brules.errors")}: ${r.errors}`);
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setProcBusy(false);
+    }
+  };
 
   const handleFile = async (file: File) => {
     if (!selectedAccount) {
@@ -367,6 +447,20 @@ function BankTransactionsInner() {
           onChange={(e) => setQ(e.target.value)}
           placeholder={t("bank_tx.search_placeholder")}
         />
+        <div className="btn-row" style={{ marginTop: 8, flexWrap: "wrap", alignItems: "center" }}>
+          <label className="muted" style={{ fontSize: 13 }}>{t("bank_tx.date_from")}</label>
+          <input className="input" type="date" style={{ width: 160 }} value={dateFrom} onChange={(e) => { setDateFrom(e.target.value); setOffset(0); }} />
+          <label className="muted" style={{ fontSize: 13 }}>{t("bank_tx.date_to")}</label>
+          <input className="input" type="date" style={{ width: 160 }} value={dateTo} onChange={(e) => { setDateTo(e.target.value); setOffset(0); }} />
+          <button className="btn btn-sm" type="button" disabled={procBusy} onClick={() => void openProcess()}>
+            {t("bank_tx.process")}
+          </button>
+          {selected.length > 0 && (
+            <button className="btn btn-sm btn-danger" type="button" disabled={bulkBusy} onClick={() => void handleBulkDelete()}>
+              {t("bank_tx.bulk_delete")} ({selected.length})
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="card">
@@ -378,6 +472,9 @@ function BankTransactionsInner() {
           <table className="table">
             <thead>
               <tr>
+                <th style={{ width: 32 }}>
+                  <input type="checkbox" checked={allSelected} onChange={(e) => toggleAll(e.target.checked)} />
+                </th>
                 <th>{t("bank_tx.date")}</th>
                 <th>{t("bank_tx.description")}</th>
                 <th>{t("bank_tx.counterpart")}</th>
@@ -389,6 +486,9 @@ function BankTransactionsInner() {
             <tbody>
               {pagedRows.map((tx) => (
                 <tr key={tx.id}>
+                  <td>
+                    <input type="checkbox" checked={selected.includes(tx.id)} onChange={(e) => toggleSel(tx.id, e.target.checked)} />
+                  </td>
                   <td style={{ whiteSpace: "nowrap" }}>{tx.transaction_date}</td>
                   <td
                     style={{ maxWidth: 300, overflow: "hidden", textOverflow: "ellipsis" }}
@@ -454,6 +554,37 @@ function BankTransactionsInner() {
 
       {tab === "rules" && (
         <BankRulesPanel accounts={chartAccounts} onChanged={() => void load()} />
+      )}
+
+      {procPreview && (
+        <div className="modal-backdrop" onClick={() => setProcPreview(null)}>
+          <div className="card modal picker-modal" style={{ maxWidth: 720 }} onClick={(e) => e.stopPropagation()}>
+            <h2 className="modal-title">{t("bank_tx.process")}</h2>
+            <p className="muted" style={{ fontSize: 13 }}>
+              {t("brules.preview_hint")}: {procPreview.matched} · {procPreview.unmatched} {t("brules.unmatched")}
+            </p>
+            <div className="picker-list">
+              {procPreview.details.filter((d) => d.status === "matched").map((d) => (
+                <div key={d.id} className="picker-item">
+                  <b>#{d.id} · {d.rule}</b>
+                  <span className="muted">
+                    {d.account}
+                    {d.counterpart ? ` · ${d.counterpart}` : ""} · {d.amount}
+                  </span>
+                </div>
+              ))}
+              {procPreview.matched === 0 && <div className="muted">{t("brules.empty")}</div>}
+            </div>
+            <div className="form-actions">
+              <button className="btn btn-primary" type="button" disabled={procBusy || procPreview.matched === 0} onClick={() => void applyProcess()}>
+                {t("brules.apply")}
+              </button>
+              <button className="btn" type="button" onClick={() => setProcPreview(null)}>
+                {t("common.cancel")}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       <BankTxModals

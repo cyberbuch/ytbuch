@@ -45,6 +45,13 @@ export const bgB = {
   "brules.preview_hint": "Ще се разнесат",
   "brules.apply": "Осчетоводи",
   "bank_tx.tab_tx": "Транзакции",
+  "bank_tx.date_from": "От дата",
+  "bank_tx.date_to": "До дата",
+  "bank_tx.process": "Обработи по правила",
+  "bank_tx.bulk_delete": "Изтрий избраните",
+  "bank_tx.bulk_confirm": "Да изтрия ли избраните банкови транзакции заедно със счетоводните им статии?",
+  "bank_tx.bulk_deleted": "Изтрити",
+  "bank_tx.bulk_failed": "неуспешни",
   "journal.sign_hint":
     "Сумата може да е отрицателна (сторно, кредитно известие, аванс, корекция). Записва се със знака в базата. Дебит и кредит не се разменят.",
   "ob.title": "Начални салда",

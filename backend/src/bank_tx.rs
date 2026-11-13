@@ -382,8 +382,13 @@ pub async fn delete(
 ) -> Result<StatusCode, ApiError> {
     let sub = auth_sub(&st, &headers)?;
     let company = company(&st, &headers).await?;
+    delete_one(&st, company, &sub, id).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn delete_one(st: &AppState, company: i32, sub: &str, id: i32) -> Result<(), ApiError> {
     need(id)?;
-    let row = tx_row(&st, id, company).await?;
+    let row = tx_row(st, id, company).await?;
     let entry = cell_i32_at(&row, 12);
     let amt_raw = cell_str(&row, 3);
     let ref_no = cell_str(&row, 8);
@@ -393,7 +398,7 @@ pub async fn delete(
         crate::audit::record(
             &st.db,
             company,
-            &sub,
+            sub,
             "journal",
             entry,
             &ref_no,
@@ -407,7 +412,34 @@ pub async fn delete(
         .await;
     }
     invoice_read::exe(&st.db, &format!("DELETE FROM bank_transactions WHERE id = {id}")).await?;
-    Ok(StatusCode::NO_CONTENT)
+    Ok(())
+}
+
+/// Групово триене на банкови транзакции (заедно със статиите им) — за да може
+/// месецът да се изчисти и обработи наново.
+pub async fn bulk_delete(
+    State(st): State<AppState>,
+    headers: HeaderMap,
+    Json(body): Json<Value>,
+) -> Result<Json<Value>, ApiError> {
+    let sub = auth_sub(&st, &headers)?;
+    let company = company(&st, &headers).await?;
+    let obj = form::object(&body)?;
+    let ids: Vec<i32> = obj
+        .get("ids")
+        .and_then(|v| v.as_array())
+        .map(|a| a.iter().filter_map(|x| x.as_i64().map(|n| n as i32)).collect())
+        .unwrap_or_default();
+    let mut deleted = 0;
+    let mut failed = 0;
+    for id in ids {
+        if delete_one(&st, company, &sub, id).await.is_ok() {
+            deleted += 1;
+        } else {
+            failed += 1;
+        }
+    }
+    Ok(Json(json!({ "deleted": deleted, "failed": failed })))
 }
 
 struct Ba {
