@@ -367,7 +367,7 @@ fn owner_json(o: &Owner) -> Value {
 async fn currency_of(st: &AppState, company: i32) -> Result<String, ApiError> {
     let rows = invoice_read::qry(&st.db, &format!("SELECT currency FROM companies WHERE id = {company}")).await?;
     let c = rows.first().map(|r| cell_str(r, 0)).unwrap_or_default();
-    Ok(if c.trim().is_empty() { "BGN".into() } else { c })
+    Ok(if c.trim().is_empty() { "EUR".into() } else { c })
 }
 
 async fn kids_of(st: &AppState, company: i32) -> Result<Vec<crate::db::Row>, ApiError> {

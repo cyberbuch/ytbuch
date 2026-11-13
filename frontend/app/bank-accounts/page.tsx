@@ -6,7 +6,7 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { RequireAuth } from "../../components/RequireAuth";
 import { useI18n } from "../../components/I18nProvider";
-import { api, fetchAll } from "../../lib/api";
+import { api, fetchAll, getActiveCompany, ACTIVE_COMPANY_EVENT } from "../../lib/api";
 import { IconButton } from "../../components/IconButton";
 import { Pagination } from "../../components/Pagination";
 
@@ -39,7 +39,7 @@ const emptyForm = {
   account_number: "",
   iban: "",
   bic: "",
-  currency: "BGN",
+  currency: "EUR",
   balance: "0.00",
   gl_account_id: 0,
   buffer_account_id: 0,
@@ -58,6 +58,22 @@ function BankAccountsInner() {
   const [formError, setFormError] = useState("");
   const [q, setQ] = useState("");
   const [offset, setOffset] = useState(0);
+  // валутата по подразбиране е тази на фирмата (еврозона от 2026), не BGN
+  const [companyCurrency, setCompanyCurrency] = useState("EUR");
+
+  useEffect(() => {
+    const read = () => {
+      getActiveCompany()
+        .then((c) => {
+          const cur = (c as { currency?: unknown }).currency;
+          if (typeof cur === "string" && cur) setCompanyCurrency(cur.toUpperCase());
+        })
+        .catch(() => {});
+    };
+    read();
+    window.addEventListener(ACTIVE_COMPANY_EVENT, read);
+    return () => window.removeEventListener(ACTIVE_COMPANY_EVENT, read);
+  }, []);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -81,7 +97,7 @@ function BankAccountsInner() {
   }, [load]);
 
   const openCreate = () => {
-    setForm(emptyForm);
+    setForm({ ...emptyForm, currency: companyCurrency });
     setEditing(null);
     setFormError("");
     setModalOpen(true);
@@ -94,7 +110,7 @@ function BankAccountsInner() {
       account_number: acc.account_number ?? "",
       iban: acc.iban,
       bic: acc.bic ?? "",
-      currency: acc.currency || "BGN",
+      currency: acc.currency || companyCurrency,
       balance: acc.balance || "0.00",
       gl_account_id: acc.gl_account_id || 0,
       buffer_account_id: acc.buffer_account_id || 0,

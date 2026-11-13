@@ -40,6 +40,10 @@ export const enB = {
   "brules.dir_debit": "debit (expense)",
   "brules.dir_credit": "credit (income)",
   "brules.required": "Name, keywords and account are required.",
+  "brules.preview": "Preview before posting",
+  "brules.preview_hint": "Will allocate",
+  "brules.apply": "Post",
+  "bank_tx.tab_tx": "Transactions",
   "journal.sign_hint":
     "Amounts may be negative (storno, credit note, advance settlement, correction). The sign is stored as entered. Debit and credit are not swapped.",
   "ob.title": "Opening balances",

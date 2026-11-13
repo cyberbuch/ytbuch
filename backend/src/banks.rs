@@ -12,6 +12,20 @@ use crate::invoice_read;
 use crate::pagination::{paginate, PageQuery};
 use crate::{api_err, AppState, ApiError};
 
+/// Валутата по подразбиране идва от настройките на фирмата (еврозона от 2026),
+/// не е твърдо BGN.
+async fn company_currency(st: &AppState, company: i32) -> String {
+    let rows = invoice_read::qry(
+        &st.db,
+        &format!("SELECT currency FROM companies WHERE id = {company}"),
+    )
+    .await
+    .unwrap_or_default();
+    let c = rows.first().map(|r| cell_str(r, 0)).unwrap_or_default();
+    let c = c.trim().to_uppercase();
+    if c.is_empty() { "EUR".to_string() } else { c }
+}
+
 pub async fn index(
     State(st): State<AppState>,
     headers: HeaderMap,
@@ -53,6 +67,7 @@ pub async fn create(
         return Err(api_err(StatusCode::CONFLICT, "IBAN вече съществува"));
     }
     let id = invoice_read::nid(&st.db, "bank_accounts").await?;
+    let default_cur = company_currency(&st, company).await;
     invoice_read::exe(
         &st.db,
         &format!(
@@ -61,7 +76,7 @@ pub async fn create(
             lit(&iban),
             lit(&opt(obj, "bic", "")?),
             lit(&opt(obj, "bank_name", "")?),
-            lit(&opt(obj, "currency", "BGN")?),
+            lit(&opt(obj, "currency", &default_cur)?),
             lit(&name),
             lit(&opt(obj, "account_number", "")?),
             lit(&balance)
@@ -110,7 +125,7 @@ pub async fn update(
     form::ensure_ref(&st.db, "accounts", buf, company, "сметката").await?;
     let bic = form::str_field(obj, "bic")?.unwrap_or_else(|| cur["bic"].as_str().unwrap_or("").into());
     let bank_name = form::str_field(obj, "bank_name")?.unwrap_or_else(|| cur["bank_name"].as_str().unwrap_or("").into());
-    let currency = form::str_field(obj, "currency")?.unwrap_or_else(|| cur["currency"].as_str().unwrap_or("BGN").into());
+    let currency = form::str_field(obj, "currency")?.unwrap_or_else(|| cur["currency"].as_str().unwrap_or("EUR").into());
     let account_number = form::str_field(obj, "account_number")?.unwrap_or_else(|| cur["account_number"].as_str().unwrap_or("").into());
     invoice_read::exe(
         &st.db,

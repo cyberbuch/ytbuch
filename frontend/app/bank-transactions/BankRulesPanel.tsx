@@ -30,7 +30,7 @@ interface AllocateResult {
   unmatched: number;
   errors: number;
   counterpart_hits: number;
-  details: { id: number; status: string; rule?: string; text?: string; error?: string }[];
+  details: { id: number; status: string; rule?: string; text?: string; error?: string; account?: string; counterpart?: string; amount?: string }[];
 }
 
 const emptyDraft = () => ({
@@ -59,6 +59,7 @@ export function BankRulesPanel({
   const [editing, setEditing] = useState(false);
   const [busy, setBusy] = useState("");
   const [result, setResult] = useState<AllocateResult | null>(null);
+  const [preview, setPreview] = useState<AllocateResult | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -140,6 +141,21 @@ export function BankRulesPanel({
     }
   };
 
+  const loadPreview = async () => {
+    setBusy("preview");
+    setError("");
+    setNotice("");
+    setResult(null);
+    try {
+      const r = await api.post<AllocateResult>("/v1/bank-transactions/auto-allocate/preview", {});
+      setPreview(r);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy("");
+    }
+  };
+
   const allocate = async () => {
     setBusy("alloc");
     setError("");
@@ -147,6 +163,7 @@ export function BankRulesPanel({
     try {
       const r = await api.post<AllocateResult>("/v1/bank-transactions/auto-allocate", {});
       setResult(r);
+      setPreview(null);
       setNotice(
         `${t("brules.matched")}: ${r.matched}, ${t("brules.unmatched")}: ${r.unmatched}, ${t("brules.errors")}: ${r.errors}`
       );
@@ -172,10 +189,48 @@ export function BankRulesPanel({
         <button className="btn btn-sm" type="button" disabled={busy !== ""} onClick={() => void seed()}>
           {t("brules.seed")}
         </button>
-        <button className="btn btn-sm btn-primary" type="button" disabled={busy !== ""} onClick={() => void allocate()}>
-          {t("brules.allocate")}
+        <button className="btn btn-sm" type="button" disabled={busy !== ""} onClick={() => void loadPreview()}>
+          {t("brules.preview")}
         </button>
       </div>
+
+      {preview && (
+        <div className="card card-pad" style={{ marginBottom: 12 }}>
+          <p className="muted" style={{ fontSize: 13 }}>
+            {t("brules.preview_hint")}: {preview.matched} / {preview.unmatched} {t("brules.unmatched")}
+          </p>
+          <table className="table">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>{t("brules.name")}</th>
+                <th>{t("brules.account")}</th>
+                <th>{t("bank_tx.counterpart")}</th>
+                <th>{t("journal.amount")}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {preview.details.filter((d) => d.status === "matched").map((d) => (
+                <tr key={d.id}>
+                  <td>{d.id}</td>
+                  <td>{d.rule}</td>
+                  <td>{d.account}</td>
+                  <td>{d.counterpart}</td>
+                  <td>{d.amount}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <div className="form-actions">
+            <button className="btn btn-primary" type="button" disabled={busy !== "" || preview.matched === 0} onClick={() => void allocate()}>
+              {t("brules.apply")}
+            </button>
+            <button className="btn" type="button" onClick={() => setPreview(null)}>
+              {t("common.cancel")}
+            </button>
+          </div>
+        </div>
+      )}
 
       {result && result.details.length > 0 && (
         <ul className="muted" style={{ fontSize: 12, marginBottom: 12 }}>

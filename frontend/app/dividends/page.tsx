@@ -69,7 +69,7 @@ function DividendsInner() {
   const { t } = useI18n();
   const [list, setList] = useState<Dist[]>([]);
   const [owners, setOwners] = useState<Owner[]>([]);
-  const [currency, setCurrency] = useState("BGN");
+  const [currency, setCurrency] = useState("EUR");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [detail, setDetail] = useState<Dist | null>(null);
@@ -94,7 +94,7 @@ function DividendsInner() {
       const data = await api.get<DistList>("/v1/dividend-distributions", { limit: 500 });
       setList(data.items ?? []);
       setOwners(data.owners ?? []);
-      setCurrency(data.currency || "BGN");
+      setCurrency(data.currency || "EUR");
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {

@@ -32,6 +32,7 @@ function BankTransactionsInner() {
   const [selectedAccount, setSelectedAccount] = useState("");
   const [filterStatus, setFilterStatus] = useState("");
   const [q, setQ] = useState("");
+  const [tab, setTab] = useState<"tx" | "rules">("tx");
   const [offset, setOffset] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -333,6 +334,23 @@ function BankTransactionsInner() {
         </div>
       </div>
 
+      <div className="btn-row" style={{ marginBottom: 12 }}>
+        <button
+          className={`btn btn-sm${tab === "tx" ? " btn-primary" : ""}`}
+          type="button"
+          onClick={() => setTab("tx")}
+        >
+          {t("bank_tx.tab_tx")}
+        </button>
+        <button
+          className={`btn btn-sm${tab === "rules" ? " btn-primary" : ""}`}
+          type="button"
+          onClick={() => setTab("rules")}
+        >
+          {t("brules.title")}
+        </button>
+      </div>
+
       {error && <div className="error-text">{error}</div>}
       {success && (
         <div className="muted" style={{ color: "var(--success)", marginBottom: 12 }}>
@@ -340,6 +358,8 @@ function BankTransactionsInner() {
         </div>
       )}
 
+      {tab === "tx" && (
+        <>
       <div className="card" style={{ marginBottom: 12 }}>
         <input
           className="input"
@@ -429,8 +449,12 @@ function BankTransactionsInner() {
           onPageChange={setOffset}
         />
       </div>
+        </>
+      )}
 
-      <BankRulesPanel accounts={chartAccounts} onChanged={() => void load()} />
+      {tab === "rules" && (
+        <BankRulesPanel accounts={chartAccounts} onChanged={() => void load()} />
+      )}
 
       <BankTxModals
         t={t}

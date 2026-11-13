@@ -409,6 +409,10 @@ async fn main() {
             post(bank_rules::auto_allocate),
         )
         .route(
+            "/v1/bank-transactions/auto-allocate/preview",
+            post(bank_rules::preview),
+        )
+        .route(
             "/v1/fixed-asset-categories",
             get(assets::categories).post(assets::category_create),
         )

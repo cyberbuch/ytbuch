@@ -320,6 +320,17 @@ pub async fn defaults(
     Ok(Json(json!({ "created": created })))
 }
 
+/// Преглед преди осчетоводяване: показва кои транзакции към кое правило/сметка
+/// биха се разнесли, без да записва нищо.
+pub async fn preview(
+    State(st): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<Value>, ApiError> {
+    let sub = auth_sub(&st, &headers)?;
+    let company = active_or_one(&st, &sub).await?;
+    Ok(Json(allocate(&st, company, &sub, false).await?))
+}
+
 /// Автоматично разнасяне: за всяка неразнесена транзакция на фирмата намира
 /// правило и я осчетоводява (или пренасочва буферната) към сметката му.
 pub async fn auto_allocate(
@@ -328,6 +339,10 @@ pub async fn auto_allocate(
 ) -> Result<Json<Value>, ApiError> {
     let sub = auth_sub(&st, &headers)?;
     let company = active_or_one(&st, &sub).await?;
+    Ok(Json(allocate(&st, company, &sub, true).await?))
+}
+
+async fn allocate(st: &AppState, company: i32, sub: &str, apply: bool) -> Result<Value, ApiError> {
     let rules = rules_of(&st.db, company).await?;
     let cp_rows = invoice_read::qry(
         &st.db,
@@ -335,6 +350,18 @@ pub async fn auto_allocate(
     )
     .await?;
     let counterparts: Vec<(i32, String)> = cp_rows.iter().map(|r| (cell_i32_at(r, 0), cell_str(r, 1))).collect();
+    let acc_rows = invoice_read::qry(
+        &st.db,
+        &format!("SELECT id, number, name FROM accounts WHERE company_id = {company}"),
+    )
+    .await?;
+    let account_label = |id: i32| -> String {
+        acc_rows
+            .iter()
+            .find(|r| cell_i32_at(r, 0) == id)
+            .map(|r| format!("{} {}", cell_str(r, 1), cell_str(r, 2)))
+            .unwrap_or_else(|| format!("#{id}"))
+    };
 
     let tx_rows = invoice_read::qry(
         &st.db,
@@ -371,16 +398,31 @@ pub async fn auto_allocate(
             counterpart_hits += 1;
         }
         let cp_id = cp.unwrap_or(0);
+        let cp_name = counterparts.iter().find(|(i, _)| *i == cp_id).map(|(_, n)| n.clone()).unwrap_or_default();
+
+        if !apply {
+            matched += 1;
+            if details.len() < 50 {
+                details.push(json!({
+                    "id": id, "status": "matched", "rule": rule.name,
+                    "account": account_label(rule.account_id),
+                    "counterpart": cp_name, "amount": amount,
+                    "text": text.chars().take(80).collect::<String>(),
+                }));
+            }
+            continue;
+        }
+
         let res = if cell_i32_at(row, 5) == 0 {
-            bank_tx::book_tx(&st, company, &sub, id, rule.account_id, cp_id, None, None).await.map(|_| ())
+            bank_tx::book_tx(st, company, sub, id, rule.account_id, cp_id, None, None).await.map(|_| ())
         } else {
-            bank_tx::reallocate_tx(&st, company, &sub, id, rule.account_id, cp_id).await.map(|_| ())
+            bank_tx::reallocate_tx(st, company, sub, id, rule.account_id, cp_id).await.map(|_| ())
         };
         match res {
             Ok(()) => {
                 matched += 1;
                 if details.len() < 50 {
-                    details.push(json!({ "id": id, "status": "matched", "rule": rule.name }));
+                    details.push(json!({ "id": id, "status": "matched", "rule": rule.name, "account": account_label(rule.account_id) }));
                 }
             }
             Err(e) => {
@@ -392,13 +434,13 @@ pub async fn auto_allocate(
         }
     }
 
-    Ok(Json(json!({
+    Ok(json!({
         "matched": matched,
         "unmatched": unmatched,
         "errors": errors,
         "counterpart_hits": counterpart_hits,
         "details": details,
-    })))
+    }))
 }
 
 #[cfg(test)]

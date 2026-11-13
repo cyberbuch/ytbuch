@@ -79,7 +79,7 @@ pub fn required_permission(method: &Method, path: &str) -> Access {
         Some("journal") => Access::Key("journal"),
         Some("accounting-periods") | Some("opening-balances") => Access::Key("periods"),
         Some("vat") => Access::Key("vat"),
-        Some("bank-accounts") | Some("bank-transactions") => Access::Key("banking"),
+        Some("bank-accounts") | Some("bank-transactions") | Some("bank-matching-rules") => Access::Key("banking"),
         Some("fixed-assets") | Some("fixed-asset-categories") => Access::Key("assets"),
         Some("inventory") | Some("internal-docs") | Some("material-issues") => Access::Key("stock"),
         Some("stock") => match s.get(2).copied() {
