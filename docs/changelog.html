@@ -52,8 +52,14 @@
           <div class="term-bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="term-title">CHANGELOG.md</span></div>
           <div class="term-body">
             <p class="cmd">&gt; cat CHANGELOG.md</p>
-            <p class="out"><strong>## [Нерелизнато] — 2026-11-03</strong></p>
+            <p class="out"><strong>## [Нерелизнато] — 2026-11-13</strong></p>
             <p class="out ok">### Добавено</p>
+            <p class="out">- <strong>Универсална счетоводна статия с валута в дневника:</strong> редът се въвежда като
+              количество; за валутни сметки (<code>is_currency</code>, групи 4xx/5xx) — валута и курс;
+              сумата = количество × курс (производна). Бутон „Курс от ЕЦБ“.</p>
+            <p class="out">- API: <code>GET /v1/exchange-rates/cross?from=&amp;to=&amp;date=</code> — кръстосан курс през EUR, as-of.</p>
+            <p class="out">- Схема: <code>journal_lines</code> + <code>currency/fx_quantity/fx_rate</code>;
+              <code>accounts</code> + <code>is_currency</code> (миграция със запазване на редовете).</p>
             <p class="out">- Приключвателни операции в края на месеца: карта <code>closing_map</code> в настройките
               на фирмата (префикс → целева сметка; най-дългият префикс печели, напр. <code>602 → 612</code>,
               по подразбиране <code>60 → 611</code>).</p>
@@ -61,6 +67,8 @@
               балансирана статия <code>CLOSE-YYYY-MM</code> на последния ден на месеца; 409 при повторение.</p>
             <p class="out">- UI: таб „Приключване“ в настройките и бутон „Приключи“ на отворен месец в „Счетоводни периоди“.</p>
             <p class="out ok">### Променено</p>
+            <p class="out">- Модалът за запис в дневника следва buchnative / „Универсална счетоводна статия“:
+              количество + валута + курс + производна сума.</p>
             <p class="out">- Приключвателните записи могат да се трият от дневника (приключване отново след корекция).</p>
             <p class="out">- Документация и контейнерите са rebuild-нати с новите endpoint-и.</p>
             <p class="out">&nbsp;</p>

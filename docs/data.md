@@ -29,7 +29,7 @@
 | `beneficial_owners` | действителни собственици |
 | `ultimate_parents` | крайни предприятия майки |
 | `document_series` | серии и следващ номер |
-| `accounts` | сметкоплан, `company_id`, номер, име, `saft_account_type`, `analytic_type` |
+| `accounts` | сметкоплан, `company_id`, номер, име, `saft_account_type`, `analytic_type`, `is_currency` (1 за валутни сметки — групи 4xx/5xx) |
 | `counterparts` | контрагенти |
 | `counterpart_extra` | адрес, поща и телефон към същия `id`. Отделна таблица, защото Octo тук няма `ALTER TABLE` |
 | `products` | стоки и услуги. Цена, себестойност, ДДС и количества са низове. Количеството и стойността се презаписват при преизчисление |
@@ -39,7 +39,7 @@
 | `invoice_lines` | редове на фактура |
 | `invoice_line_extra` | `product_id` към същия `id` като реда |
 | `journal_entries` | запис в дневника |
-| `journal_lines` | ред: сметка, `debit`/`credit`, сума, ДДС сума |
+| `journal_lines` | ред: сметка, `debit`/`credit`, сума, ДДС сума, `currency`, `fx_quantity`, `fx_rate` (универсална статия: сума = количество × курс) |
 | `accounting_periods` | година, месец, `open`/`closed`, дата на затваряне, бележка, `company_id`. Липсващ месец е отворен |
 | `opening_balances` | фискална година, фирма, сметка, дебит, кредит, контрагент, продукт, количество, описание. Няма ред в дневника |
 | `vat_manual` | ръчни клетки на ДДС декларацията по фирма и период: `cell_33` (коефициент), `cell_70`, `cell_71`, `cell_80`, `cell_81`, `cell_82` |

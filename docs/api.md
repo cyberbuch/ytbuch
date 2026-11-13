@@ -173,7 +173,7 @@ QR е SVG картинка. Резервните кодове се показв�
 | POST | `/v1/invoices/bulk/unpost` | `unposted`, `failed`, `results` |
 | POST | `/v1/invoices/bulk/delete` | `deleted`, `failed`, `results` |
 | GET | `/v1/journal` | записи |
-| GET | `/v1/journal/{id}` | плюс `lines` (`direction` е `debit` или `credit`). 404 `записът не е намерен` |
+| GET | `/v1/journal/{id}` | плюс `lines` (`direction` е `debit` или `credit`; редът носи `currency`, `fx_quantity`, `fx_rate`). 404 `записът не е намерен` |
 
 Продажба: Дт `411`, Кт приходната сметка на артикула, Кт `4532`.
 Покупка: Дт складовата или разходната сметка на артикула, Дт `4531`, Кт `401`.
@@ -427,6 +427,7 @@ QR е SVG картинка. Резервните кодове се показв�
 | PATCH, DELETE | `/v1/roles/{id}` | само супер администратор |
 | GET | `/v1/exchange-rates` | `date`, `base`, `items`. Без дата е последният ден |
 | GET | `/v1/exchange-rates/rate` | `currency`, `date`. Липсващ ден е най-близкият по-ранен |
+| GET | `/v1/exchange-rates/cross` | `from`, `to`, `date` → единици `to` за 1 `from`, през EUR, as-of. `{from,to,rate,rate_date,requested_date,base}` |
 | POST | `/v1/exchange-rates/import` | `{"mode":"daily"\|"history"}` |
 | GET | `/v1/counterparts/vies-lookup` | `vat`. ЕС ДДС номер |
 | POST | `/v1/counterparts/vies` | `vat_number`, `counterpart_type`. Създава контрагент |
