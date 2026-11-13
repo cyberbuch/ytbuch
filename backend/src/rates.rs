@@ -162,19 +162,33 @@ pub async fn cross(
     }
     let (rf, _) = per_eur(&st.db, &from, &date).await?;
     let (rt, rate_date) = per_eur(&st.db, &to, &date).await?;
+    let rate = cross_value(&rf, &rt)?;
+    Ok(Json(json!({
+        "from": from,
+        "to": to,
+        "rate": rate,
+        "rate_date": rate_date,
+        "requested_date": date,
+        "base": "EUR",
+    })))
+}
+
+/// Кръстосан курс `to` за 1 `from` през EUR: (units to per EUR) / (units from per EUR).
+pub(crate) fn cross_value(rf: &str, rt: &str) -> Result<String, ApiError> {
     let f: f64 = rf.parse().map_err(|_| api_err(StatusCode::UNPROCESSABLE_ENTITY, "невалиден курс"))?;
     let t: f64 = rt.parse().map_err(|_| api_err(StatusCode::UNPROCESSABLE_ENTITY, "невалиден курс"))?;
     if f == 0.0 {
         return Err(api_err(StatusCode::UNPROCESSABLE_ENTITY, "курсът е 0"));
     }
-    Ok(Json(json!({
-        "from": from,
-        "to": to,
-        "rate": format!("{:.6}", t / f),
-        "rate_date": rate_date,
-        "requested_date": date,
-        "base": "EUR",
-    })))
+    Ok(format!("{:.6}", t / f))
+}
+
+/// Кръстосан курс за банкова транзакция: от валутата на транзакцията към базовата.
+/// За основната валута връща 1.
+pub(crate) async fn cross_rate(db: &crate::db::Db, from: &str, to: &str, date: &str) -> Result<(String, String), ApiError> {
+    let (rf, _) = per_eur(db, from, date).await?;
+    let (rt, rate_date) = per_eur(db, to, date).await?;
+    Ok((cross_value(&rf, &rt)?, rate_date))
 }
 
 fn quoted(tag: &str, key: &str) -> Option<String> {

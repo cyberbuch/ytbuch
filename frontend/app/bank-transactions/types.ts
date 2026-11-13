@@ -63,4 +63,7 @@ export interface JeLine {
   amount: string;
   account_number?: string;
   account_name?: string;
+  currency?: string;
+  fx_quantity?: string;
+  fx_rate?: string;
 }

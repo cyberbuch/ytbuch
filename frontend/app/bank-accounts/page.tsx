@@ -60,6 +60,14 @@ function BankAccountsInner() {
   const [offset, setOffset] = useState(0);
   // валутата по подразбиране е тази на фирмата (еврозона от 2026), не BGN
   const [companyCurrency, setCompanyCurrency] = useState("EUR");
+  // валути от ЕЦБ (еврото е базово) + валутата на фирмата
+  const [ecbCurrencies, setEcbCurrencies] = useState<string[]>([]);
+
+  useEffect(() => {
+    api.get<{ items: { currency_code: string }[] }>("/v1/exchange-rates")
+      .then((d) => setEcbCurrencies((d.items ?? []).map((x) => x.currency_code)))
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     const read = () => {
@@ -335,13 +343,23 @@ function BankAccountsInner() {
                 </div>
                 <div className="field">
                   <label className="label">{t("bank_accounts.currency")}</label>
-                  <input
-                    className="input"
+                  <select
+                    className="select"
                     value={form.currency}
                     onChange={(e) =>
                       setForm({ ...form, currency: e.target.value })
                     }
-                  />
+                  >
+                    {!ecbCurrencies.includes(form.currency) && form.currency !== "" && (
+                      <option value={form.currency}>{form.currency}</option>
+                    )}
+                    <option value={companyCurrency}>{companyCurrency}</option>
+                    {ecbCurrencies.map((c) => (
+                      <option key={c} value={c}>
+                        {c}
+                      </option>
+                    ))}
+                  </select>
                 </div>
                 <div className="field">
                   <label className="label">{t("bank_accounts.balance")}</label>

@@ -15,7 +15,18 @@ use crate::invoice_read;
 use crate::pagination::{paginate, PageQuery};
 use crate::periods;
 use crate::posting::{self, Side};
+use crate::rates;
 use crate::{api_err, AppState, ApiError};
+
+/// Базова валута на фирмата (от настройките, default EUR от 2026).
+async fn base_currency(db: &crate::db::Db, company: i32) -> String {
+    let rows = invoice_read::qry(db, &format!("SELECT currency FROM companies WHERE id = {company}"))
+        .await
+        .unwrap_or_default();
+    let c = rows.first().map(|r| cell_str(r, 0)).unwrap_or_default();
+    let c = c.trim().to_uppercase();
+    if c.is_empty() { "EUR".to_string() } else { c }
+}
 
 const UNKNOWN: &str = "Непознат формат на файла. Поддържаните формати са: OBB XML, ISO camt.053, PostBank XML, MT-940, CSV.";
 
@@ -257,6 +268,28 @@ pub(crate) async fn book_tx(
         let _ = invoice_read::wipe_journal(&st.db, entry).await;
         return Err(e);
     }
+    // Валутни стойности в редовете — като в модала за ръчен дневник:
+    // сума = количество × курс, където курсът е кръстосан към базовата валута.
+    let tx_cur = cell_str(&row, 4).trim().to_ascii_uppercase();
+    let base = base_currency(&st.db, company).await;
+    let (cur, rate) = if tx_cur.is_empty() || tx_cur == base {
+        (String::new(), "1".to_string())
+    } else {
+        match rates::cross_rate(&st.db, &tx_cur, &base, &cell_str(&row, 2)).await {
+            Ok((r, _)) => (tx_cur, r),
+            Err(_) => (String::new(), "1".to_string()),
+        }
+    };
+    let _ = invoice_read::exe(
+        &st.db,
+        &format!(
+            "UPDATE journal_lines SET currency = {}, fx_quantity = {}, fx_rate = {} WHERE entry_id = {entry}",
+            lit(&cur),
+            lit(&abs_s),
+            lit(&rate),
+        ),
+    )
+    .await;
     let ref_no = cell_str(&row, 8);
     let summary = format!(
         "Осчетоводена банкова транзакция #{id} ({ref_no}) — {shown}, Дт {debit_num} / Кт {credit_num}, сума {abs_s}"

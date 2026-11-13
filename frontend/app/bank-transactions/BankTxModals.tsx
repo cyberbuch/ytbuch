@@ -334,6 +334,8 @@ export function BankTxModals(props: {
                   <thead>
                     <tr>
                       <th>{t("bank_tx.target_account")}</th>
+                      <th>{t("journal.currency")}</th>
+                      <th>{t("journal.fx_rate")}</th>
                       <th style={{ textAlign: "right" }}>{t("bank_tx.debit")}</th>
                       <th style={{ textAlign: "right" }}>{t("bank_tx.credit")}</th>
                     </tr>
@@ -345,6 +347,8 @@ export function BankTxModals(props: {
                           {(ln.account_number || "") +
                             (ln.account_name ? ` ${ln.account_name}` : "")}
                         </td>
+                        <td>{ln.currency || ""}</td>
+                        <td>{ln.currency ? ln.fx_rate : ""}</td>
                         <td style={{ textAlign: "right" }}>
                           {ln.direction === "debit" ? fmtAmount(ln.amount) : ""}
                         </td>
