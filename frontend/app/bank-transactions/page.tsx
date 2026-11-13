@@ -142,6 +142,12 @@ function BankTransactionsInner() {
   const start = page * PAGE_SIZE;
   const pagedRows = filteredRows.slice(start, start + PAGE_SIZE);
 
+  const statusCounts = useMemo(() => ({
+    pending: rows.filter((tx) => !tx.is_booked).length,
+    processed: rows.filter((tx) => tx.is_booked && !tx.is_allocated).length,
+    booked: rows.filter((tx) => tx.is_allocated).length,
+  }), [rows]);
+
   const toggleSel = (id: number, on: boolean) =>
     setSelected((p) => (on ? [...p, id] : p.filter((x) => x !== id)));
   const allSelected = pagedRows.length > 0 && pagedRows.every((tx) => selected.includes(tx.id));
@@ -460,6 +466,11 @@ function BankTransactionsInner() {
               {t("bank_tx.bulk_delete")} ({selected.length})
             </button>
           )}
+        </div>
+        <div className="btn-row" style={{ marginTop: 8, gap: 16 }}>
+          <span className="badge badge-danger">{t("bank_tx.status.new")}: {statusCounts.pending}</span>
+          <span className="badge badge-warning">{t("bank_tx.status.booked")}: {statusCounts.processed}</span>
+          <span className="badge badge-success">{t("bank_tx.status.allocated")}: {statusCounts.booked}</span>
         </div>
       </div>
 
