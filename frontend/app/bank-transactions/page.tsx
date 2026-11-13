@@ -18,6 +18,7 @@ import {
 } from "./types";
 import { fmtAmount, isPositive, matchCounterpart } from "./helpers";
 import { BankTxModals } from "./BankTxModals";
+import { BankRulesPanel } from "./BankRulesPanel";
 import { Pagination } from "../../components/Pagination";
 
 const PAGE_SIZE = 50;
@@ -429,6 +430,7 @@ function BankTransactionsInner() {
         />
       </div>
 
+      <BankRulesPanel accounts={chartAccounts} onChanged={() => void load()} />
 
       <BankTxModals
         t={t}

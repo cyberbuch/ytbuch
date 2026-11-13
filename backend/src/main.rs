@@ -13,6 +13,7 @@ mod audit;
 mod auth;
 mod auth_flow;
 mod bank_csv;
+mod bank_rules;
 mod bank_tx;
 mod banks;
 mod closing;
@@ -397,6 +398,16 @@ async fn main() {
         .route("/v1/bank-transactions/{id}/book", post(bank_tx::book))
         .route("/v1/bank-transactions/{id}/reallocate", post(bank_tx::reallocate))
         .route("/v1/bank-transactions/{id}", delete(bank_tx::delete))
+        .route("/v1/bank-matching-rules", get(bank_rules::index).post(bank_rules::create))
+        .route(
+            "/v1/bank-matching-rules/{id}",
+            patch(bank_rules::update).delete(bank_rules::delete),
+        )
+        .route("/v1/bank-matching-rules/defaults", post(bank_rules::defaults))
+        .route(
+            "/v1/bank-transactions/auto-allocate",
+            post(bank_rules::auto_allocate),
+        )
         .route(
             "/v1/fixed-asset-categories",
             get(assets::categories).post(assets::category_create),

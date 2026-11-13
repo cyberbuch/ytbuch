@@ -181,10 +181,27 @@ pub async fn book(
 ) -> Result<Json<Value>, ApiError> {
     let sub = auth_sub(&st, &headers)?;
     let company = company(&st, &headers).await?;
-    need(id)?;
     let obj = form::object(&body)?;
     let cp = form::i32_field(obj, "counterpart_id")?.unwrap_or(0);
     let contra = form::i32_field(obj, "contra_account_id")?.unwrap_or(0);
+    let d = form::i32_field(obj, "debit_account_id")?;
+    let c = form::i32_field(obj, "credit_account_id")?;
+    Ok(Json(book_tx(&st, company, &sub, id, contra, cp, d, c).await?))
+}
+
+/// Осчетоводяване на транзакция; ползва се и от автоматичното разнасяне.
+/// Без `contra` се искат изрични `debit`/`credit` сметки.
+pub(crate) async fn book_tx(
+    st: &AppState,
+    company: i32,
+    sub: &str,
+    id: i32,
+    contra: i32,
+    cp: i32,
+    debit_opt: Option<i32>,
+    credit_opt: Option<i32>,
+) -> Result<Value, ApiError> {
+    need(id)?;
     form::ensure_ref(&st.db, "counterparts", cp, company, "контрагентът").await?;
     form::ensure_ref(&st.db, "accounts", contra, company, "сметката").await?;
     let row = tx_row(&st, id, company).await?;
@@ -201,8 +218,8 @@ pub async fn book(
         }
         if deposit { (ba.gl, contra) } else { (contra, ba.gl) }
     } else {
-        let d = form::i32_field(obj, "debit_account_id")?.ok_or_else(|| api_err(StatusCode::UNPROCESSABLE_ENTITY, "debit_account_id е задължително"))?;
-        let c = form::i32_field(obj, "credit_account_id")?.ok_or_else(|| api_err(StatusCode::UNPROCESSABLE_ENTITY, "credit_account_id е задължително"))?;
+        let d = debit_opt.ok_or_else(|| api_err(StatusCode::UNPROCESSABLE_ENTITY, "debit_account_id е задължително"))?;
+        let c = credit_opt.ok_or_else(|| api_err(StatusCode::UNPROCESSABLE_ENTITY, "credit_account_id е задължително"))?;
         if d <= 0 || c <= 0 {
             return Err(api_err(StatusCode::UNPROCESSABLE_ENTITY, "debit_account_id е задължително"));
         }
@@ -261,7 +278,7 @@ pub async fn book(
     .await;
     let mut o = json!({ "message": "транзакцията е осчетоводена", "journal_entry_id": entry });
     if cp > 0 { o["counterpart_id"] = json!(cp); }
-    Ok(Json(o))
+    Ok(o)
 }
 
 pub async fn reallocate(
@@ -272,10 +289,22 @@ pub async fn reallocate(
 ) -> Result<Json<Value>, ApiError> {
     let sub = auth_sub(&st, &headers)?;
     let company = company(&st, &headers).await?;
-    need(id)?;
     let obj = form::object(&body)?;
     let new_acc = req_i32(obj, "account_id")?;
     let cp = form::i32_field(obj, "counterpart_id")?.unwrap_or(0);
+    Ok(Json(reallocate_tx(&st, company, &sub, id, new_acc, cp).await?))
+}
+
+/// Разнасяне към нова сметка; ползва се и от автоматичното разнасяне.
+pub(crate) async fn reallocate_tx(
+    st: &AppState,
+    company: i32,
+    sub: &str,
+    id: i32,
+    new_acc: i32,
+    cp: i32,
+) -> Result<Value, ApiError> {
+    need(id)?;
     form::ensure_ref(&st.db, "accounts", new_acc, company, "сметката").await?;
     form::ensure_ref(&st.db, "counterparts", cp, company, "контрагентът").await?;
     let row = tx_row(&st, id, company).await?;
@@ -339,11 +368,11 @@ pub async fn reallocate(
         None,
     )
     .await;
-    Ok(Json(json!({
+    Ok(json!({
         "message": format!("Транзакцията е разнесена към {acc_name}"),
         "account_name": acc_name,
         "replaced_lines": replaced,
-    })))
+    }))
 }
 
 pub async fn delete(

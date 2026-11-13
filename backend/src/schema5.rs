@@ -30,6 +30,17 @@ CREATE TABLE IF NOT EXISTS bank_transactions (
     is_allocated INTEGER,
     journal_entry_id INTEGER
 );
+CREATE TABLE IF NOT EXISTS bank_matching_rules (
+    id INTEGER PRIMARY KEY,
+    company_id INTEGER,
+    name VARCHAR,
+    keywords VARCHAR,
+    direction VARCHAR,
+    priority INTEGER,
+    is_active INTEGER,
+    account_id INTEGER,
+    counterpart_id INTEGER
+);
 CREATE TABLE IF NOT EXISTS fixed_asset_categories (
     id INTEGER PRIMARY KEY,
     company_id INTEGER,
