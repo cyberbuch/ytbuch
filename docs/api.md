@@ -307,6 +307,12 @@ QR е SVG картинка. Резервните кодове се показв�
 | POST | `/v1/bank-transactions/{id}/book` | ръчно осчетоводяване |
 | POST | `/v1/bank-transactions/{id}/reallocate` | `{account_id}` сменя буферния ред |
 | DELETE | `/v1/bank-transactions/{id}` | 204, трие и дневника |
+| GET | `/v1/bank-matching-rules` | правила за банкови транзакции, по приоритет |
+| POST | `/v1/bank-matching-rules` | `{name, keywords, direction, priority, is_active, account_id, counterpart_id?}` |
+| PATCH | `/v1/bank-matching-rules/{id}` | редакция на правило |
+| DELETE | `/v1/bank-matching-rules/{id}` | 204 |
+| POST | `/v1/bank-matching-rules/defaults` | `{created}` — шаблони (POS, ATM, такси, преводи, аванси) |
+| POST | `/v1/bank-transactions/auto-allocate` | `{matched, unmatched, errors, counterpart_hits, details}` |
 | GET, POST | `/v1/fixed-asset-categories` | категориите са общи |
 | PATCH, DELETE | `/v1/fixed-asset-categories/{id}` | |
 | GET, POST | `/v1/fixed-assets` | активът е на активната фирма |
