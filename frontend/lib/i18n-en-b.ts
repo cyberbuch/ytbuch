@@ -9,6 +9,14 @@ export const enB = {
   "journal.debit": "Debit",
   "journal.credit": "Credit",
   "journal.amount": "Amount",
+  "journal.currency": "Currency",
+  "journal.fx_rate": "Rate",
+  "journal.fx_fetch": "ECB rate",
+  "journal.quantity": "Quantity",
+  "journal.quantity_hint":
+    "Quantity in the line's currency. Value = quantity × rate. For the base currency (rate 1) the value equals the quantity.",
+  "journal.value_derived_hint":
+    "Value in base currency = quantity × rate (derived, not entered)",
   "journal.sign_hint":
     "Amounts may be negative (storno, credit note, advance settlement, correction). The sign is stored as entered. Debit and credit are not swapped.",
   "ob.title": "Opening balances",

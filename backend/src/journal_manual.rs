@@ -81,7 +81,18 @@ fn parse_lines(obj: &Map<String, Value>) -> Result<Vec<Line>, ApiError> {
             return Err(api_err(StatusCode::UNPROCESSABLE_ENTITY, format!("lines[{i}].amount не може да е 0")));
         }
         let vat_amount = form::str_field(o, "vat_amount")?.unwrap_or_else(|| "0".to_string());
-        lines.push(Line { account_id, direction, amount, vat_amount: vat_amount.trim().to_string() });
+        let currency = form::str_field(o, "currency")?.unwrap_or_default().trim().to_ascii_uppercase();
+        let fx_quantity = form::str_field(o, "fx_quantity")?.unwrap_or_default().trim().to_string();
+        let fx_rate = form::str_field(o, "fx_rate")?.unwrap_or_else(|| "1".to_string()).trim().to_string();
+        lines.push(Line {
+            account_id,
+            direction,
+            amount: amount.clone(),
+            vat_amount: vat_amount.trim().to_string(),
+            currency,
+            fx_quantity: if fx_quantity.is_empty() { amount } else { fx_quantity },
+            fx_rate: if fx_rate.is_empty() { "1".to_string() } else { fx_rate },
+        });
     }
     Ok(lines)
 }
@@ -91,6 +102,9 @@ struct Line {
     direction: String,
     amount: String,
     vat_amount: String,
+    currency: String,
+    fx_quantity: String,
+    fx_rate: String,
 }
 
 fn check_balanced(lines: &[Line]) -> Result<(), ApiError> {
@@ -163,13 +177,16 @@ async fn write_lines(db: &crate::db::Db, entry_id: i32, lines: &[Line], company:
         invoice_read::exe(
             db,
             &format!(
-                "INSERT INTO journal_lines (id, entry_id, account_id, account_number, account_name, direction, amount, vat_amount) VALUES ({line_id}, {entry_id}, {}, {}, {}, {}, {}, {})",
+                "INSERT INTO journal_lines (id, entry_id, account_id, account_number, account_name, direction, amount, vat_amount, currency, fx_quantity, fx_rate) VALUES ({line_id}, {entry_id}, {}, {}, {}, {}, {}, {}, {}, {}, {})",
                 l.account_id,
                 lit(&cell_str(row, 1)),
                 lit(&cell_str(row, 2)),
                 lit(&l.direction),
                 lit(&l.amount),
                 lit(&l.vat_amount),
+                lit(&l.currency),
+                lit(&l.fx_quantity),
+                lit(&l.fx_rate),
             ),
         ).await?;
     }
@@ -200,7 +217,7 @@ async fn entry_json_full(st: &AppState, id: i32, company: i32) -> Result<Value, 
     });
     let lines = invoice_read::qry(
         &st.db,
-        &format!("SELECT id, account_id, direction, amount, vat_amount, account_number, account_name FROM journal_lines WHERE entry_id = {id} ORDER BY id"),
+        &format!("SELECT id, account_id, direction, amount, vat_amount, account_number, account_name, currency, fx_quantity, fx_rate FROM journal_lines WHERE entry_id = {id} ORDER BY id"),
     ).await?;
     value["lines"] = json!(lines.iter().map(|r| json!({
         "id": cell_i32_at(r, 0),
@@ -210,6 +227,9 @@ async fn entry_json_full(st: &AppState, id: i32, company: i32) -> Result<Value, 
         "vat_amount": cell_str(r, 4),
         "account_number": cell_str(r, 5),
         "account_name": cell_str(r, 6),
+        "currency": cell_str(r, 7),
+        "fx_quantity": cell_str(r, 8),
+        "fx_rate": cell_str(r, 9),
     })).collect::<Vec<_>>());
     let stamps = crate::audit::stamps_for(&st.db, company, "journal").await?;
     crate::audit::attach_stamp(&mut value, stamps.get(&id));

@@ -483,6 +483,7 @@ async fn main() {
         )
         .route("/v1/exchange-rates", get(rates::index))
         .route("/v1/exchange-rates/rate", get(rates::rate))
+        .route("/v1/exchange-rates/cross", get(rates::cross))
         .route("/v1/exchange-rates/import", post(rates::import))
         .route("/v1/counterparts/vies-lookup", get(vies::lookup))
         .route("/v1/counterparts/vies", post(vies::create))

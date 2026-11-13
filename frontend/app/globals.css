@@ -471,6 +471,22 @@ textarea {
   margin-bottom: 8px;
 }
 
+.journal-fx-row {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: 90px 150px 150px 130px;
+  gap: 8px;
+  align-items: center;
+  margin-top: -4px;
+}
+
+.journal-value-derived {
+  background: var(--surface-2);
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  cursor: default;
+}
+
 @media (max-width: 720px) {
   .form-grid {
     grid-template-columns: 1fr;
@@ -482,6 +498,10 @@ textarea {
 
   .journal-line-row,
   .journal-lines-novat .journal-line-row {
+    grid-template-columns: 1fr;
+  }
+
+  .journal-fx-row {
     grid-template-columns: 1fr;
   }
 }

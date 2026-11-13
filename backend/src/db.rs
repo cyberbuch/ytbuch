@@ -142,6 +142,10 @@ async fn dial(url: &str) -> DbResult<Client> {
 }
 
 pub async fn migrate(db: &Client) -> DbResult<()> {
+    // Една миграция наведнъж: интеграционните тестове и стартът споделят база,
+    // а презаписването на таблици не бива да се засича със себе си.
+    static MIGRATE_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+    let _guard = MIGRATE_LOCK.lock().await;
     db.batch_execute(
         "
         CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -257,7 +261,8 @@ pub async fn migrate(db: &Client) -> DbResult<()> {
             number VARCHAR,
             name VARCHAR,
             saft_account_type VARCHAR,
-            analytic_type VARCHAR
+            analytic_type VARCHAR,
+            is_currency INTEGER
         );
         CREATE TABLE IF NOT EXISTS counterparts (
             id INTEGER PRIMARY KEY,
@@ -371,7 +376,10 @@ pub async fn migrate(db: &Client) -> DbResult<()> {
             account_name VARCHAR,
             direction VARCHAR,
             amount VARCHAR,
-            vat_amount VARCHAR
+            vat_amount VARCHAR,
+            currency VARCHAR,
+            fx_quantity VARCHAR,
+            fx_rate VARCHAR
         );
         CREATE TABLE IF NOT EXISTS user_login (
             id INTEGER PRIMARY KEY,
@@ -420,6 +428,8 @@ pub async fn migrate(db: &Client) -> DbResult<()> {
     exec(db, crate::schema_late::SQL).await?;
     rebuild_user_session(db).await?;
     exec(db, crate::fsform::SQL).await?;
+    ensure_journal_fx(db).await?;
+    ensure_account_is_currency(db).await?;
     insert_missing(
         db,
         "schema_migrations",
@@ -428,6 +438,7 @@ pub async fn migrate(db: &Client) -> DbResult<()> {
     )
     .await?;
     seed_demo(db).await?;
+    mark_currency_accounts(db).await?;
     seed_audit_backfill(db).await?;
     Ok(())
 }
@@ -446,6 +457,101 @@ async fn rebuild_user_session(db: &Client) -> DbResult<()> {
          mfa_fails INTEGER, mfa_lock_until INTEGER)",
     )
     .await?;
+    Ok(())
+}
+
+/// Octo няма ALTER TABLE: ако `journal_lines` е създадена без валутните колони,
+/// таблицата се презаписва, а редовете се връщат с количество = сума и курс 1.
+async fn ensure_journal_fx(db: &Client) -> DbResult<()> {
+    if query(db, "SELECT currency FROM journal_lines WHERE id = 0").await.is_ok() {
+        return Ok(());
+    }
+    let rows = query(
+        db,
+        "SELECT id, entry_id, account_id, account_number, account_name, direction, amount, vat_amount \
+         FROM journal_lines ORDER BY id",
+    )
+    .await?;
+    exec(db, "DROP TABLE IF EXISTS journal_lines").await?;
+    exec(
+        db,
+        "CREATE TABLE journal_lines (id INTEGER PRIMARY KEY, entry_id INTEGER, account_id INTEGER, \
+         account_number VARCHAR, account_name VARCHAR, direction VARCHAR, amount VARCHAR, \
+         vat_amount VARCHAR, currency VARCHAR, fx_quantity VARCHAR, fx_rate VARCHAR)",
+    )
+    .await?;
+    for r in &rows {
+        let amount = cell_str(r, 6);
+        exec(
+            db,
+            &format!(
+                "INSERT INTO journal_lines (id, entry_id, account_id, account_number, account_name, \
+                 direction, amount, vat_amount, currency, fx_quantity, fx_rate) \
+                 VALUES ({}, {}, {}, {}, {}, {}, {}, {}, '', {}, '1')",
+                cell_i32_at(r, 0),
+                cell_i32_at(r, 1),
+                cell_i32_at(r, 2),
+                lit(&cell_str(r, 3)),
+                lit(&cell_str(r, 4)),
+                lit(&cell_str(r, 5)),
+                lit(&amount),
+                lit(&cell_str(r, 7)),
+                lit(&amount),
+            ),
+        )
+        .await?;
+    }
+    Ok(())
+}
+
+/// Същото за `accounts.is_currency`: презаписва се със запазване на редовете;
+/// групи 4xx (разчети) и 5xx (парични средства) стават валутни.
+async fn ensure_account_is_currency(db: &Client) -> DbResult<()> {
+    if query(db, "SELECT is_currency FROM accounts WHERE id = 0").await.is_ok() {
+        return Ok(());
+    }
+    let rows = query(
+        db,
+        "SELECT id, company_id, number, name, saft_account_type, analytic_type FROM accounts ORDER BY id",
+    )
+    .await?;
+    exec(db, "DROP TABLE IF EXISTS accounts").await?;
+    exec(
+        db,
+        "CREATE TABLE accounts (id INTEGER PRIMARY KEY, company_id INTEGER, number VARCHAR, \
+         name VARCHAR, saft_account_type VARCHAR, analytic_type VARCHAR, is_currency INTEGER)",
+    )
+    .await?;
+    for r in &rows {
+        let number = cell_str(r, 2);
+        let is_cur = i32::from(number.starts_with('4') || number.starts_with('5'));
+        exec(
+            db,
+            &format!(
+                "INSERT INTO accounts (id, company_id, number, name, saft_account_type, analytic_type, is_currency) \
+                 VALUES ({}, {}, {}, {}, {}, {}, {is_cur})",
+                cell_i32_at(r, 0),
+                cell_i32_at(r, 1),
+                lit(&number),
+                lit(&cell_str(r, 3)),
+                lit(&cell_str(r, 4)),
+                lit(&cell_str(r, 5)),
+            ),
+        )
+        .await?;
+    }
+    Ok(())
+}
+
+/// Seed-натите сметки се вмъкват без is_currency (NULL) — попълва се за 4xx/5xx.
+async fn mark_currency_accounts(db: &Client) -> DbResult<()> {
+    let rows = query(db, "SELECT id, number, is_currency FROM accounts").await?;
+    for r in &rows {
+        let number = cell_str(r, 1);
+        if cell_str(r, 2).is_empty() && (number.starts_with('4') || number.starts_with('5')) {
+            exec(db, &format!("UPDATE accounts SET is_currency = 1 WHERE id = {}", cell_i32_at(r, 0))).await?;
+        }
+    }
     Ok(())
 }
 

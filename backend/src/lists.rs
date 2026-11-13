@@ -28,7 +28,7 @@ pub async fn accounts(
         &st,
         &headers,
         &format!(
-            "SELECT id, number, name, saft_account_type, analytic_type FROM accounts WHERE company_id = {company} ORDER BY number"
+            "SELECT id, number, name, saft_account_type, analytic_type, is_currency FROM accounts WHERE company_id = {company} ORDER BY number"
         ),
     )
     .await?;
@@ -41,6 +41,7 @@ pub async fn accounts(
                 "name": cell_str(r, 2),
                 "saft_account_type": cell_str(r, 3),
                 "analytic_type": cell_str(r, 4),
+                "is_currency": cell_i32_at(r, 5) == 1,
             })
         })
         .collect();

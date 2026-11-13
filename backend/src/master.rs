@@ -16,6 +16,7 @@ struct Account {
     name: String,
     saft_account_type: String,
     analytic_type: String,
+    is_currency: bool,
 }
 
 fn account_json(a: &Account) -> Value {
@@ -25,6 +26,7 @@ fn account_json(a: &Account) -> Value {
         "name": a.name,
         "saft_account_type": a.saft_account_type,
         "analytic_type": a.analytic_type,
+        "is_currency": a.is_currency,
     })
 }
 
@@ -36,11 +38,12 @@ fn account_from(r: &Row) -> Account {
         name: cell_str(r, 3),
         saft_account_type: cell_str(r, 4),
         analytic_type: cell_str(r, 5),
+        is_currency: cell_i32_at(r, 6) == 1,
     }
 }
 
 const ACC_SEL: &str =
-    "SELECT id, company_id, number, name, saft_account_type, analytic_type FROM accounts";
+    "SELECT id, company_id, number, name, saft_account_type, analytic_type, is_currency FROM accounts";
 
 async fn account_load(st: &AppState, id: i32, company: i32) -> Result<Account, ApiError> {
     let rows = st
@@ -103,14 +106,19 @@ pub async fn account_create(
         return Err(api_err(StatusCode::CONFLICT, "номерът вече съществува"));
     }
     let id = st.db.next_id("accounts").await.map_err(db_err)?;
+    let is_currency = obj
+        .get("is_currency")
+        .and_then(|v| v.as_bool())
+        .unwrap_or_else(|| number.starts_with('4') || number.starts_with('5'));
     st.db
         .exec(&format!(
-            "INSERT INTO accounts (id, company_id, number, name, saft_account_type, analytic_type) \
-             VALUES ({id}, {company_id}, {}, {}, {}, {})",
+            "INSERT INTO accounts (id, company_id, number, name, saft_account_type, analytic_type, is_currency) \
+             VALUES ({id}, {company_id}, {}, {}, {}, {}, {})",
             lit(&number),
             lit(name.trim()),
             lit(saft.trim()),
-            lit(analytic.trim())
+            lit(analytic.trim()),
+            i32::from(is_currency)
         ))
         .await
         .map_err(db_err)?;
@@ -152,16 +160,20 @@ pub async fn account_update(
         }
         a.analytic_type = v;
     }
+    if let Some(v) = obj.get("is_currency").and_then(|v| v.as_bool()) {
+        a.is_currency = v;
+    }
     if number_taken(&st, a.company_id, a.number.trim(), a.id).await? {
         return Err(api_err(StatusCode::CONFLICT, "номерът вече съществува"));
     }
     st.db
         .exec(&format!(
-            "UPDATE accounts SET number = {}, name = {}, saft_account_type = {}, analytic_type = {} WHERE id = {} AND company_id = {}",
+            "UPDATE accounts SET number = {}, name = {}, saft_account_type = {}, analytic_type = {}, is_currency = {} WHERE id = {} AND company_id = {}",
             lit(a.number.trim()),
             lit(a.name.trim()),
             lit(a.saft_account_type.trim()),
             lit(a.analytic_type.trim()),
+            i32::from(a.is_currency),
             a.id,
             a.company_id
         ))

@@ -25,6 +25,38 @@ pub struct RateQuery {
     date: Option<String>,
 }
 
+#[derive(Deserialize)]
+pub struct CrossQuery {
+    from: Option<String>,
+    to: Option<String>,
+    date: Option<String>,
+}
+
+/// Курс за 1 EUR към дадена валута, as-of към най-близката предходна дата.
+/// За EUR връща 1. Връща (курс, дата на курса).
+async fn per_eur(db: &crate::db::Db, code: &str, date: &str) -> Result<(String, String), ApiError> {
+    if code == "EUR" {
+        return Ok(("1".to_string(), date.to_string()));
+    }
+    let rows = db
+        .query(&format!(
+            "SELECT rate, rate_date FROM exchange_rates WHERE currency_code = {}",
+            lit(code)
+        ))
+        .await
+        .map_err(db_err)?;
+    let mut best: Option<(String, String)> = None;
+    for row in &rows {
+        let day = cell_str(row, 1);
+        if day.as_str() <= date
+            && best.as_ref().map(|(d, _)| day.as_str() >= d.as_str()).unwrap_or(true)
+        {
+            best = Some((day, cell_str(row, 0)));
+        }
+    }
+    best.ok_or_else(|| api_err(StatusCode::NOT_FOUND, format!("няма курс за {code}")))
+}
+
 fn row_json(id: i32, code: &str, rate: &str, date: &str) -> Value {
     json!({
         "id": id,
@@ -107,6 +139,40 @@ pub async fn rate(
         "currency_code": currency,
         "date": day,
         "rate": rate,
+        "base": "EUR",
+    })))
+}
+
+/// Кръстосан курс: ?from=USD&to=BGN&date=… → единици `to` за 1 `from`,
+/// през EUR (ЕЦБ курсовете са за 1 EUR), as-of към предходна дата.
+pub async fn cross(
+    State(st): State<AppState>,
+    headers: HeaderMap,
+    Query(q): Query<CrossQuery>,
+) -> Result<Json<Value>, ApiError> {
+    auth_sub(&st, &headers)?;
+    let from = q.from.unwrap_or_default().trim().to_ascii_uppercase();
+    let to = q.to.unwrap_or_default().trim().to_ascii_uppercase();
+    let date = q.date.unwrap_or_default().trim().to_string();
+    if from.is_empty() || to.is_empty() {
+        return Err(api_err(StatusCode::BAD_REQUEST, "from и to са задължителни"));
+    }
+    if date.is_empty() {
+        return Err(api_err(StatusCode::BAD_REQUEST, "date е задължителен (YYYY-MM-DD)"));
+    }
+    let (rf, _) = per_eur(&st.db, &from, &date).await?;
+    let (rt, rate_date) = per_eur(&st.db, &to, &date).await?;
+    let f: f64 = rf.parse().map_err(|_| api_err(StatusCode::UNPROCESSABLE_ENTITY, "невалиден курс"))?;
+    let t: f64 = rt.parse().map_err(|_| api_err(StatusCode::UNPROCESSABLE_ENTITY, "невалиден курс"))?;
+    if f == 0.0 {
+        return Err(api_err(StatusCode::UNPROCESSABLE_ENTITY, "курсът е 0"));
+    }
+    Ok(Json(json!({
+        "from": from,
+        "to": to,
+        "rate": format!("{:.6}", t / f),
+        "rate_date": rate_date,
+        "requested_date": date,
         "base": "EUR",
     })))
 }
