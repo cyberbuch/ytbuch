@@ -29,7 +29,7 @@ jobs:
         run: |
           mkdir -p _site/assets
           cp docs/*.html docs/CNAME docs/favicon.ico docs/apple-touch-icon.png _site/
-          cp docs/assets/* _site/assets/
+          cp -r docs/assets/. _site/assets/
       - uses: actions/upload-pages-artifact@v3
         with:
           path: _site
