@@ -30,6 +30,45 @@
   <link rel="apple-touch-icon" href="apple-touch-icon.png">
   <link rel="stylesheet" href="assets/style.css">
   <script src="assets/main.js" defer></script>
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "ytbuch",
+    "applicationCategory": "FinanceApplication",
+    "operatingSystem": "Docker / Linux",
+    "softwareVersion": "0.8.4",
+    "inLanguage": "bg",
+    "url": "https://ytbuch.cfd/",
+    "author": { "@type": "Organization", "name": "Baraba", "url": "https://ytbuch.cfd/" },
+    "publisher": { "@type": "Organization", "name": "Baraba" },
+    "description": "Счетоводна програма с отворен код: фактури, ДДС дневници, SAF-T към НАП, склад, банки, отчети, UBL 2.1 / Peppol BIS. Данните остават при теб.",
+    "license": "https://github.com/cyberbuch/ytbuch/blob/main/LICENSE",
+    "offers": { "@type": "Offer", "price": "0", "priceCurrency": "EUR" },
+    "featureList": [
+      "Фактури и черно сторно",
+      "ДДС дневници и файл за НАП",
+      "SAF-T XML по EN 16931",
+      "UBL 2.1 / Peppol BIS Billing 3.0",
+      "Склад и производство",
+      "Банки и правила за разнасяне",
+      "Многофирменост, роли и 2FA"
+    ]
+  }
+  </script>
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "FAQPage",
+    "mainEntity": [
+      { "@type": "Question", "name": "Какво е ytbuch?", "acceptedAnswer": { "@type": "Answer", "text": "Счетоводна програма с отворен код (BSD-3-Clause): фактури, ДДС дневници, SAF-T към НАП, склад, банки и отчети. Работи локално в Docker и данните остават при теб." } },
+      { "@type": "Question", "name": "Как се инсталира?", "acceptedAnswer": { "@type": "Answer", "text": "Достатъчен е Docker с Compose: git clone на github.com/cyberbuch/ytbuch и docker compose -f deploy/docker-compose.yml up -d --build." } },
+      { "@type": "Question", "name": "Каква е цената?", "acceptedAnswer": { "@type": "Answer", "text": "Безплатна е — лицензът е BSD-3-Clause, включително за търговска употреба." } },
+      { "@type": "Question", "name": "Поддържа ли SAF-T и е-фактури?", "acceptedAnswer": { "@type": "Answer", "text": "Да: SAF-T XML по EN 16931 за НАП и UBL 2.1 / Peppol BIS Billing 3.0 за е-фактури, с готовност за ViDA." } },
+      { "@type": "Question", "name": "За кого е подходящо?", "acceptedAnswer": { "@type": "Answer", "text": "За български фирми и счетоводители, които искат локална счетоводна система без облак и абонамент." } }
+    ]
+  }
+  </script>
 </head>
 <body>
   <header class="site-header">
