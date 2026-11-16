@@ -23,6 +23,7 @@ mod companies;
 mod counterparts;
 mod db;
 mod dec;
+mod defaults;
 mod dividends;
 mod dump;
 mod form;

@@ -23,12 +23,7 @@ use crate::periods;
 use crate::stock_replay;
 use crate::{api_err, AppState, ApiError};
 
-#[derive(Clone)]
-struct Acct {
-    id: i32,
-    number: String,
-    name: String,
-}
+type Acct = crate::posting::Acct;
 
 struct Jl {
     account: Acct,
@@ -208,14 +203,14 @@ async fn plan_for(st: &AppState, inv: &Inv) -> Result<Vec<Jl>, ApiError> {
         let a4531 = acct_or_create(
             st,
             company,
-            "4531",
+            &crate::defaults::number(st, company, "vat_purchase").await,
             "Начислен данък върху добавената стойност за покупките",
         )
         .await?;
         let a4532 = acct_or_create(
             st,
             company,
-            "4532",
+            &crate::defaults::number(st, company, "vat_sale").await,
             "Начислен данък върху добавената стойност за продажбите",
         )
         .await?;
@@ -229,7 +224,7 @@ async fn plan_for(st: &AppState, inv: &Inv) -> Result<Vec<Jl>, ApiError> {
         let a4531 = acct_or_create(
             st,
             company,
-            "4531",
+            &crate::defaults::number(st, company, "vat_purchase").await,
             "Начислен данък върху добавената стойност за покупките",
         )
         .await?;
@@ -258,23 +253,21 @@ async fn plan_for(st: &AppState, inv: &Inv) -> Result<Vec<Jl>, ApiError> {
         return Ok(plan);
     }
 
-    let a411 = acct_number(st, company, "411").await?;
-    let a401 = acct_number(st, company, "401").await?;
-    let a4531 = acct_number(st, company, "4531").await?;
-    let a4532 = acct_number(st, company, "4532").await?;
+    let a411 = crate::defaults::resolve(st, company, "customers").await?;
+    let a401 = crate::defaults::resolve(st, company, "suppliers").await?;
+    let a4531 = crate::defaults::resolve(st, company, "vat_purchase").await?;
+    let a4532 = crate::defaults::resolve(st, company, "vat_sale").await?;
     let lines = invoice_read::lines_of(&st.db, inv.id).await?;
     if inv.direction == "out" {
         push(&mut plan, a411, "debit", total, "0");
         for line in &lines {
             let net = amount_for_doc(&inv.document_type, &line.net_amount);
             let prod = need_product(st, line.product_id, company).await?;
-            if prod.revenue_account_id <= 0 {
-                return Err(api_err(
-                    StatusCode::UNPROCESSABLE_ENTITY,
-                    format!("артикулът {} няма приходна сметка", prod.name),
-                ));
-            }
-            let acct = acct_id(st, prod.revenue_account_id, company).await?;
+            let acct = if prod.revenue_account_id > 0 {
+                acct_id(st, prod.revenue_account_id, company).await?
+            } else {
+                crate::defaults::resolve(st, company, "revenues").await?
+            };
             push(&mut plan, acct, "credit", net, "0");
         }
         if vat_cents != 0 {
@@ -284,22 +277,18 @@ async fn plan_for(st: &AppState, inv: &Inv) -> Result<Vec<Jl>, ApiError> {
         for line in &lines {
             let net = amount_for_doc(&inv.document_type, &line.net_amount);
             let prod = need_product(st, line.product_id, company).await?;
-            if prod.inventory_account_id <= 0 {
-                return Err(api_err(
-                    StatusCode::UNPROCESSABLE_ENTITY,
-                    format!("артикулът {} няма сметка за покупка", prod.name),
-                ));
-            }
-            let acct = acct_id(st, prod.inventory_account_id, company).await?;
+            let acct = if prod.inventory_account_id > 0 {
+                acct_id(st, prod.inventory_account_id, company).await?
+            } else {
+                crate::defaults::resolve(st, company, "expenses").await?
+            };
             push(&mut plan, acct.clone(), "debit", net.clone(), "0");
             if prod.auto_write_off == 1 {
-                if prod.expense_account_id <= 0 {
-                    return Err(api_err(
-                        StatusCode::UNPROCESSABLE_ENTITY,
-                        format!("артикулът {} няма сметка за автоматично изписване", prod.name),
-                    ));
-                }
-                let expense = acct_id(st, prod.expense_account_id, company).await?;
+                let expense = if prod.expense_account_id > 0 {
+                    acct_id(st, prod.expense_account_id, company).await?
+                } else {
+                    crate::defaults::resolve(st, company, "expenses").await?
+                };
                 push(&mut plan, expense, "debit", net.clone(), "0");
                 push(&mut plan, acct, "credit", net, "0");
             }

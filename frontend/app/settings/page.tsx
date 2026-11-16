@@ -12,6 +12,7 @@ import { DocumentSeriesTab, DocSeries } from "../../components/DocumentSeriesTab
 import { FsFormulasTab } from "../../components/FsFormulasTab";
 import { SettingsStockTab } from "../../components/SettingsStockTab";
 import { SettingsClosingTab } from "../../components/SettingsClosingTab";
+import { SettingsAutomationTab } from "../../components/SettingsAutomationTab";
 import { SettingsUsersTab } from "../../components/SettingsUsersTab";
 import { SettingsCompanyTab } from "../../components/SettingsCompanyTab";
 import { SettingsSaftTab } from "../../components/SettingsSaftTab";
@@ -524,6 +525,13 @@ function SettingsInner() {
         >
           {t("settings.tab.closing")}
         </button>
+        <button
+          type="button"
+          className={`tab${tab === 7 ? " tab-active" : ""}`}
+          onClick={() => setTab(7)}
+        >
+          {t("settings.tab.automation")}
+        </button>
         {showUsers && (
           <button
             type="button"
@@ -607,6 +615,7 @@ function SettingsInner() {
       {tab === 3 && <FsFormulasTab />}
       {tab === 4 && <SettingsStockTab />}
       {tab === 6 && <SettingsClosingTab />}
+      {tab === 7 && <SettingsAutomationTab />}
       {tab === 5 && showUsers && <SettingsUsersTab companyId={activeId} />}
     </>
   );

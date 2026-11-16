@@ -7,6 +7,7 @@ use crate::db::{cell_i32_at, cell_str, lit, Db};
 use crate::invoice_read;
 use crate::{api_err, ApiError};
 
+#[derive(Clone)]
 pub struct Acct {
     pub id: i32,
     pub number: String,
