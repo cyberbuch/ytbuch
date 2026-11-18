@@ -26,7 +26,7 @@ const TABLES: &[(&str, &str)] = &[
     ("journal_lines", "id:i,entry_id:i,account_id:i,account_number,account_name,direction,amount,vat_amount,currency,fx_quantity,fx_rate"),
     ("accounting_periods", "id:i,company_id:i,year:i,month:i,status,closed_at,notes"),
     ("opening_balances", "id:i,company_id:i,fiscal_year:i,account_id:i,debit,credit,counterpart_id:i,product_id:i,quantity,description"),
-    ("bank_accounts", "id:i,company_id:i,iban,bic,bank_name,currency,name,account_number,gl_account_id:i,buffer_account_id:i,balance"),
+    ("bank_accounts", "id:i,company_id:i,iban,bic,bank_name,currency,name,account_number,gl_account_id:i,buffer_account_id:i,balance,import_format"),
     ("bank_transactions", "id:i,company_id:i,bank_account_id:i,txn_date,amount,currency,counterpart_name,counterpart_iban,description,reference,transaction_type,is_booked:i,is_allocated:i,journal_entry_id:i"),
     ("fixed_asset_categories", "id:i,company_id:i,name,cita_category,min_depreciation_rate,max_depreciation_rate,default_method,asset_account_id:i,depreciation_account_id:i,expense_account_id:i"),
     ("fixed_assets", "id:i,company_id:i,name,inventory_number,category_id:i,acquisition_date,put_into_service_date,cost,salvage_value,useful_life_months,depreciation_method,accounting_depreciation_rate,tax_depreciation_rate,accumulated_depreciation,tax_accumulated_depreciation,status,serial_number,manufacturer,model,responsible_person,is_conserved:i,location_id:i"),

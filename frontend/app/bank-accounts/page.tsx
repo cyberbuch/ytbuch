@@ -22,6 +22,7 @@ interface BankAccount {
   account_number: string;
   gl_account_id: number;
   buffer_account_id: number;
+  import_format?: string;
   balance: string;
   gl_account_code?: string;
   buffer_account_code?: string;
@@ -43,6 +44,7 @@ const emptyForm = {
   balance: "0.00",
   gl_account_id: 0,
   buffer_account_id: 0,
+  import_format: "auto",
 };
 
 function BankAccountsInner() {
@@ -122,6 +124,7 @@ function BankAccountsInner() {
       balance: acc.balance || "0.00",
       gl_account_id: acc.gl_account_id || 0,
       buffer_account_id: acc.buffer_account_id || 0,
+      import_format: acc.import_format || "auto",
     });
     setEditing(acc);
     setFormError("");
@@ -143,6 +146,7 @@ function BankAccountsInner() {
         balance: form.balance,
         gl_account_id: form.gl_account_id,
         buffer_account_id: form.buffer_account_id,
+        import_format: form.import_format,
       };
       if (editing) {
         await api.patch(`/v1/bank-accounts/${editing.id}`, payload);
@@ -386,6 +390,22 @@ function BankAccountsInner() {
                   {accountOptions(form.buffer_account_id, (v) =>
                     setForm({ ...form, buffer_account_id: v })
                   )}
+                </div>
+                <div className="field">
+                  <label className="label">{t("bank_accounts.format")}</label>
+                  <select
+                    className="select"
+                    value={form.import_format}
+                    onChange={(e) => setForm({ ...form, import_format: e.target.value })}
+                  >
+                    <option value="auto">{t("bank_accounts.format_auto")}</option>
+                    <option value="camt053">ISO camt.053</option>
+                    <option value="postbank">Postbank XML</option>
+                    <option value="unicredit">UniCredit XML</option>
+                    <option value="obb">OBB XML</option>
+                    <option value="mt940">MT940</option>
+                    <option value="csv">CSV</option>
+                  </select>
                 </div>
               </div>
               {formError && <div className="error-text">{formError}</div>}

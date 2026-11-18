@@ -9,8 +9,8 @@ use crate::posting::Acct;
 use crate::{api_err, AppState, ApiError};
 use axum::http::StatusCode;
 
-pub const ROLES: [&str; 10] = [
-    "customers", "suppliers", "vat_purchase", "vat_sale", "cash", "bank",
+pub const ROLES: [&str; 9] = [
+    "customers", "suppliers", "vat_purchase", "vat_sale", "cash",
     "card_purchase", "card_sale", "revenues", "expenses",
 ];
 
@@ -21,7 +21,6 @@ fn fallback(role: &str) -> &'static str {
         "vat_purchase" => "4531",
         "vat_sale" => "4532",
         "cash" => "501",
-        "bank" => "503",
         "revenues" => "702",
         "expenses" => "602",
         _ => "",

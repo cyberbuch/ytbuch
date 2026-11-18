@@ -12,7 +12,7 @@ mod assets;
 mod audit;
 mod auth;
 mod auth_flow;
-mod bank_csv;
+mod bank_formats;
 mod bank_rules;
 mod bank_tx;
 mod banks;

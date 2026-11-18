@@ -7,7 +7,7 @@ use axum::Json;
 use serde::Deserialize;
 use serde_json::{json, Value};
 
-use crate::bank_csv::{self, Tx};
+use crate::bank_formats::{self, Tx};
 use crate::db::{cell_i32_at, cell_str, lit};
 use crate::dec::{self, money};
 use crate::form::{self, active_or_one, auth_sub};
@@ -81,7 +81,7 @@ pub async fn preview(
     let obj = form::object(&body)?;
     let ba_id = req_i32(obj, "bank_account_id")?;
     let content = form::required(form::str_field(obj, "file_content")?, "file_content")?;
-    let mut parsed = bank_csv::detect(&content).ok_or_else(|| api_err(StatusCode::UNPROCESSABLE_ENTITY, UNKNOWN))?;
+    let mut parsed = bank_formats::detect(&content).ok_or_else(|| api_err(StatusCode::UNPROCESSABLE_ENTITY, UNKNOWN))?;
     bank(&st, ba_id, company).await?;
     let refs = refs_of(&st, ba_id).await?;
     let mut dup = 0;
@@ -105,7 +105,9 @@ pub async fn import(
     let ba_id = req_i32(obj, "bank_account_id")?;
     let content = form::required(form::str_field(obj, "file_content")?, "file_content")?;
     let ba = bank(&st, ba_id, company).await?;
-    let parsed = bank_csv::detect(&content).ok_or_else(|| api_err(StatusCode::UNPROCESSABLE_ENTITY, UNKNOWN))?;
+    let fmt_rows = invoice_read::qry(&st.db, &format!("SELECT import_format FROM bank_accounts WHERE id = {ba_id}")).await?;
+    let fmt = fmt_rows.first().map(|r| cell_str(r, 0)).unwrap_or_default();
+    let parsed = bank_formats::parse_as(&fmt, &content).ok_or_else(|| api_err(StatusCode::UNPROCESSABLE_ENTITY, UNKNOWN))?;
     let refs = refs_of(&st, ba_id).await?;
     let auto = ba.gl > 0 && ba.buf > 0;
     let mut imported = 0;
@@ -532,7 +534,7 @@ async fn refs_of(st: &AppState, account: i32) -> Result<Vec<String>, ApiError> {
     Ok(rows.iter().map(|r| cell_str(r, 0)).filter(|s| !s.is_empty()).collect())
 }
 
-fn pack(parsed: &bank_csv::Parsed, dup: i32) -> Value {
+fn pack(parsed: &bank_formats::Parsed, dup: i32) -> Value {
     let total = parsed.txs.len() as i32;
     json!({
         "format_name": parsed.format_name,

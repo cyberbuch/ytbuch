@@ -59,6 +59,8 @@ export const enB = {
   "auto.role.card_sale": "Card buffer (sale)",
   "auto.role.revenues": "Revenues (default)",
   "auto.role.expenses": "Expenses (default)",
+  "bank_accounts.format": "Automation type (file)",
+  "bank_accounts.format_auto": "Auto-detect",
   "bank_tx.date_from": "From date",
   "bank_tx.date_to": "To date",
   "bank_tx.process": "Process by rules",

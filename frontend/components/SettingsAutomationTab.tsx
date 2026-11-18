@@ -21,7 +21,6 @@ const ROLES = [
   "vat_purchase",
   "vat_sale",
   "cash",
-  "bank",
   "card_purchase",
   "card_sale",
   "revenues",
@@ -34,7 +33,6 @@ const FALLBACK: Record<string, string> = {
   vat_purchase: "4531",
   vat_sale: "4532",
   cash: "501",
-  bank: "503",
   revenues: "702",
   expenses: "602",
 };

@@ -430,6 +430,7 @@ pub async fn migrate(db: &Client) -> DbResult<()> {
     exec(db, crate::fsform::SQL).await?;
     ensure_journal_fx(db).await?;
     ensure_account_is_currency(db).await?;
+    ensure_bank_format(db).await?;
     insert_missing(
         db,
         "schema_migrations",
@@ -536,6 +537,51 @@ async fn ensure_account_is_currency(db: &Client) -> DbResult<()> {
                 lit(&cell_str(r, 3)),
                 lit(&cell_str(r, 4)),
                 lit(&cell_str(r, 5)),
+            ),
+        )
+        .await?;
+    }
+    Ok(())
+}
+
+/// Octo няма ALTER: ако bank_accounts е без import_format, презаписва се със
+/// запазване на редовете (вид автоматизация по подразбиране „auto“).
+async fn ensure_bank_format(db: &Client) -> DbResult<()> {
+    if query(db, "SELECT import_format FROM bank_accounts WHERE id = 0").await.is_ok() {
+        return Ok(());
+    }
+    let rows = query(
+        db,
+        "SELECT id, company_id, iban, bic, bank_name, currency, name, account_number, gl_account_id, buffer_account_id, balance \
+         FROM bank_accounts ORDER BY id",
+    )
+    .await?;
+    exec(db, "DROP TABLE IF EXISTS bank_accounts").await?;
+    exec(
+        db,
+        "CREATE TABLE bank_accounts (id INTEGER PRIMARY KEY, company_id INTEGER, iban VARCHAR, bic VARCHAR, \
+         bank_name VARCHAR, currency VARCHAR, name VARCHAR, account_number VARCHAR, gl_account_id INTEGER, \
+         buffer_account_id INTEGER, balance VARCHAR, import_format VARCHAR)",
+    )
+    .await?;
+    for r in &rows {
+        exec(
+            db,
+            &format!(
+                "INSERT INTO bank_accounts (id, company_id, iban, bic, bank_name, currency, name, account_number, \
+                 gl_account_id, buffer_account_id, balance, import_format) \
+                 VALUES ({}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, 'auto')",
+                cell_i32_at(r, 0),
+                cell_i32_at(r, 1),
+                lit(&cell_str(r, 2)),
+                lit(&cell_str(r, 3)),
+                lit(&cell_str(r, 4)),
+                lit(&cell_str(r, 5)),
+                lit(&cell_str(r, 6)),
+                lit(&cell_str(r, 7)),
+                cell_i32_at(r, 8),
+                cell_i32_at(r, 9),
+                lit(&cell_str(r, 10)),
             ),
         )
         .await?;

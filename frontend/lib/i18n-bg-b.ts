@@ -60,6 +60,8 @@ export const bgB = {
   "auto.role.card_sale": "Буфер карта (продажба)",
   "auto.role.revenues": "Приходи (default)",
   "auto.role.expenses": "Разходи (default)",
+  "bank_accounts.format": "Вид автоматизация (файл)",
+  "bank_accounts.format_auto": "Автоматично разпознаване",
   "bank_tx.date_from": "От дата",
   "bank_tx.date_to": "До дата",
   "bank_tx.process": "Обработи по правила",

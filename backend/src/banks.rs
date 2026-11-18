@@ -34,7 +34,7 @@ pub async fn index(
     let company = company(&st, &headers).await?;
     let rows = invoice_read::qry(
         &st.db,
-        &format!("SELECT id, iban, bic, bank_name, currency, name, account_number, gl_account_id, buffer_account_id, balance, company_id FROM bank_accounts WHERE company_id = {company} ORDER BY name, id"),
+        &format!("SELECT id, iban, bic, bank_name, currency, name, account_number, gl_account_id, buffer_account_id, balance, company_id, import_format FROM bank_accounts WHERE company_id = {company} ORDER BY name, id"),
     )
     .await?;
     let mut items = Vec::new();
@@ -71,15 +71,16 @@ pub async fn create(
     invoice_read::exe(
         &st.db,
         &format!(
-            "INSERT INTO bank_accounts (id, company_id, iban, bic, bank_name, currency, name, account_number, gl_account_id, buffer_account_id, balance) \
-             VALUES ({id}, {company}, {}, {}, {}, {}, {}, {}, {gl}, {buf}, {})",
+            "INSERT INTO bank_accounts (id, company_id, iban, bic, bank_name, currency, name, account_number, gl_account_id, buffer_account_id, balance, import_format) \
+             VALUES ({id}, {company}, {}, {}, {}, {}, {}, {}, {gl}, {buf}, {}, {})",
             lit(&iban),
             lit(&opt(obj, "bic", "")?),
             lit(&opt(obj, "bank_name", "")?),
             lit(&opt(obj, "currency", &default_cur)?),
             lit(&name),
             lit(&opt(obj, "account_number", "")?),
-            lit(&balance)
+            lit(&balance),
+            lit(&opt(obj, "import_format", "auto")?)
         ),
     )
     .await?;
@@ -127,11 +128,12 @@ pub async fn update(
     let bank_name = form::str_field(obj, "bank_name")?.unwrap_or_else(|| cur["bank_name"].as_str().unwrap_or("").into());
     let currency = form::str_field(obj, "currency")?.unwrap_or_else(|| cur["currency"].as_str().unwrap_or("EUR").into());
     let account_number = form::str_field(obj, "account_number")?.unwrap_or_else(|| cur["account_number"].as_str().unwrap_or("").into());
+    let import_format = form::str_field(obj, "import_format")?.unwrap_or_else(|| cur["import_format"].as_str().unwrap_or("auto").into());
     invoice_read::exe(
         &st.db,
         &format!(
-            "UPDATE bank_accounts SET name = {}, iban = {}, bic = {}, bank_name = {}, currency = {}, account_number = {}, balance = {}, gl_account_id = {gl}, buffer_account_id = {buf} WHERE id = {id}",
-            lit(&name), lit(&iban), lit(&bic), lit(&bank_name), lit(&currency), lit(&account_number), lit(&balance)
+            "UPDATE bank_accounts SET name = {}, iban = {}, bic = {}, bank_name = {}, currency = {}, account_number = {}, balance = {}, gl_account_id = {gl}, buffer_account_id = {buf}, import_format = {} WHERE id = {id}",
+            lit(&name), lit(&iban), lit(&bic), lit(&bank_name), lit(&currency), lit(&account_number), lit(&balance), lit(&import_format)
         ),
     )
     .await?;
@@ -153,7 +155,7 @@ pub async fn delete(
 async fn load(st: &AppState, id: i32, company: i32) -> Result<Value, ApiError> {
     let rows = invoice_read::qry(
         &st.db,
-        &format!("SELECT id, iban, bic, bank_name, currency, name, account_number, gl_account_id, buffer_account_id, balance, company_id FROM bank_accounts WHERE id = {id}"),
+        &format!("SELECT id, iban, bic, bank_name, currency, name, account_number, gl_account_id, buffer_account_id, balance, company_id, import_format FROM bank_accounts WHERE id = {id}"),
     )
     .await?;
     let Some(row) = rows.first() else {
@@ -181,6 +183,7 @@ async fn one(st: &AppState, row: &crate::db::Row) -> Result<Value, ApiError> {
         "buffer_account_id": buf,
         "balance": cell_str(row, 9),
         "company_id": owner,
+        "import_format": cell_str(row, 11),
     });
     if let Some(code) = code(st, gl, owner).await? {
         o["gl_account_code"] = json!(code);

@@ -12,7 +12,8 @@ CREATE TABLE IF NOT EXISTS bank_accounts (
     account_number VARCHAR,
     gl_account_id INTEGER,
     buffer_account_id INTEGER,
-    balance VARCHAR
+    balance VARCHAR,
+    import_format VARCHAR
 );
 CREATE TABLE IF NOT EXISTS bank_transactions (
     id INTEGER PRIMARY KEY,
